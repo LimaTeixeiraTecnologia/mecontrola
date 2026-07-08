@@ -48,6 +48,11 @@ Componentes tocados (todos no consumidor `internal/agents`; substrato `internal/
 - **`agents/application/scorers/mecontrola_tools_realllm_test.go`** (modificado) — adiciona os cenários
   C1–C7 ao slice `scenarios []harnessScenario` e, para cenários multi-tool (C1), um asserter de
   presença de múltiplas tools. Mantém o gate `M-04 ≥ 0.90`.
+- **`agents/application/tools/resolve_card.go`** (modificado, aditivo — D-10, emenda pós-review) — a
+  descrição LLM-facing menciona `query_card_invoice` e instrui que o `nickname` é a palavra exata que
+  o usuário citou para o cartão. Sem alteração de assinatura, schema, `cardId`-scope ou `exec`.
+  Necessário para elevar o roteamento de C4 de ~30–50% para 10/10 no gate de confiabilidade (evidência
+  real-LLM no modelo de produção `openai/gpt-4o-mini`; modelos mais fortes pioravam o caso).
 
 Fluxo (inalterado, mastra canônico Thread→Run):
 
@@ -215,6 +220,12 @@ as tools já são cobertas por `*_e2e_test.go` com testcontainer Postgres. Crit�
 - **Cadeia (C4/C5)**: reaproveitar `mecontrola_agent_chain_realllm_test.go` para asseverar a sequência
   `resolve_card→query_card_invoice` e `query_month→get_transaction`, e que a resposta final não
   contém valor ausente do retorno das tools (anti-alucinação, RF-10).
+- **Gate estatístico de C4 (emenda pós-review, D-10)**: `TestRealLLM_QueryCardInvoiceChain_C4` executa
+  o cenário C4 **10 vezes** e exige **≥ 8/10** roteamentos `resolve_card→query_card_invoice` (cardId
+  sempre de `resolve_card`, RF-32a). Substitui a asserção single-shot original, que produzia
+  falso-verde por amostragem única sobre decisão de roteamento não-determinística do LLM. O modelo do
+  harness é sobrescrevível por `AGENT_HARNESS_MODEL` (default = modelo de produção `openai/gpt-4o-mini`)
+  para permitir matriz de modelos sem alterar produção.
 
 ### Validação (R0–R7, go-implementation Etapa 5)
 

@@ -6,6 +6,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
 
 func baseState() PendingEntryState {
@@ -248,4 +250,76 @@ func TestDecidePendingResume_NoIO(t *testing.T) {
 	now := time.Now().UTC()
 	_, err := DecidePendingResume(state, msg, now)
 	require.NoError(t, err)
+}
+
+func TestParseWeekday(t *testing.T) {
+	now := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
+
+	scenarios := []struct {
+		text string
+		want string
+		ok   bool
+	}{
+		{"segunda", "2026-07-06", true},
+		{"segunda-feira", "2026-07-06", true},
+		{"terca", "2026-06-30", true},
+		{"terca-feira", "2026-06-30", true},
+		{"terça", "2026-06-30", true},
+		{"terça-feira", "2026-06-30", true},
+		{"quarta", "2026-07-01", true},
+		{"quarta-feira", "2026-07-01", true},
+		{"quinta", "2026-07-02", true},
+		{"quinta-feira", "2026-07-02", true},
+		{"sexta", "2026-07-03", true},
+		{"sexta-feira", "2026-07-03", true},
+		{"sabado", "2026-07-04", true},
+		{"sábado", "2026-07-04", true},
+		{"domingo", "2026-07-05", true},
+		{"segunda passada", "2026-06-29", true},
+		{"segunda-feira passada", "2026-06-29", true},
+		{"sabado passado", "2026-06-27", true},
+		{"sábado passado", "2026-06-27", true},
+		{"domingo passado", "2026-06-28", true},
+		{"semana passada", "", false},
+		{"mes passado", "", false},
+		{"mês passado", "", false},
+		{"amanha", "", false},
+		{"", "", false},
+		{"hoje", "", false},
+	}
+
+	for _, s := range scenarios {
+		got, ok := parseWeekday(s.text, now)
+		require.Equal(t, s.ok, ok, "text=%q ok mismatch", s.text)
+		require.Equal(t, s.want, got, "text=%q date mismatch", s.text)
+	}
+}
+
+func TestParseInputDate_Weekday(t *testing.T) {
+	now := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
+
+	scenarios := []struct {
+		text string
+		want string
+	}{
+		{"segunda", "2026-07-06"},
+		{"terça-feira", "2026-06-30"},
+		{"sábado passado", "2026-06-27"},
+		{"semana passada", ""},
+		{"mês passado", ""},
+		{"hoje", "2026-07-06"},
+		{"ontem", "2026-07-05"},
+	}
+
+	for _, s := range scenarios {
+		got := parseInputDate(s.text, now)
+		require.Equal(t, s.want, got, "text=%q", s.text)
+	}
+}
+
+func TestKnownPaymentMethods_AllValuesParseValid(t *testing.T) {
+	for key, val := range knownPaymentMethods {
+		_, err := valueobjects.ParsePaymentMethod(val)
+		require.NoError(t, err, "key=%q value=%q deve ser aceito por ParsePaymentMethod", key, val)
+	}
 }

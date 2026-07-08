@@ -42,7 +42,7 @@ func (s *PendingEntryCardSuite) SetupTest() {
 }
 
 func (s *PendingEntryCardSuite) buildDef() workflow.Definition[PendingEntryState] {
-	return BuildPendingEntryWorkflow(s.ledger, s.cards, nil)
+	return BuildPendingEntryWorkflow(s.ledger, s.cards, nil, nil)
 }
 
 func (s *PendingEntryCardSuite) cardState() PendingEntryState {

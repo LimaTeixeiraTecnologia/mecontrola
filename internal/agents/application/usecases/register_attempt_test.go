@@ -66,7 +66,7 @@ func (s *RegisterAttemptSuite) SetupTest() {
 	s.catRootID = uuid.New()
 	s.catSubID = uuid.New()
 
-	def := workflows.BuildPendingEntryWorkflow(nil, nil, nil)
+	def := workflows.BuildPendingEntryWorkflow(nil, nil, nil, nil)
 	s.ledger = imocks.NewTransactionsLedger(s.T())
 	s.uc = NewRegisterAttempt(s.categories, s.ledger, s.engine, def, s.obs)
 }
@@ -329,4 +329,121 @@ func (s *RegisterAttemptSuite) TestRegisterExpense_WorkflowKey_ContainsResourceA
 	s.Contains(s.engine.lastKey, s.userID.String())
 	s.Contains(s.engine.lastKey, "thr-001")
 	s.Contains(s.engine.lastKey, "pending-entry")
+}
+
+func (s *RegisterAttemptSuite) TestRegisterExpense_ItemSeq_PropagatedToState() {
+	s.categories.EXPECT().
+		SearchDictionary(mock.Anything, mock.Anything, mock.Anything).
+		Return(interfaces.CategorySearchResult{Outcome: interfaces.ClassifyOutcomeNoMatch, Version: 1}, nil).
+		Once()
+
+	cmd := s.expenseCmd("pix", nil, uuid.Nil)
+	cmd.ItemSeq = 3
+
+	_, err := s.uc.RegisterExpense(s.ctx, cmd)
+
+	s.NoError(err)
+	s.Equal(3, s.engine.lastState.ItemSeq)
+}
+
+func (s *RegisterAttemptSuite) TestRegisterIncome_ItemSeq_PropagatedToState() {
+	s.categories.EXPECT().
+		SearchDictionary(mock.Anything, mock.Anything, mock.Anything).
+		Return(interfaces.CategorySearchResult{Outcome: interfaces.ClassifyOutcomeNoMatch, Version: 1}, nil).
+		Once()
+
+	cmd := RegisterIncomeCommand{
+		UserID:      s.userID,
+		ThreadID:    "thr-001",
+		WAMID:       "wamid-001",
+		ItemSeq:     7,
+		AmountCents: 500000,
+		Description: "salário",
+	}
+
+	_, err := s.uc.RegisterIncome(s.ctx, cmd)
+
+	s.NoError(err)
+	s.Equal(7, s.engine.lastState.ItemSeq)
+}
+
+func (s *RegisterAttemptSuite) TestCreateRecurrence_ItemSeq_PropagatedToState() {
+	s.categories.EXPECT().
+		ResolveForWrite(mock.Anything, mock.MatchedBy(func(req interfaces.CategoryWriteRequest) bool {
+			return req.SubcategoryID == s.catSubID
+		})).
+		Return(interfaces.CategoryWriteDecision{
+			RootCategoryID:   s.catRootID,
+			SubcategoryID:    s.catSubID,
+			EditorialVersion: 1,
+			Path:             "Custo Fixo > Aluguel",
+		}, nil).
+		Once()
+
+	cmd := CreateRecurrenceCommand{
+		UserID:        s.userID,
+		ThreadID:      "thr-001",
+		WAMID:         "wamid-recur",
+		ItemSeq:       2,
+		Direction:     "outcome",
+		PaymentMethod: "debit_card",
+		AmountCents:   150000,
+		Description:   "aluguel",
+		CategoryID:    s.catRootID,
+		SubcategoryID: s.catSubID,
+		Frequency:     "monthly",
+		DayOfMonth:    5,
+	}
+
+	_, err := s.uc.CreateRecurrence(s.ctx, cmd)
+
+	s.NoError(err)
+	s.Equal(2, s.engine.lastState.ItemSeq)
+}
+
+func (s *RegisterAttemptSuite) TestEditEntry_ItemSeq_PropagatedToState() {
+	targetID := uuid.MustParse("00000000-0000-0000-0000-0000000000bb")
+	subStr := s.catSubID.String()
+
+	s.ledger.EXPECT().
+		GetTransaction(mock.Anything, targetID.String()).
+		Return(interfaces.Entry{
+			ID:            targetID.String(),
+			Direction:     "outcome",
+			PaymentMethod: "pix",
+			AmountCents:   10000,
+			Description:   "mercado",
+			CategoryID:    s.catRootID.String(),
+			SubcategoryID: &subStr,
+			Version:       1,
+		}, nil).
+		Once()
+	s.categories.EXPECT().
+		SearchDictionary(mock.Anything, "mercado", "expense").
+		Return(interfaces.CategorySearchResult{Outcome: interfaces.ClassifyOutcomeMatched, Version: 1}, nil).
+		Once()
+	s.categories.EXPECT().
+		ResolveForWrite(mock.Anything, mock.MatchedBy(func(req interfaces.CategoryWriteRequest) bool {
+			return req.SubcategoryID == s.catSubID
+		})).
+		Return(interfaces.CategoryWriteDecision{
+			RootCategoryID:   s.catRootID,
+			SubcategoryID:    s.catSubID,
+			EditorialVersion: 1,
+			Path:             "Custo Fixo > Mercado",
+		}, nil).
+		Once()
+
+	cmd := EditEntryCommand{
+		UserID:              s.userID,
+		ThreadID:            "thr-001",
+		WAMID:               "wamid-edit",
+		ItemSeq:             5,
+		TargetTransactionID: targetID,
+	}
+
+	_, err := s.uc.EditEntry(s.ctx, cmd)
+
+	s.NoError(err)
+	s.Equal(5, s.engine.lastState.ItemSeq)
 }

@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
@@ -13,11 +14,13 @@ import (
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/card"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
 	wapayload "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/payload"
@@ -219,4 +222,125 @@ func (s *WhatsAppAgentRouteSuite) TestBuildWhatsAppAgentRoute_NoPrincipal_Return
 	outcome := route(s.ctx, msg)
 
 	s.Equal("invalid", string(outcome))
+}
+
+type fakeWriteLedger struct {
+	entry     usecases.WriteLedgerEntry
+	found     bool
+	findErr   error
+	insertErr error
+	inserted  []usecases.WriteLedgerEntry
+}
+
+func (f *fakeWriteLedger) FindByKey(_ context.Context, _ string, _ int, _ string) (usecases.WriteLedgerEntry, error) {
+	if f.findErr != nil {
+		return usecases.WriteLedgerEntry{}, f.findErr
+	}
+	if !f.found {
+		return usecases.WriteLedgerEntry{}, usecases.ErrLedgerEntryNotFound
+	}
+	return f.entry, nil
+}
+
+func (f *fakeWriteLedger) Insert(_ context.Context, entry usecases.WriteLedgerEntry) error {
+	if f.insertErr != nil {
+		return f.insertErr
+	}
+	f.inserted = append(f.inserted, entry)
+	return nil
+}
+
+func (f *fakeWriteLedger) DeleteBefore(_ context.Context, _ time.Time, _ int) (int64, error) {
+	return 0, nil
+}
+
+type IdempotentWriterAdapterSuite struct {
+	suite.Suite
+	ctx    context.Context
+	userID uuid.UUID
+	wamid  string
+}
+
+func TestIdempotentWriterAdapterSuite(t *testing.T) {
+	suite.Run(t, new(IdempotentWriterAdapterSuite))
+}
+
+func (s *IdempotentWriterAdapterSuite) SetupTest() {
+	s.ctx = context.Background()
+	s.userID = uuid.New()
+	s.wamid = "wamid-test-123"
+}
+
+func (s *IdempotentWriterAdapterSuite) TestExecute_NewWrite_ReturnsRoutedOutcome() {
+	resourceID := uuid.New()
+	ledger := &fakeWriteLedger{}
+	uc := usecases.NewIdempotentWrite(ledger, fake.NewProvider())
+	adapter := idempotentWriterAdapter{uc: uc}
+
+	writeFn := workflows.IdempotentWriteFn(func(_ context.Context) (uuid.UUID, bool, error) {
+		return resourceID, false, nil
+	})
+
+	gotID, outcome, err := adapter.Execute(s.ctx, s.userID, s.wamid, 1, "create_transaction", "transaction", writeFn)
+
+	s.NoError(err)
+	s.Equal(resourceID, gotID)
+	s.Equal(agent.ToolOutcomeRouted, outcome)
+}
+
+func (s *IdempotentWriterAdapterSuite) TestExecute_ReplayExisting_ReturnsReplayOutcome() {
+	existingID := uuid.New()
+	ledger := &fakeWriteLedger{
+		found: true,
+		entry: usecases.WriteLedgerEntry{
+			ResourceID: existingID,
+			WAMID:      s.wamid,
+			ItemSeq:    1,
+			Operation:  "create_transaction",
+		},
+	}
+	uc := usecases.NewIdempotentWrite(ledger, fake.NewProvider())
+	adapter := idempotentWriterAdapter{uc: uc}
+
+	writeFn := workflows.IdempotentWriteFn(func(_ context.Context) (uuid.UUID, bool, error) {
+		return uuid.New(), false, nil
+	})
+
+	gotID, outcome, err := adapter.Execute(s.ctx, s.userID, s.wamid, 1, "create_transaction", "transaction", writeFn)
+
+	s.NoError(err)
+	s.Equal(existingID, gotID)
+	s.Equal(agent.ToolOutcomeReplay, outcome)
+}
+
+func (s *IdempotentWriterAdapterSuite) TestExecute_WriteFnError_ReturnsError() {
+	writeErr := errors.New("usecase failed")
+	ledger := &fakeWriteLedger{}
+	uc := usecases.NewIdempotentWrite(ledger, fake.NewProvider())
+	adapter := idempotentWriterAdapter{uc: uc}
+
+	writeFn := workflows.IdempotentWriteFn(func(_ context.Context) (uuid.UUID, bool, error) {
+		return uuid.Nil, false, writeErr
+	})
+
+	_, _, err := adapter.Execute(s.ctx, s.userID, s.wamid, 1, "create_transaction", "transaction", writeFn)
+
+	s.Error(err)
+}
+
+func (s *IdempotentWriterAdapterSuite) TestExecute_ReconciledWrite_ReturnsReconciledOutcome() {
+	resourceID := uuid.New()
+	ledger := &fakeWriteLedger{}
+	uc := usecases.NewIdempotentWrite(ledger, fake.NewProvider())
+	adapter := idempotentWriterAdapter{uc: uc}
+
+	writeFn := workflows.IdempotentWriteFn(func(_ context.Context) (uuid.UUID, bool, error) {
+		return resourceID, true, nil
+	})
+
+	gotID, outcome, err := adapter.Execute(s.ctx, s.userID, s.wamid, 1, "create_transaction", "transaction", writeFn)
+
+	s.NoError(err)
+	s.Equal(resourceID, gotID)
+	s.Equal(agent.ToolOutcomeReconciled, outcome)
 }

@@ -22,6 +22,11 @@ func registerJobSteps(sc *godog.ScenarioContext, e *txE2ECtx) {
 }
 
 func (e *txE2ECtx) queExisteUmRecurringTemplateAtivoParaHoje(centavos int64, frequencia string) error {
+	brazilLoc, err := time.LoadLocation("America/Sao_Paulo")
+	if err != nil {
+		return fmt.Errorf("carregar timezone Brasil: %w", err)
+	}
+	todayBrazil := time.Now().In(brazilLoc)
 	payload := map[string]any{
 		"direction":          "outcome",
 		"payment_method":     "pix",
@@ -30,9 +35,9 @@ func (e *txE2ECtx) queExisteUmRecurringTemplateAtivoParaHoje(centavos int64, fre
 		"category_id":        txE2EPrazerosRootCategoryUUID,
 		"subcategory_id":     txE2EOutrosPrazeresSubcategoryUUID,
 		"frequency":          frequencia,
-		"day_of_month":       time.Now().UTC().Day(),
+		"day_of_month":       todayBrazil.Day(),
 		"installments_total": 1,
-		"started_at":         time.Now().UTC().AddDate(-1, 0, 0).Format(time.RFC3339),
+		"started_at":         todayBrazil.AddDate(-1, 0, 0).Format(time.RFC3339),
 	}
 	if err := e.makeRequest(http.MethodPost, "/api/v1/recurring-templates", payload); err != nil {
 		return err
@@ -59,13 +64,24 @@ func (e *txE2ECtx) oJobRecurringMaterializerEExecutadoParaHoje() error {
 	return e.lastJobErr
 }
 
+func refMonthBrazil() (string, error) {
+	brazilLoc, err := time.LoadLocation("America/Sao_Paulo")
+	if err != nil {
+		return "", fmt.Errorf("carregar timezone Brasil: %w", err)
+	}
+	return time.Now().In(brazilLoc).Format("2006-01"), nil
+}
+
 func (e *txE2ECtx) oBancoDeveConterPeloMenosMaterializacoes(minimo int) error {
 	if e.capturedRTID == "" {
 		return fmt.Errorf("nenhum recurring-template capturado")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	refMonth := time.Now().UTC().Format("2006-01")
+	refMonth, err := refMonthBrazil()
+	if err != nil {
+		return err
+	}
 	n, err := countRecurringMaterializationsForDay(ctx, e.db, e.capturedRTID, refMonth)
 	if err != nil {
 		return err
@@ -82,7 +98,10 @@ func (e *txE2ECtx) oBancoDeveConterExatamenteMaterializacoes(esperado int) error
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	refMonth := time.Now().UTC().Format("2006-01")
+	refMonth, err := refMonthBrazil()
+	if err != nil {
+		return err
+	}
 	n, err := countRecurringMaterializationsForDay(ctx, e.db, e.capturedRTID, refMonth)
 	if err != nil {
 		return err

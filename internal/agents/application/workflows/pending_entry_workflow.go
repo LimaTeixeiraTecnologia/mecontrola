@@ -10,8 +10,30 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
+
+type IdempotentWriteFn func(ctx context.Context) (resourceID uuid.UUID, reconciled bool, err error)
+
+type IdempotentWriter interface {
+	Execute(
+		ctx context.Context,
+		userID uuid.UUID,
+		wamid string,
+		itemSeq int,
+		operation string,
+		resourceKind string,
+		write IdempotentWriteFn,
+	) (resourceID uuid.UUID, outcome agent.ToolOutcome, err error)
+}
+
+func resourceKindForState(state PendingEntryState) string {
+	if state.OperationKind == PendingOpCreateRecurrence {
+		return "recurring_template"
+	}
+	return "transaction"
+}
 
 type cardNicknameSolver interface {
 	ResolveCardByNickname(ctx context.Context, userID uuid.UUID, nickname string) (interfaces.Card, error)
@@ -52,8 +74,8 @@ func PendingEntryKey(resourceID, threadID string) string {
 	return resourceID + ":" + threadID + ":" + PendingEntryWorkflowID
 }
 
-func BuildPendingEntryWorkflow(ledger interfaces.TransactionsLedger, cards cardNicknameSolver, cats categoryValidator) workflow.Definition[PendingEntryState] {
-	step := workflow.NewStepFunc(stepPendingEntryID, makePendingEntryStep(ledger, cards, cats))
+func BuildPendingEntryWorkflow(ledger interfaces.TransactionsLedger, cards cardNicknameSolver, cats categoryValidator, idem IdempotentWriter) workflow.Definition[PendingEntryState] {
+	step := workflow.NewStepFunc(stepPendingEntryID, makePendingEntryStep(ledger, cards, cats, idem))
 	return workflow.Definition[PendingEntryState]{
 		ID:          PendingEntryWorkflowID,
 		Root:        step,
@@ -66,7 +88,7 @@ func BuildPendingEntryReaper(store workflow.Store, o11y observability.Observabil
 	return workflow.NewStaleSuspendedReaper(store, PendingEntryWorkflowID, PendingEntryStaleAfter, PendingEntryReaperBatch, o11y)
 }
 
-func makePendingEntryStep(ledger interfaces.TransactionsLedger, cards cardNicknameSolver, cats categoryValidator) func(context.Context, PendingEntryState) (workflow.StepOutput[PendingEntryState], error) {
+func makePendingEntryStep(ledger interfaces.TransactionsLedger, cards cardNicknameSolver, cats categoryValidator, idem IdempotentWriter) func(context.Context, PendingEntryState) (workflow.StepOutput[PendingEntryState], error) {
 	return func(ctx context.Context, state PendingEntryState) (workflow.StepOutput[PendingEntryState], error) {
 		if state.ResumeText == "" {
 			state.SuspendedAt = time.Now().UTC()
@@ -90,7 +112,7 @@ func makePendingEntryStep(ledger interfaces.TransactionsLedger, cards cardNickna
 		case AwaitingSlotCard:
 			return handleCardSlotResume(ctx, state, msg, now, cards)
 		case AwaitingSlotConfirmation:
-			return handleConfirmationResume(ctx, state, msg, now, ledger, cats)
+			return handleConfirmationResume(ctx, state, msg, now, ledger, cats, idem)
 		default:
 			return handleSlotResume(state, msg, now)
 		}
@@ -328,7 +350,7 @@ func handleSlotResume(state PendingEntryState, msg PendingMessage, now time.Time
 	}
 }
 
-func handleConfirmationResume(ctx context.Context, state PendingEntryState, msg PendingMessage, now time.Time, ledger interfaces.TransactionsLedger, cats categoryValidator) (workflow.StepOutput[PendingEntryState], error) {
+func handleConfirmationResume(ctx context.Context, state PendingEntryState, msg PendingMessage, now time.Time, ledger interfaces.TransactionsLedger, cats categoryValidator, idem IdempotentWriter) (workflow.StepOutput[PendingEntryState], error) {
 	decision, err := DecideConfirmation(state, msg, now)
 	if err != nil {
 		return workflow.StepOutput[PendingEntryState]{}, fmt.Errorf("workflows.pending_entry: decide confirmation: %w", err)
@@ -336,7 +358,7 @@ func handleConfirmationResume(ctx context.Context, state PendingEntryState, msg 
 
 	switch decision.Action {
 	case ConfirmActionAccept:
-		return executeWrite(ctx, state, ledger, cats)
+		return executeWrite(ctx, state, ledger, cats, idem)
 
 	case ConfirmActionCancel:
 		state.Status = PendingStatusCancelled
@@ -376,35 +398,70 @@ func handleConfirmationResume(ctx context.Context, state PendingEntryState, msg 
 	}
 }
 
-func executeWrite(ctx context.Context, state PendingEntryState, ledger interfaces.TransactionsLedger, cats categoryValidator) (workflow.StepOutput[PendingEntryState], error) {
+func executeWrite(ctx context.Context, state PendingEntryState, ledger interfaces.TransactionsLedger, cats categoryValidator, idem IdempotentWriter) (workflow.StepOutput[PendingEntryState], error) {
+	state, ok := validateCategoryForWrite(ctx, state, cats)
+	if !ok {
+		return workflow.StepOutput[PendingEntryState]{State: state, Status: workflow.StepStatusCompleted}, nil
+	}
+	state.ResumeText = ""
+	if idem != nil {
+		return executeWithIdempotency(ctx, state, ledger, idem)
+	}
+	return executeDirectWrite(ctx, state, ledger)
+}
+
+func validateCategoryForWrite(ctx context.Context, state PendingEntryState, cats categoryValidator) (PendingEntryState, bool) {
 	if len(state.Candidates) == 0 {
 		state.Status = PendingStatusCancelled
 		state.ResponseText = "Não consegui validar a categoria. O registro foi cancelado."
 		state.ResumeText = ""
-		return workflow.StepOutput[PendingEntryState]{State: state, Status: workflow.StepStatusCompleted}, nil
+		return state, false
 	}
 	c := state.Candidates[0]
 	if c.SubcategoryID == (uuid.UUID{}) || c.SubcategoryID == c.RootCategoryID {
 		state.Status = PendingStatusCancelled
 		state.ResponseText = "Não consegui validar a categoria. O registro foi cancelado."
 		state.ResumeText = ""
+		return state, false
+	}
+	if cats == nil {
+		return state, true
+	}
+	if _, err := cats.ResolveForWrite(ctx, interfaces.CategoryWriteRequest{
+		RootCategoryID:  c.RootCategoryID,
+		SubcategoryID:   c.SubcategoryID,
+		Kind:            state.Kind,
+		ExpectedVersion: state.CategoryVersion,
+	}); err != nil {
+		state.Status = PendingStatusCancelled
+		state.ResponseText = "Não consegui validar a categoria. O registro foi cancelado."
+		state.ResumeText = ""
+		return state, false
+	}
+	return state, true
+}
+
+func executeWithIdempotency(ctx context.Context, state PendingEntryState, ledger interfaces.TransactionsLedger, idem IdempotentWriter) (workflow.StepOutput[PendingEntryState], error) {
+	writeFn := IdempotentWriteFn(func(c context.Context) (uuid.UUID, bool, error) {
+		ref, err := callLedger(c, state, ledger)
+		if err != nil {
+			return uuid.Nil, false, err
+		}
+		return ref.ID, ref.Reconciled, nil
+	})
+	resourceID, outcome, idemErr := idem.Execute(ctx, state.UserID, state.MessageID, state.ItemSeq, state.OperationKind.String(), resourceKindForState(state), writeFn)
+	if idemErr != nil || (outcome != agent.ToolOutcomeReplay && resourceID == uuid.Nil) {
+		state.Status = PendingStatusCancelled
+		state.ResponseText = "Não consegui registrar. Tente novamente em breve."
 		return workflow.StepOutput[PendingEntryState]{State: state, Status: workflow.StepStatusCompleted}, nil
 	}
-	if cats != nil {
-		if _, err := cats.ResolveForWrite(ctx, interfaces.CategoryWriteRequest{
-			RootCategoryID:  c.RootCategoryID,
-			SubcategoryID:   c.SubcategoryID,
-			Kind:            state.Kind,
-			ExpectedVersion: state.CategoryVersion,
-		}); err != nil {
-			state.Status = PendingStatusCancelled
-			state.ResponseText = "Não consegui validar a categoria. O registro foi cancelado."
-			state.ResumeText = ""
-			return workflow.StepOutput[PendingEntryState]{State: state, Status: workflow.StepStatusCompleted}, nil
-		}
-	}
+	state.Status = PendingStatusCompleted
+	state.ResponseText = buildWriteSuccessText(state)
+	return workflow.StepOutput[PendingEntryState]{State: state, Status: workflow.StepStatusCompleted}, nil
+}
+
+func executeDirectWrite(ctx context.Context, state PendingEntryState, ledger interfaces.TransactionsLedger) (workflow.StepOutput[PendingEntryState], error) {
 	ref, writeErr := callLedger(ctx, state, ledger)
-	state.ResumeText = ""
 	if writeErr != nil || ref.ID == uuid.Nil {
 		state.Status = PendingStatusCancelled
 		state.ResponseText = "Não consegui registrar. Tente novamente em breve."
@@ -534,13 +591,14 @@ func formatDateLabel(raw string) string {
 	now := time.Now().In(loc)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 	dLocal := time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, loc)
+	formatted := dLocal.Format("02/01/2006")
 	switch {
 	case dLocal.Equal(today):
-		return "hoje"
+		return fmt.Sprintf("hoje (%s)", formatted)
 	case dLocal.Equal(today.Add(-24 * time.Hour)):
-		return "ontem"
+		return fmt.Sprintf("ontem (%s)", formatted)
 	default:
-		return d.Format("02/01")
+		return formatted
 	}
 }
 
@@ -652,18 +710,40 @@ func buildSlotReprompt(state PendingEntryState) string {
 }
 
 func buildConfirmSummary(state PendingEntryState) string {
-	amountStr := formatAmountBR(state.AmountCents)
 	categoryPath := ""
 	if len(state.Candidates) > 0 {
 		categoryPath = state.Candidates[0].Path
 	}
-	dateLabel := formatDateLabel(state.OccurredAt)
-	paymentLabel := formatPaymentLabel(state.PaymentMethod)
-	if categoryPath != "" && dateLabel != "" {
-		return fmt.Sprintf("Confirma? %s em *%s* para %s no %s?", amountStr, categoryPath, dateLabel, paymentLabel)
+	parts := make([]string, 0, 5)
+	if state.Description != "" {
+		parts = append(parts, fmt.Sprintf("*%s*", state.Description))
 	}
+	parts = append(parts, formatAmountBR(state.AmountCents))
 	if categoryPath != "" {
-		return fmt.Sprintf("Confirma? %s em *%s* no %s?", amountStr, categoryPath, paymentLabel)
+		parts = append(parts, fmt.Sprintf("em *%s*", categoryPath))
 	}
-	return fmt.Sprintf("Confirma o lançamento de %s? Responda *sim* para confirmar ou *não* para cancelar.", amountStr)
+	if dateLabel := formatDateLabel(state.OccurredAt); dateLabel != "" {
+		parts = append(parts, fmt.Sprintf("para %s", dateLabel))
+	}
+	if payment := confirmPaymentSegment(state); payment != "" {
+		parts = append(parts, payment)
+	}
+	return fmt.Sprintf("Confirma? %s?", strings.Join(parts, " "))
+}
+
+func confirmPaymentSegment(state PendingEntryState) string {
+	if state.Kind == interfaces.CategoryKindIncome {
+		return ""
+	}
+	if state.PaymentMethod == "credit_card" {
+		if state.Installments > 1 {
+			return fmt.Sprintf("no crédito em %dx", state.Installments)
+		}
+		return "no crédito à vista"
+	}
+	label := formatPaymentLabel(state.PaymentMethod)
+	if label == "" {
+		return ""
+	}
+	return fmt.Sprintf("no %s", label)
 }

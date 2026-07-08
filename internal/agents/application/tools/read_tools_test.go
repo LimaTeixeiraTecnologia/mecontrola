@@ -304,18 +304,19 @@ func TestListRecurrencesTool_BindingError(t *testing.T) {
 func TestGetTransactionTool_Success(t *testing.T) {
 	ledger := imocks.NewTransactionsLedger(t)
 	ledger.EXPECT().GetTransaction(mock.Anything, "tx-abc").Return(interfaces.Entry{
-		Kind:                 interfaces.EntryKindTransaction,
-		ID:                   "tx-abc",
-		UserID:               testUserID.String(),
-		Direction:            "outcome",
-		PaymentMethod:        "debit",
-		AmountCents:          2500,
-		Description:          "Café",
-		CategoryID:           testCatID.String(),
-		CategoryNameSnapshot: "Alimentação",
-		RefMonth:             "2026-01",
-		OccurredAt:           time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC),
-		Version:              1,
+		Kind:                    interfaces.EntryKindTransaction,
+		ID:                      "tx-abc",
+		UserID:                  testUserID.String(),
+		Direction:               "outcome",
+		PaymentMethod:           "debit",
+		AmountCents:             2500,
+		Description:             "Café",
+		CategoryID:              testCatID.String(),
+		CategoryNameSnapshot:    "Alimentação",
+		SubcategoryNameSnapshot: "Supermercado",
+		RefMonth:                "2026-01",
+		OccurredAt:              time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC),
+		Version:                 1,
 	}, nil).Once()
 
 	h := BuildGetTransactionTool(ledger)
@@ -330,6 +331,37 @@ func TestGetTransactionTool_Success(t *testing.T) {
 	assert.Equal(t, "transaction", res.Kind)
 	assert.Equal(t, int64(2500), res.AmountCents)
 	assert.Equal(t, "Alimentação", res.CategoryNameSnapshot)
+	assert.Equal(t, "Supermercado", res.SubcategoryNameSnapshot)
+}
+
+func TestGetTransactionTool_NoSubcategory(t *testing.T) {
+	ledger := imocks.NewTransactionsLedger(t)
+	ledger.EXPECT().GetTransaction(mock.Anything, "tx-xyz").Return(interfaces.Entry{
+		Kind:                    interfaces.EntryKindTransaction,
+		ID:                      "tx-xyz",
+		UserID:                  testUserID.String(),
+		Direction:               "income",
+		PaymentMethod:           "transfer",
+		AmountCents:             10000,
+		Description:             "Salário",
+		CategoryID:              testCatID.String(),
+		CategoryNameSnapshot:    "Renda",
+		SubcategoryNameSnapshot: "",
+		RefMonth:                "2026-01",
+		OccurredAt:              time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC),
+		Version:                 1,
+	}, nil).Once()
+
+	h := BuildGetTransactionTool(ledger)
+
+	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetTransactionInput{TxID: "tx-xyz"}))
+	require.NoError(t, err)
+
+	var res GetTransactionOutput
+	require.NoError(t, json.Unmarshal(out, &res))
+	assert.Equal(t, "tx-xyz", res.ID)
+	assert.Equal(t, "Renda", res.CategoryNameSnapshot)
+	assert.Equal(t, "", res.SubcategoryNameSnapshot)
 }
 
 func TestGetTransactionTool_BindingError(t *testing.T) {

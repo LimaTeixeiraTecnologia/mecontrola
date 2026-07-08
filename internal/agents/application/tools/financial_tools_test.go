@@ -721,3 +721,40 @@ func TestBuildResolveCardToolNotFound(t *testing.T) {
 	assert.False(t, result.Found)
 	assert.Empty(t, result.CardID)
 }
+
+func TestBuildRegisterExpenseToolCeilingRejectsWithoutRegistrarCall(t *testing.T) {
+	registrar := &fakeRegistrar{}
+
+	handle := BuildRegisterExpenseTool(registrar)
+	argsJSON, _ := json.Marshal(RegisterExpenseInput{
+		AmountCents:   maxEntryAmountCents + 1,
+		Description:   "compra absurda",
+		PaymentMethod: "pix",
+	})
+	out, err := handle.Invoke(identityCtx("wamid-ceiling", 0), argsJSON)
+	require.NoError(t, err)
+
+	var result RegisterExpenseOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "clarify", result.Outcome, "8.2: teto deve retornar clarify sem chamar o registrar")
+	assert.NotEmpty(t, result.Message, "8.2: mensagem de teto deve ser não-vazia")
+	assert.Equal(t, 0, registrar.expenseCalls, "8.2: registrar NÃO deve ser chamado quando acima do teto")
+}
+
+func TestBuildRegisterIncomeToolCeilingRejectsWithoutRegistrarCall(t *testing.T) {
+	registrar := &fakeRegistrar{}
+
+	handle := BuildRegisterIncomeTool(registrar)
+	argsJSON, _ := json.Marshal(RegisterIncomeInput{
+		AmountCents: maxEntryAmountCents + 1,
+		Description: "receita absurda",
+	})
+	out, err := handle.Invoke(identityCtx("wamid-income-ceiling", 0), argsJSON)
+	require.NoError(t, err)
+
+	var result RegisterIncomeOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "clarify", result.Outcome, "8.2: teto income deve retornar clarify sem chamar o registrar")
+	assert.NotEmpty(t, result.Message, "8.2: mensagem de teto income deve ser não-vazia")
+	assert.Equal(t, 0, registrar.incomeCalls, "8.2: registrar NÃO deve ser chamado quando acima do teto (income)")
+}

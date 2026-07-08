@@ -36,8 +36,12 @@ func buildRealLLMProvider(t *testing.T) llm.Provider {
 		httpclient.WithTimeout(30*time.Second),
 	)
 	require.NoError(t, err)
+	model := os.Getenv("AGENT_HARNESS_MODEL")
+	if model == "" {
+		model = "openai/gpt-4o-mini"
+	}
 	return llm.NewOpenRouterProvider(client, llm.Config{
-		Model:          "openai/gpt-4o-mini",
+		Model:          model,
 		BaseURL:        baseURL,
 		APIKey:         apiKey,
 		HTTPReferer:    "https://github.com/LimaTeixeiraTecnologia/mecontrola",

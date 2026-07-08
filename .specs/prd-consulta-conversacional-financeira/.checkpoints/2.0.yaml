@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-consulta-conversacional-financeira/2.0_execution_report.md
+summary: "Bloco C1-C7 adicionado à const mecontrolaAgentInstructions como apêndice aditivo; 16 cenários de teste novos; 565 testes verdes"
+timestamp: 2026-07-07T00:00:00Z

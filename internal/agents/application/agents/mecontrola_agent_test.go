@@ -171,6 +171,192 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 				s.Contains(instructions, "exige confirmação humana explícita")
 			},
 		},
+		{
+			name:         "deve conter os cinco campos obrigatorios (RF-01)",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "REGRA ABSOLUTA DE CAMPOS OBRIGATÓRIOS")
+				s.Contains(instructions, "cinco campos")
+				s.Contains(instructions, "(1) data que a transação ocorreu")
+				s.Contains(instructions, "(2) categoria raiz válida")
+				s.Contains(instructions, "(3) subcategoria folha ligada à raiz")
+				s.Contains(instructions, "(4) descrição")
+				s.Contains(instructions, "(5) valor positivo em centavos")
+			},
+		},
+		{
+			name:         "deve proibir invencao de campo sem evidencia (RF-21)",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "NUNCA invente, estime ou infira campo sem evidência")
+				s.Contains(instructions, "NUNCA infira uma nova transação a partir de memória")
+				s.Contains(instructions, "Informação incompleta ou ambígua → pedir esclarecimento")
+			},
+		},
+		{
+			name:         "deve instruir repasse de data cru sem conversao (RF-07, RF-09)",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "REGRA ABSOLUTA DE DATA (occurredAt)")
+				s.Contains(instructions, "texto de data CRU em occurredAt")
+				s.Contains(instructions, "o sistema converte; o agente NÃO converte")
+				s.Contains(instructions, "semana passada")
+				s.Contains(instructions, "mês passado")
+				s.Contains(instructions, "peça ao usuário uma data específica")
+			},
+		},
+		{
+			name:         "deve conter fronteira multi-item verbatim (RF-16)",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "REGRA ABSOLUTA DE LANÇAMENTO ÚNICO")
+				s.Contains(instructions, "UMA transação por mensagem")
+				s.Contains(instructions, "Percebi mais de um lançamento na mesma mensagem")
+				s.Contains(instructions, "registro um de cada vez")
+				s.Contains(instructions, "NÃO registre nem chame nenhuma ferramenta de escrita quando detectar múltiplos")
+			},
+		},
+		{
+			name:         "deve conter instrucao de repasse de occurredAt na chamada de ferramenta",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "texto de data CRU em occurredAt")
+			},
+		},
+		{
+			name:         "deve conter secao de consultas financeiras C1-C7",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "Consultas Financeiras (C1–C7)")
+				s.Contains(instructions, "MATRIZ DE ROTEAMENTO — CONSULTAS")
+			},
+		},
+		{
+			name:         "deve conter roteamento deterministico C1 com query_month e query_plan",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "C1")
+				s.Contains(instructions, "query_month E query_plan")
+				s.Contains(instructions, "America/Sao_Paulo")
+			},
+		},
+		{
+			name:         "deve conter roteamento C4 resolve_card seguido de query_card_invoice",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "C4")
+				s.Contains(instructions, "resolve_card")
+				s.Contains(instructions, "query_card_invoice")
+			},
+		},
+		{
+			name:         "deve conter roteamento C5 com query_month limit=1 e get_transaction",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "C5")
+				s.Contains(instructions, "query_month com limit=1")
+				s.Contains(instructions, "get_transaction")
+			},
+		},
+		{
+			name:         "deve conter roteamento C6 com limit padrao 5",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "C6")
+				s.Contains(instructions, "limit=5")
+			},
+		},
+		{
+			name:         "deve conter mapa slug para nome das 5 raizes",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "custo-fixo")
+				s.Contains(instructions, "conhecimento")
+				s.Contains(instructions, "prazeres")
+				s.Contains(instructions, "metas")
+				s.Contains(instructions, "liberdade-financeira")
+				s.Contains(instructions, "Liberdade Financeira")
+			},
+		},
+		{
+			name:         "deve conter regra de formatacao de valores centavos para reais",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "REGRA DE FORMATAÇÃO DE VALORES")
+				s.Contains(instructions, "123450 → R$ 1.234,50")
+				s.Contains(instructions, "RF-22")
+			},
+		},
+		{
+			name:         "deve conter regra C5 de categoria best-effort e subcategoryNameSnapshot",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "subcategoryNameSnapshot")
+				s.Contains(instructions, "categoryNameSnapshot > subcategoryNameSnapshot")
+				s.Contains(instructions, "best-effort")
+			},
+		},
+		{
+			name:         "deve conter regra de mes vazio com retrocesso (RF-07a)",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "REGRA DE MÊS VAZIO")
+				s.Contains(instructions, "mês anterior")
+			},
+		},
+		{
+			name:         "deve conter regra de alertas em C2/C3/C7 (RF-08a)",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "REGRA DE ALERTAS EM C2/C3/C7")
+				s.Contains(instructions, "Nenhum alerta ativo. ✅")
+			},
+		},
+		{
+			name:         "deve conter regra C7 orçamento completo com plannedCents nulo",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "REGRA C7 — ORÇAMENTO COMPLETO")
+				s.Contains(instructions, "*Sem limite definido*")
+				s.Contains(instructions, "totalPlannedCents")
+				s.Contains(instructions, "totalSpentCents")
+			},
+		},
+		{
+			name:         "deve conter guard de cardId exclusivamente de resolve_card ou list_cards (RF-32a)",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "REGRA GUARD DE cardId")
+				s.Contains(instructions, "EXCLUSIVAMENTE do retorno de resolve_card ou list_cards")
+				s.Contains(instructions, "NUNCA use um cardId proveniente de texto do usuário")
+			},
+		},
+		{
+			name:         "deve conter regra de ambiguidade de cartao com found=false",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "REGRA DE AMBIGUIDADE DE CARTÃO")
+				s.Contains(instructions, "found=false")
+			},
+		},
+		{
+			name:         "deve conter mensagens de ausencia e erro verbatim para consultas",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "Você ainda não tem um orçamento para")
+				s.Contains(instructions, "Não encontrei fatura para o cartão")
+				s.Contains(instructions, "Não há lançamentos em")
+				s.Contains(instructions, "Não consegui consultar agora. Tente novamente em breve.")
+			},
+		},
+		{
+			name:         "deve conter regra de follow-up sem resposta de memoria (RF-26/RF-27)",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "FOLLOW-UP")
+				s.Contains(instructions, "nunca responda de memória")
+			},
+		},
 	}
 
 	for _, scenario := range scenarios {

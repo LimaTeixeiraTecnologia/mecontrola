@@ -137,6 +137,8 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	scoringHooks := agentapplication.NewScoringHooks(scorerRunner)
 
 	writeLedgerRepo := persistence.NewWriteLedgerRepository(deps.DB, deps.O11y)
+	idempotentWrite := usecases.NewIdempotentWrite(writeLedgerRepo, deps.O11y)
+	idemAdapter := idempotentWriterAdapter{uc: idempotentWrite}
 
 	categoriesReader := binding.NewCategoriesReaderAdapter(
 		deps.CategoriesModule.SearchDictionaryUC,
@@ -190,7 +192,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	onboardingEngine := workflow.NewEngine[workflows.OnboardingState](workflowStore, deps.O11y)
 	confirmEngine := workflow.NewEngine[workflows.ConfirmState](workflowStore, deps.O11y)
 	pendingEntryEngine := workflow.NewEngine[workflows.PendingEntryState](workflowStore, deps.O11y)
-	pendingEntryDef := workflows.BuildPendingEntryWorkflow(txLedger, cardManager, categoriesReader)
+	pendingEntryDef := workflows.BuildPendingEntryWorkflow(txLedger, cardManager, categoriesReader, idemAdapter)
 	registerAttempt := usecases.NewRegisterAttempt(categoriesReader, txLedger, pendingEntryEngine, pendingEntryDef, deps.O11y)
 
 	threadGateway := memorypostgres.NewThreadRepository(deps.DB, deps.O11y)
@@ -398,4 +400,21 @@ func buildWhatsAppAgentRoute(publisher outbox.Publisher, o11y observability.Obse
 		routeTotal.Add(ctx, 1, observability.String("outcome", "routed"))
 		return wadispatcher.OutcomeAgent
 	}
+}
+
+type idempotentWriterAdapter struct {
+	uc *usecases.IdempotentWrite
+}
+
+func (a idempotentWriterAdapter) Execute(
+	ctx context.Context,
+	userID uuid.UUID,
+	wamid string,
+	itemSeq int,
+	operation string,
+	resourceKind string,
+	write workflows.IdempotentWriteFn,
+) (uuid.UUID, agent.ToolOutcome, error) {
+	res, err := a.uc.Execute(ctx, userID, wamid, itemSeq, operation, resourceKind, usecases.WriteFn(write))
+	return res.ResourceID, res.Outcome, err
 }

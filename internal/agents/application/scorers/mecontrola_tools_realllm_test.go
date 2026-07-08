@@ -81,9 +81,50 @@ func buildCaptureTool(name, description string, schema map[string]any, capture *
 }
 
 type harnessScenario struct {
-	input        string
-	expectedTool string
-	tools        []tool.ToolHandle
+	input         string
+	expectedTool  string
+	expectedTools []string
+	tools         []tool.ToolHandle
+}
+
+type allToolsScorer struct {
+	id    string
+	tools []string
+}
+
+func (s *allToolsScorer) ID() string              { return s.id }
+func (s *allToolsScorer) Kind() scorer.ScorerKind { return scorer.ScorerKindCodeBased }
+
+func (s *allToolsScorer) Score(_ context.Context, sample scorer.RunSample) (scorer.ScoreResult, error) {
+	called := make(map[string]bool, len(sample.ToolCalls))
+	for _, tc := range sample.ToolCalls {
+		called[tc.Name] = true
+	}
+	for _, t := range s.tools {
+		if !called[t] {
+			calledNames := make([]string, 0, len(sample.ToolCalls))
+			for _, tc := range sample.ToolCalls {
+				calledNames = append(calledNames, tc.Name)
+			}
+			return scorer.ScoreResult{
+				Score:    0.0,
+				Reason:   fmt.Sprintf("tool esperada %q não foi chamada; chamadas: %v", t, calledNames),
+				Metadata: map[string]any{"missing": t, "called": calledNames},
+			}, nil
+		}
+	}
+	return scorer.ScoreResult{
+		Score:    1.0,
+		Reason:   fmt.Sprintf("todas as tools esperadas foram chamadas: %v", s.tools),
+		Metadata: map[string]any{"tools": s.tools},
+	}, nil
+}
+
+func newAllToolsScorer(tools []string) scorer.Scorer {
+	return &allToolsScorer{
+		id:    "all-tools:" + strings.Join(tools, "+"),
+		tools: tools,
+	}
 }
 
 func isTransientLLMError(err error) bool {
@@ -130,10 +171,17 @@ func runHarnessScenario(t *testing.T, ctx context.Context, provider llm.Provider
 		})
 	}
 
-	sc := NewExpectedToolScorer(s.expectedTool)
+	var sc scorer.Scorer
+	label := s.expectedTool
+	if len(s.expectedTools) > 0 {
+		sc = newAllToolsScorer(s.expectedTools)
+		label = strings.Join(s.expectedTools, "+")
+	} else {
+		sc = NewExpectedToolScorer(s.expectedTool)
+	}
 	scored, err := sc.Score(ctx, sample)
 	require.NoError(t, err)
-	t.Logf("[%s] score=%.2f reason=%s tool_calls=%v", s.expectedTool, scored.Score, scored.Reason, result.ToolCalls)
+	t.Logf("[%s] score=%.2f reason=%s tool_calls=%v", label, scored.Score, scored.Reason, result.ToolCalls)
 	return scored
 }
 
@@ -162,7 +210,7 @@ func buildAllFakeTools(userID string) ([]tool.ToolHandle, map[string]**captureRe
 		buildCaptureTool("register_expense", "Registra uma despesa", baseSchema("description", "amountCents", "paymentMethod", "occurredAt", "categoryId"), makeCapture("register_expense")),
 		buildCaptureTool("register_income", "Registra uma receita", baseSchema("description", "amountCents", "occurredAt"), makeCapture("register_income")),
 		buildCaptureTool("create_recurrence", "Cria template recorrente", baseSchema("description", "amountCents", "frequency", "dayOfMonth", "direction"), makeCapture("create_recurrence")),
-		buildCaptureTool("query_month", "Consulta resumo do mês", baseSchema("refMonth"),
+		buildCaptureTool("query_month", "Consulta o resumo e os lançamentos do mês financeiro do usuário; use para 'quanto gastei?', 'como foi meu mês?', 'última transação' e 'últimas N transações'.", baseSchema("refMonth"),
 			func() **captureResult {
 				var c *captureResult
 				captures["query_month"] = &c
@@ -179,9 +227,9 @@ func buildAllFakeTools(userID string) ([]tool.ToolHandle, map[string]**captureRe
 				_ = captureTool
 				return &c
 			}()),
-		buildCaptureTool("get_transaction", "Busca lançamento avulso pelo ID", baseSchema("transactionId"), makeCapture("get_transaction")),
-		buildCaptureTool("search_transactions", "Busca lançamentos por palavra-chave", baseSchema("query", "refMonth"), makeCapture("search_transactions")),
-		buildCaptureTool("list_cards", "Lista os cartões cadastrados do usuário; use apenas quando o usuário pedir explicitamente para ver, listar ou saber quais são seus cartões, nunca como etapa preparatória de um registro de compra", baseSchema(),
+		buildCaptureTool("get_transaction", "Retorna os detalhes de um lançamento de transação pelo ID.", baseSchema("txId"), makeCapture("get_transaction")),
+		buildCaptureTool("search_transactions", "Pesquisa lançamentos do usuário por termo explícito no mês informado; use APENAS quando o usuário fornecer uma palavra-chave ou termo de busca específico — NÃO usar para 'última transação' ou 'últimas N transações'.", baseSchema("query", "refMonth"), makeCapture("search_transactions")),
+		buildCaptureTool("list_cards", "Lista os cartões cadastrados do usuário; use apenas quando o usuário pedir explicitamente para ver, listar ou saber quais são seus cartões, nunca como etapa preparatória de um registro de compra ou consulta de fatura", baseSchema(),
 			func() **captureResult {
 				var c *captureResult
 				captures["list_cards"] = &c
@@ -196,7 +244,7 @@ func buildAllFakeTools(userID string) ([]tool.ToolHandle, map[string]**captureRe
 		buildCaptureTool("delete_recurrence", "Solicita exclusão de recorrência", baseSchema("recurrenceId"), makeCapture("delete_recurrence")),
 		buildCaptureTool("list_categories", "Lista categorias disponíveis", baseSchema(), makeCapture("list_categories")),
 		buildCaptureTool("classify_category", "Classifica lançamento por categoria", baseSchema("description", "direction"), makeCapture("classify_category")),
-		buildCaptureTool("query_plan", "Consulta plano orçamentário",
+		buildCaptureTool("query_plan", "Consulta o plano orçamentário mensal e alertas do usuário; use para 'como está meu orçamento?', 'panorama do mês' (junto com query_month) e 'orçamento completo'.",
 			baseSchema("refMonth"),
 			func() **captureResult {
 				var c *captureResult
@@ -208,6 +256,7 @@ func buildAllFakeTools(userID string) ([]tool.ToolHandle, map[string]**captureRe
 		buildCaptureTool("edit_entry", "Inicia a edição de um lançamento pelo ID; chame imediatamente quando o usuário disser que quer editar um lançamento identificado, mesmo sem saber ainda o que mudar, pois a própria ferramenta retorna a confirmação necessária", baseSchema("entryId", "entryKind"), makeCapture("edit_entry")),
 		buildCaptureTool("delete_entry", "Solicita exclusão de lançamento ou cartão", baseSchema("targetRef", "targetKind"), makeCapture("delete_entry")),
 		buildCaptureTool("update_card", "Solicita atualização de cartão", baseSchema("cardId", "nickname", "dueDay"), makeCapture("update_card")),
+		buildCaptureTool("resolve_card", "Resolve o cartão de crédito do usuário pelo apelido informado, retornando o cardId; use como etapa obrigatória antes de registrar compra no crédito OU antes de consultar a fatura do cartão (query_card_invoice).", baseSchema("nickname"), makeCapture("resolve_card")),
 	}
 
 	_ = userID
@@ -245,18 +294,29 @@ func TestRealLLM_ToolCoverage_All22Tools(t *testing.T) {
 		{input: "quero editar o lançamento id lanc-001", expectedTool: "edit_entry", tools: tools},
 		{input: "quero excluir o lançamento id lanc-002", expectedTool: "delete_entry", tools: tools},
 		{input: "quero atualizar o apelido do cartão id cartao-001 para nubank pessoal", expectedTool: "update_card", tools: tools},
+		{input: "como estou indo?", expectedTools: []string{"query_month", "query_plan"}, tools: tools},
+		{input: "como foi meu orçamento de janeiro/2026?", expectedTool: "query_plan", tools: tools},
+		{input: "como está meu orçamento do mês atual?", expectedTool: "query_plan", tools: tools},
+		{input: "quanto está minha fatura do cartão nubank?", expectedTool: "resolve_card", tools: tools},
+		{input: "qual foi a minha última transação?", expectedTool: "query_month", tools: tools},
+		{input: "quais foram as minhas últimas 5 transações?", expectedTool: "query_month", tools: tools},
+		{input: "me mostra o orçamento completo", expectedTool: "query_plan", tools: tools},
 	}
 
-	require.Len(t, scenarios, 22, "harness deve cobrir exatamente 22 tools")
+	require.Len(t, scenarios, 29, "harness deve cobrir 22 tools existentes + 7 cenários C1-C7")
 
 	hits := 0
 	uncovered := []string{}
 	for _, s := range scenarios {
 		result := runHarnessScenario(t, ctx, provider, s)
+		label := s.expectedTool
+		if len(s.expectedTools) > 0 {
+			label = strings.Join(s.expectedTools, "+")
+		}
 		if result.Score >= 1.0 {
 			hits++
 		} else {
-			uncovered = append(uncovered, s.expectedTool)
+			uncovered = append(uncovered, label)
 		}
 	}
 
@@ -264,7 +324,7 @@ func TestRealLLM_ToolCoverage_All22Tools(t *testing.T) {
 	t.Logf("M-04 (acerto de tool esperada): %.2f (%d/%d)", m04, hits, len(scenarios))
 	t.Logf("Tools não exercidas ou erradas: %v", uncovered)
 
-	require.Empty(t, uncovered, "RF-29: todas as 22 tools devem ser exercidas")
+	require.Empty(t, uncovered, "RF-29: todas as tools e cenários C1-C7 devem ser exercidos")
 	require.GreaterOrEqual(t, m04, 0.90, "M-04: acerto de tool esperada deve ser >= 0.90")
 }
 

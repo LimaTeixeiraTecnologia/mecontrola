@@ -82,6 +82,16 @@ type CategoryChoiceDecision struct {
 }
 
 var (
+	weekdayNames = map[string]time.Weekday{
+		"segunda": time.Monday,
+		"terca":   time.Tuesday,
+		"quarta":  time.Wednesday,
+		"quinta":  time.Thursday,
+		"sexta":   time.Friday,
+		"sabado":  time.Saturday,
+		"domingo": time.Sunday,
+	}
+
 	reMoney       = regexp.MustCompile(`(?i)R\$\s*[\d.,]+`)
 	reLaunchVerbs = regexp.MustCompile(`(?i)\b(gastei|paguei|comprei|recebi|ganhei)\b`)
 
@@ -103,10 +113,10 @@ var (
 		"cartao":          "credit_card",
 		"dinheiro":        "cash",
 		"especie":         "cash",
-		"boleto":          "bank_slip",
-		"ted":             "bank_transfer",
-		"doc":             "bank_transfer",
-		"transferencia":   "bank_transfer",
+		"boleto":          "boleto",
+		"ted":             "ted",
+		"doc":             "doc",
+		"transferencia":   "ted",
 	}
 )
 
@@ -136,6 +146,31 @@ func recognizePaymentMethod(text string) string {
 	return ""
 }
 
+func parseWeekday(text string, now time.Time) (string, bool) {
+	normalized := normalizeText(text)
+	past := false
+	if strings.HasSuffix(normalized, " passada") {
+		past = true
+		normalized = strings.TrimSuffix(normalized, " passada")
+	} else if strings.HasSuffix(normalized, " passado") {
+		past = true
+		normalized = strings.TrimSuffix(normalized, " passado")
+	}
+	normalized = strings.TrimSuffix(normalized, "-feira")
+	wd, ok := weekdayNames[normalized]
+	if !ok {
+		return "", false
+	}
+	loc := now.Location()
+	today := now.In(loc)
+	daysBack := (int(today.Weekday()) - int(wd) + 7) % 7
+	result := today.AddDate(0, 0, -daysBack)
+	if past {
+		result = result.AddDate(0, 0, -7)
+	}
+	return result.Format("2006-01-02"), true
+}
+
 func parseInputDate(text string, now time.Time) string {
 	lower := normalizeText(text)
 	switch lower {
@@ -145,6 +180,9 @@ func parseInputDate(text string, now time.Time) string {
 		return now.Add(-24 * time.Hour).Format("2006-01-02")
 	case "anteontem":
 		return now.Add(-48 * time.Hour).Format("2006-01-02")
+	}
+	if d, ok := parseWeekday(text, now); ok {
+		return d
 	}
 	if len(text) == 5 && text[2] == '/' {
 		day, errD := strconv.Atoi(text[:2])

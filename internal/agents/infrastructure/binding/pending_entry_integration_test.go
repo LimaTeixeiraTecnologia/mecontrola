@@ -42,7 +42,7 @@ func (s *PendingEntryIntegrationSuite) SetupSuite() {
 	s.store = workflowpg.NewPostgresStore(obs, db)
 	s.engine = workflow.NewEngine[workflows.PendingEntryState](s.store, obs)
 	s.ledger = &integNoopLedger{}
-	s.def = workflows.BuildPendingEntryWorkflow(s.ledger, nil, nil)
+	s.def = workflows.BuildPendingEntryWorkflow(s.ledger, nil, nil, nil)
 	s.userID = uuid.New()
 }
 

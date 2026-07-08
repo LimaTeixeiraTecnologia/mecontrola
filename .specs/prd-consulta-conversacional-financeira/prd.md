@@ -202,9 +202,11 @@ Escopo de entrega:
 
 - RF-35: A entrega DEVE se restringir a (a) evoluir as instruções/roteamento em
   `internal/agents/application/agents/mecontrola_agent.go`, (b) adicionar testes de regressão para
-  C1–C7 e (c) **uma única extensão aditiva**: expor `subcategoryNameSnapshot` na saída de
-  `get_transaction` (dado já presente no domínio `Entry`), sem lógica nova. NÃO DEVE criar novas
-  tools, alterar assinaturas de use case, nem tocar `module.go`/bindings. **(Decisões D-03, D-09)**
+  C1–C7, (c) **uma única extensão aditiva de dado**: expor `subcategoryNameSnapshot` na saída de
+  `get_transaction` (dado já presente no domínio `Entry`), sem lógica nova, e (d) **ajuste aditivo de
+  descrição LLM-facing** de `resolve_card` para roteamento confiável de C4, sem alterar assinatura,
+  schema, `cardId`-scope ou comportamento do `exec`. NÃO DEVE criar novas tools, alterar assinaturas
+  de use case, nem tocar `module.go`/bindings. **(Decisões D-03, D-09, D-10)**
 - RF-36: A conversão de centavos para reais DEVE ser feita por função pura reutilizável (helper de
   presenter/mapper), garantindo consistência entre C2, C3 e C7 (formatação determinística).
 
@@ -260,7 +262,9 @@ Casos de borda de UX: ambiguidade de cartão (RF-15), ausência de dados (RF-28.
 - Registro, edição e exclusão de lançamentos, cartões ou orçamento (write/HITL).
 - Alertas proativos e notificações não solicitadas.
 - Onboarding e ativação de plano.
-- Criação de novas tools ou alteração de tools/módulos existentes (RF-35).
+- Criação de novas tools ou alteração de tools/módulos existentes (RF-35), com a única exceção
+  aditiva de D-10: refinamento da descrição LLM-facing de `resolve_card` (sem lógica, assinatura,
+  schema ou comportamento).
 - Consultas fora do domínio: investimentos, empréstimos, seguros, impostos complexos, temas não
   financeiros.
 - Múltiplos canais além do WhatsApp e respostas com mídia (imagens, PDFs, gráficos).
@@ -289,6 +293,31 @@ Casos de borda de UX: ambiguidade de cartão (RF-15), ausência de dados (RF-28.
 - **D-09 (RF-06, RF-35)**: exceção aditiva única a D-03 — expor `subcategoryNameSnapshot` na saída de
   `get_transaction` para C5 exibir `Categoria > Subcategoria` fiel ao US; dado já existe em `Entry`,
   mudança puramente aditiva, sem lógica nem nova tool.
+- **D-10 (RF-05, RF-35) — emenda pós-review (2026-07-07)**: exceção aditiva a D-03 sancionando o
+  refinamento da descrição LLM-facing de `resolve_card` (menção a `query_card_invoice` + instrução de
+  que o `nickname` é a palavra exata que o usuário citou para o cartão). Motivo: evidência empírica
+  (real-LLM, modelo de produção `openai/gpt-4o-mini`) de que sem esse refinamento o cenário C4
+  ("fatura do cartão {apelido}") roteava para `resolve_card` apenas ~30–50% das execuções — o agente
+  pedia o apelido já informado em vez de resolver o cartão. Modelos mais fortes (gpt-4o, gemini-2.0)
+  pioravam o comportamento (raciocinavam pela clarificação). A correção combina (1) instrução C4
+  guiada por exemplo (input→ação) e (2) esta descrição de `resolve_card`, elevando C4 a **10/10** no
+  gate de confiabilidade. Sem alteração de assinatura, schema, `cardId`-scope (RF-32a intacto) ou
+  comportamento do `exec` — mudança puramente descritiva. Gate de aceite de C4 promovido de
+  asserção single-shot (que produzia falso-verde) para **gate estatístico ≥ 8/10 execuções**
+  (`TestRealLLM_QueryCardInvoiceChain_C4`).
+
+- **D-11 (RF-06) — residual aceito pós-review (2026-07-07)**: a **apresentação** da categoria de C5
+  no formato literal `Raiz > Folha` (símbolo `>`) é **best-effort de apresentação**, não garantida no
+  modelo de produção (`openai/gpt-4o-mini`). Evidência empírica: 0/32 de aderência ao `>` em três
+  estratégias de instrução (proibição+exemplo, molde de resposta few-shot, regra prioritária no topo);
+  o viés conversacional do modelo narra a categoria em prosa ("categorizada como *Custo Fixo* na
+  subcategoria *Supermercado*"). O **dado** permanece sempre correto e completo (raiz e subcategoria
+  presentes, vindos de `get_transaction` — RF-06/RF-06a/D-09 satisfeitos quanto à origem e completude).
+  Impor o `>` exigiria formatador determinístico fora do LLM (código + ADR), rejeitado nesta entrega
+  por desviar do princípio "o LLM monta a resposta". O contrato de teste de C5
+  (`TestRealLLM_LastTransactionChain_C5`) assevera a **presença** de categoria e subcategoria (contrato
+  real), não a string `>`. RF-06 permanece normativo na instrução (o agente é instruído a usar `>`),
+  mas a conformidade de apresentação é degradação graciosa aceita.
 
 ## Suposições e Questões em Aberto
 

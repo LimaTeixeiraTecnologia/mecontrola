@@ -12,14 +12,14 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | State-as-type `PendingOperationKind` + campo `ItemSeq` no `PendingEntryState` | pending | — | — | mastra |
-| 2.0 | Porta `IdempotentWriter` + integração de idempotência em `executeWrite` | pending | 1.0 | Não | mastra |
-| 3.0 | Wiring de produção da idempotência no `module` | pending | 2.0 | Não | mastra |
-| 4.0 | Parser de dias da semana `parseWeekday` + encaixe em `parseInputDate` | pending | — | Com 5.0, 6.0 | mastra |
-| 5.0 | Guarda de teto de valor `validateEntryAmount` nos execs de registro | pending | — | Com 4.0, 6.0 | mastra |
-| 6.0 | Correção de `knownPaymentMethods` + gate `map × ParsePaymentMethod` | pending | — | Com 4.0, 5.0 | mastra |
-| 7.0 | Endurecimento das instruções do agente `mecontrola` | pending | 4.0, 5.0, 6.0 | Não | mastra |
-| 8.0 | Validação: testes unit + harness + real-LLM (M-04 ≥ 0,90) | pending | 3.0, 7.0 | Não | mastra |
+| 1.0 | State-as-type `PendingOperationKind` + campo `ItemSeq` no `PendingEntryState` | done | — | — | mastra |
+| 2.0 | Porta `IdempotentWriter` + integração de idempotência em `executeWrite` | done | 1.0 | Não | mastra |
+| 3.0 | Wiring de produção da idempotência no `module` | done | 2.0 | Não | mastra |
+| 4.0 | Parser de dias da semana `parseWeekday` + encaixe em `parseInputDate` | done | — | Com 5.0, 6.0 | mastra |
+| 5.0 | Guarda de teto de valor `validateEntryAmount` nos execs de registro | done | — | Com 4.0, 6.0 | mastra |
+| 6.0 | Correção de `knownPaymentMethods` + gate `map × ParsePaymentMethod` | done | — | Com 4.0, 5.0 | mastra |
+| 7.0 | Endurecimento das instruções do agente `mecontrola` | done | 4.0, 5.0, 6.0 | Não | mastra |
+| 8.0 | Validação: testes unit + harness + real-LLM (M-04 ≥ 0,90) | done | 3.0, 7.0 | Não | mastra |
 
 ## Dependências Críticas
 - Trilha de idempotência estritamente sequencial: **1.0 → 2.0 → 3.0**. A porta `IdempotentWriter` (2.0) depende do campo `ItemSeq` e do `String()` do `PendingOperationKind` (1.0); o wiring no `module` (3.0) depende da assinatura nova de `BuildPendingEntryWorkflow` (2.0).

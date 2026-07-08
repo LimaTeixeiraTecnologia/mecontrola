@@ -27,7 +27,7 @@ import (
 func chainGatedRegistrar(cat agentsifaces.CategoriesReader, ledger agentsifaces.TransactionsLedger, obs *fake.Provider) (*agentusecases.RegisterAttempt, *harnessStore) {
 	store := newHarnessStore()
 	engine := workflow.NewEngine[workflows.PendingEntryState](store, obs)
-	def := workflows.BuildPendingEntryWorkflow(ledger, nil, cat)
+	def := workflows.BuildPendingEntryWorkflow(ledger, nil, cat, nil)
 	return agentusecases.NewRegisterAttempt(cat, ledger, engine, def, obs), store
 }
 
@@ -220,4 +220,150 @@ func TestRealLLM_RegisterOpensConfirmationGate(t *testing.T) {
 	require.Equal(t, int64(15000), st.AmountCents, "valor original deve ser preservado no gate")
 	require.Equal(t, "pix", st.PaymentMethod, "forma de pagamento original deve ser preservada")
 	require.Equal(t, workflows.PendingStatusActive, st.Status, "O-07/RF-38: escrita não persiste antes da confirmação")
+}
+
+func TestRealLLM_QueryCardInvoiceChain_C4(t *testing.T) {
+	provider := buildRealLLMProvider(t)
+
+	const iterations = 10
+	const minPass = 8
+
+	passes := 0
+	for i := 1; i <= iterations; i++ {
+		obs := fake.NewProvider()
+		userID := uuid.New()
+		cardID := uuid.New()
+
+		var capturedCardID uuid.UUID
+
+		cardMock := imocks.NewCardManager(t)
+		cardMock.EXPECT().ResolveCardByNickname(mock.Anything, mock.Anything, mock.AnythingOfType("string")).
+			RunAndReturn(func(_ context.Context, _ uuid.UUID, _ string) (agentsifaces.Card, error) {
+				return agentsifaces.Card{ID: cardID.String(), UserID: userID.String(), Nickname: "Nubank", Bank: "Nubank", DueDay: 10}, nil
+			}).Maybe()
+
+		ledgerMock := imocks.NewTransactionsLedger(t)
+		ledgerMock.EXPECT().GetCardInvoice(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+			RunAndReturn(func(_ context.Context, cid uuid.UUID, _ string) (agentsifaces.CardInvoice, error) {
+				capturedCardID = cid
+				return agentsifaces.CardInvoice{
+					ID:              uuid.New(),
+					UserID:          userID,
+					CardID:          cardID,
+					RefMonth:        "2026-07",
+					ClosingAt:       time.Now().Add(10 * 24 * time.Hour),
+					DueAt:           time.Now().Add(17 * 24 * time.Hour),
+					ItemsTotalCents: 45000,
+					Items:           []agentsifaces.CardInvoiceItem{},
+				}, nil
+			}).Maybe()
+
+		tools := []tool.ToolHandle{
+			agenttools.BuildResolveCardTool(cardMock),
+			agenttools.BuildQueryCardInvoiceTool(ledgerMock),
+		}
+
+		a := BuildMeControlaAgent(provider, tools, nil, obs)
+		ctx := agent.WithToolInvocationContext(context.Background(), userID.String(), "wamid-c4-chain", 0)
+		ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
+
+		result, err := a.Execute(ctx, agent.Request{
+			AgentID: MecontrolaAgentID,
+			Messages: []llm.Message{
+				{Role: "user", Content: "quanto está minha fatura do cartão nubank?"},
+			},
+			MaxTokens: 1024,
+		})
+		cancel()
+		require.NoError(t, err)
+
+		lower := strings.ToLower(result.Content)
+		require.NotContainsf(t, lower, "nubank-", "anti-alucinação: resposta não deve conter cardId bruto fabricado")
+
+		if capturedCardID == cardID {
+			passes++
+		} else {
+			t.Logf("C4 iteração %d não roteou resolve_card→query_card_invoice: %s", i, result.Content)
+		}
+	}
+
+	t.Logf("C4 gate de confiabilidade: %d/%d roteou resolve_card→query_card_invoice", passes, iterations)
+	require.GreaterOrEqualf(t, passes, minPass,
+		"RF-05/RF-32a: C4 deve rotear resolve_card→query_card_invoice em pelo menos %d de %d execuções (cardId sempre de resolve_card)", minPass, iterations)
+}
+
+func TestRealLLM_LastTransactionChain_C5(t *testing.T) {
+	provider := buildRealLLMProvider(t)
+
+	obs := fake.NewProvider()
+	userID := uuid.New()
+	knownTxID := "txn-known-" + uuid.New().String()
+
+	var capturedTxID string
+
+	ledgerMock := imocks.NewTransactionsLedger(t)
+	ledgerMock.EXPECT().GetMonthlySummary(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+		Return(agentsifaces.MonthlySummary{
+			RefMonth:     "2026-07",
+			IncomeCents:  500000,
+			OutcomeCents: 32000,
+			TotalCents:   468000,
+		}, nil).Maybe()
+	ledgerMock.EXPECT().ListMonthlyEntries(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string"), mock.Anything, mock.Anything).
+		Return([]agentsifaces.MonthlyEntry{
+			{
+				Kind:        agentsifaces.EntryKindTransaction,
+				ID:          knownTxID,
+				RefMonth:    "2026-07",
+				AmountCents: 32000,
+				Direction:   "outcome",
+				Description: "Supermercado Extra",
+				CreatedAt:   time.Now().Add(-2 * time.Hour),
+			},
+		}, nil).Maybe()
+	ledgerMock.EXPECT().GetTransaction(mock.Anything, mock.AnythingOfType("string")).
+		RunAndReturn(func(_ context.Context, txID string) (agentsifaces.Entry, error) {
+			capturedTxID = txID
+			return agentsifaces.Entry{
+				Kind:                    agentsifaces.EntryKindTransaction,
+				ID:                      txID,
+				UserID:                  userID.String(),
+				Direction:               "outcome",
+				PaymentMethod:           "debit",
+				AmountCents:             32000,
+				Description:             "Supermercado Extra",
+				CategoryNameSnapshot:    "Custo Fixo",
+				SubcategoryNameSnapshot: "Supermercado",
+				RefMonth:                "2026-07",
+				OccurredAt:              time.Now().Add(-2 * time.Hour),
+			}, nil
+		}).Maybe()
+
+	tools := []tool.ToolHandle{
+		agenttools.BuildQueryMonthTool(ledgerMock),
+		agenttools.BuildGetTransactionTool(ledgerMock),
+	}
+
+	a := BuildMeControlaAgent(provider, tools, nil, obs)
+	ctx := agent.WithToolInvocationContext(context.Background(), userID.String(), "wamid-c5-chain", 0)
+	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	defer cancel()
+
+	result, err := a.Execute(ctx, agent.Request{
+		AgentID: MecontrolaAgentID,
+		Messages: []llm.Message{
+			{Role: "user", Content: "qual foi a minha última transação?"},
+		},
+		MaxTokens: 1024,
+	})
+	require.NoError(t, err)
+	t.Logf("C5 resposta: %s", result.Content)
+
+	require.Equal(t, knownTxID, capturedTxID, "C5: get_transaction deve ser chamado com o ID retornado por query_month")
+
+	lower := strings.ToLower(result.Content)
+	require.True(t,
+		strings.Contains(lower, "custo fixo") && strings.Contains(lower, "supermercado"),
+		"RF-06/D-11: resposta deve exibir categoryNameSnapshot E subcategoryNameSnapshot via get_transaction (o formato literal '>' é best-effort de apresentação, ver D-11); resposta=%s", result.Content,
+	)
 }

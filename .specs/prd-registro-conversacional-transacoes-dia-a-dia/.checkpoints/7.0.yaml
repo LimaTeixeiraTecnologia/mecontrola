@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-registro-conversacional-transacoes-dia-a-dia/7.0_execution_report.md
+summary: Instruções do agente endurecidas com 5 campos obrigatórios, data CRU, fronteira multi-item (RF-16) e 6 novos testes de asserção
+timestamp: 2026-07-07T00:00:00Z

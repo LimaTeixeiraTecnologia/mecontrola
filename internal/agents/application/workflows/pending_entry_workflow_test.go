@@ -36,7 +36,7 @@ func (s *PendingEntryWorkflowSuite) SetupTest() {
 	s.store = newWfStore()
 	s.ledger = imocks.NewTransactionsLedger(s.T())
 	s.engine = workflow.NewEngine[PendingEntryState](s.store, fake.NewProvider())
-	s.def = BuildPendingEntryWorkflow(s.ledger, nil, nil)
+	s.def = BuildPendingEntryWorkflow(s.ledger, nil, nil, nil)
 	s.userID = uuid.New()
 }
 

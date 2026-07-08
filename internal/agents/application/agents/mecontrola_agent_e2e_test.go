@@ -232,7 +232,7 @@ func (s *MeControlaAgentE2ESuite) SetupSuite() {
 	reader := &e2eStubCategoriesReader{rootID: s.categoryID, leafID: s.subcategoryID, version: s.editorialVersion}
 	store := workflowpg.NewPostgresStore(o11y, db)
 	s.pendingEngine = workflow.NewEngine[workflows.PendingEntryState](store, o11y)
-	s.pendingDef = workflows.BuildPendingEntryWorkflow(s.adapter, nil, reader)
+	s.pendingDef = workflows.BuildPendingEntryWorkflow(s.adapter, nil, reader, nil)
 	registerAttempt := agentusecases.NewRegisterAttempt(reader, s.adapter, s.pendingEngine, s.pendingDef, o11y)
 
 	s.tools = []tool.ToolHandle{

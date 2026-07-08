@@ -39,7 +39,7 @@ func (s *TransactionsLedgerPendingSuite) SetupTest() {
 }
 
 func (s *TransactionsLedgerPendingSuite) buildDef() workflow.Definition[PendingEntryState] {
-	return BuildPendingEntryWorkflow(s.ledger, nil, nil)
+	return BuildPendingEntryWorkflow(s.ledger, nil, nil, nil)
 }
 
 func (s *TransactionsLedgerPendingSuite) key(suffix string) string {

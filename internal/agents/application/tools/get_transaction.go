@@ -15,20 +15,21 @@ type GetTransactionInput struct {
 }
 
 type GetTransactionOutput struct {
-	Kind                 string    `json:"kind"`
-	ID                   string    `json:"id"`
-	UserID               string    `json:"userId"`
-	Direction            string    `json:"direction"`
-	PaymentMethod        string    `json:"paymentMethod"`
-	AmountCents          int64     `json:"amountCents"`
-	Description          string    `json:"description"`
-	CategoryID           string    `json:"categoryId"`
-	CategoryNameSnapshot string    `json:"categoryNameSnapshot"`
-	RefMonth             string    `json:"refMonth"`
-	OccurredAt           time.Time `json:"occurredAt"`
-	Version              int64     `json:"version"`
-	CreatedAt            time.Time `json:"createdAt"`
-	UpdatedAt            time.Time `json:"updatedAt"`
+	Kind                    string    `json:"kind"`
+	ID                      string    `json:"id"`
+	UserID                  string    `json:"userId"`
+	Direction               string    `json:"direction"`
+	PaymentMethod           string    `json:"paymentMethod"`
+	AmountCents             int64     `json:"amountCents"`
+	Description             string    `json:"description"`
+	CategoryID              string    `json:"categoryId"`
+	CategoryNameSnapshot    string    `json:"categoryNameSnapshot"`
+	SubcategoryNameSnapshot string    `json:"subcategoryNameSnapshot"`
+	RefMonth                string    `json:"refMonth"`
+	OccurredAt              time.Time `json:"occurredAt"`
+	Version                 int64     `json:"version"`
+	CreatedAt               time.Time `json:"createdAt"`
+	UpdatedAt               time.Time `json:"updatedAt"`
 }
 
 func BuildGetTransactionTool(ledger interfaces.TransactionsLedger) tool.ToolHandle {
@@ -50,22 +51,23 @@ func BuildGetTransactionTool(ledger interfaces.TransactionsLedger) tool.ToolHand
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"kind":                 map[string]any{"type": "string"},
-				"id":                   map[string]any{"type": "string"},
-				"userId":               map[string]any{"type": "string"},
-				"direction":            map[string]any{"type": "string"},
-				"paymentMethod":        map[string]any{"type": "string"},
-				"amountCents":          map[string]any{"type": "integer"},
-				"description":          map[string]any{"type": "string"},
-				"categoryId":           map[string]any{"type": "string"},
-				"categoryNameSnapshot": map[string]any{"type": "string"},
-				"refMonth":             map[string]any{"type": "string"},
-				"occurredAt":           map[string]any{"type": "string"},
-				"version":              map[string]any{"type": "integer"},
-				"createdAt":            map[string]any{"type": "string"},
-				"updatedAt":            map[string]any{"type": "string"},
+				"kind":                    map[string]any{"type": "string"},
+				"id":                      map[string]any{"type": "string"},
+				"userId":                  map[string]any{"type": "string"},
+				"direction":               map[string]any{"type": "string"},
+				"paymentMethod":           map[string]any{"type": "string"},
+				"amountCents":             map[string]any{"type": "integer"},
+				"description":             map[string]any{"type": "string"},
+				"categoryId":              map[string]any{"type": "string"},
+				"categoryNameSnapshot":    map[string]any{"type": "string"},
+				"subcategoryNameSnapshot": map[string]any{"type": "string"},
+				"refMonth":                map[string]any{"type": "string"},
+				"occurredAt":              map[string]any{"type": "string"},
+				"version":                 map[string]any{"type": "integer"},
+				"createdAt":               map[string]any{"type": "string"},
+				"updatedAt":               map[string]any{"type": "string"},
 			},
-			"required":             []string{"kind", "id", "userId", "direction", "paymentMethod", "amountCents", "description", "categoryId", "categoryNameSnapshot", "refMonth", "occurredAt", "version", "createdAt", "updatedAt"},
+			"required":             []string{"kind", "id", "userId", "direction", "paymentMethod", "amountCents", "description", "categoryId", "categoryNameSnapshot", "subcategoryNameSnapshot", "refMonth", "occurredAt", "version", "createdAt", "updatedAt"},
 			"additionalProperties": false,
 		},
 	}
@@ -79,20 +81,21 @@ func buildGetTransactionExec(ledger interfaces.TransactionsLedger) func(context.
 			return GetTransactionOutput{}, fmt.Errorf("get_transaction: %w", err)
 		}
 		return GetTransactionOutput{
-			Kind:                 entry.Kind.String(),
-			ID:                   entry.ID,
-			UserID:               entry.UserID,
-			Direction:            entry.Direction,
-			PaymentMethod:        entry.PaymentMethod,
-			AmountCents:          entry.AmountCents,
-			Description:          entry.Description,
-			CategoryID:           entry.CategoryID,
-			CategoryNameSnapshot: entry.CategoryNameSnapshot,
-			RefMonth:             entry.RefMonth,
-			OccurredAt:           entry.OccurredAt,
-			Version:              entry.Version,
-			CreatedAt:            entry.CreatedAt,
-			UpdatedAt:            entry.UpdatedAt,
+			Kind:                    entry.Kind.String(),
+			ID:                      entry.ID,
+			UserID:                  entry.UserID,
+			Direction:               entry.Direction,
+			PaymentMethod:           entry.PaymentMethod,
+			AmountCents:             entry.AmountCents,
+			Description:             entry.Description,
+			CategoryID:              entry.CategoryID,
+			CategoryNameSnapshot:    entry.CategoryNameSnapshot,
+			SubcategoryNameSnapshot: entry.SubcategoryNameSnapshot,
+			RefMonth:                entry.RefMonth,
+			OccurredAt:              entry.OccurredAt,
+			Version:                 entry.Version,
+			CreatedAt:               entry.CreatedAt,
+			UpdatedAt:               entry.UpdatedAt,
 		}, nil
 	}
 }

@@ -139,7 +139,7 @@ func (s *RegisterExpenseIntegrationSuite) TestIdentityInjectedAndPendingOpened()
 	reader := &stubCategoriesReader{rootID: uuid.New(), leafID: uuid.New()}
 	store := workflowpg.NewPostgresStore(obs, s.db)
 	engine := workflow.NewEngine[workflows.PendingEntryState](store, obs)
-	def := workflows.BuildPendingEntryWorkflow(&stubLedger{createdID: uuid.New()}, nil, reader)
+	def := workflows.BuildPendingEntryWorkflow(&stubLedger{createdID: uuid.New()}, nil, reader, nil)
 	registrar := usecases.NewRegisterAttempt(reader, &stubLedger{createdID: uuid.New()}, engine, def, obs)
 	handle := BuildRegisterExpenseTool(registrar)
 

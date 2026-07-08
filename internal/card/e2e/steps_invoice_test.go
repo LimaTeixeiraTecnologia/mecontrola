@@ -80,7 +80,11 @@ func (e *cardE2ECtx) getInvoiceForRegisteredCard(data string) error {
 }
 
 func (e *cardE2ECtx) cardWithInvoiceDueInDays(days int) error {
-	now := time.Now().UTC()
+	brazilLoc, err := time.LoadLocation("America/Sao_Paulo")
+	if err != nil {
+		return fmt.Errorf("carregar timezone Brasil: %w", err)
+	}
+	now := time.Now().In(brazilLoc)
 	dueDate := now.AddDate(0, 0, days)
 	dueDay := dueDate.Day()
 

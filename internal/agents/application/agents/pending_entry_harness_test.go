@@ -17,6 +17,7 @@ import (
 
 	ifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
@@ -142,6 +143,33 @@ func (f *hFakeTxLedger) totalWrites() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.calls) + len(f.updateCalls) + len(f.recurCalls)
+}
+
+type hFakeIdempotentWriter struct {
+	mu      sync.Mutex
+	written map[string]uuid.UUID
+}
+
+func newHFakeIdempotentWriter() *hFakeIdempotentWriter {
+	return &hFakeIdempotentWriter{written: make(map[string]uuid.UUID)}
+}
+
+func (f *hFakeIdempotentWriter) Execute(ctx context.Context, _ uuid.UUID, wamid string, itemSeq int, operation, _ string, write workflows.IdempotentWriteFn) (uuid.UUID, agent.ToolOutcome, error) {
+	key := fmt.Sprintf("%s:%d:%s", wamid, itemSeq, operation)
+	f.mu.Lock()
+	if rid, ok := f.written[key]; ok {
+		f.mu.Unlock()
+		return rid, agent.ToolOutcomeReplay, nil
+	}
+	f.mu.Unlock()
+	rid, _, err := write(ctx)
+	if err != nil {
+		return uuid.Nil, agent.ToolOutcomeMissingResolver, err
+	}
+	f.mu.Lock()
+	f.written[key] = rid
+	f.mu.Unlock()
+	return rid, agent.ToolOutcomeRouted, nil
 }
 
 // ─── fake CategoriesReader ───────────────────────────────────────────────────
@@ -333,7 +361,7 @@ func newPEHarness(t *testing.T, userID uuid.UUID, ledger *hFakeTxLedger, cats *h
 	t.Helper()
 	store := newHarnessStore()
 	eng := workflow.NewEngine[workflows.PendingEntryState](store, fake.NewProvider())
-	def := workflows.BuildPendingEntryWorkflow(ledger, cards, cats)
+	def := workflows.BuildPendingEntryWorkflow(ledger, cards, cats, newHFakeIdempotentWriter())
 	return &pendingEntryHarness{
 		t:      t,
 		engine: eng,
@@ -727,7 +755,7 @@ func TestG7_08_ExpiracaoDePendencia(t *testing.T) {
 	ledger := &hFakeTxLedger{}
 	store := newHarnessStore()
 	eng := workflow.NewEngine[workflows.PendingEntryState](store, fake.NewProvider())
-	def := workflows.BuildPendingEntryWorkflow(ledger, nil, nil)
+	def := workflows.BuildPendingEntryWorkflow(ledger, nil, nil, newHFakeIdempotentWriter())
 	key := fmt.Sprintf("%s:thread-001:%s", userID, workflows.PendingEntryWorkflowID)
 
 	state := hNewExpenseState(userID, workflows.AwaitingSlotCategory, 20000, "supermercado", "debito", nil)
@@ -884,7 +912,7 @@ func TestG7_14_RespostaAmbiguaSegundaVezCancela(t *testing.T) {
 	ledger := &hFakeTxLedger{}
 	store := newHarnessStore()
 	eng := workflow.NewEngine[workflows.PendingEntryState](store, fake.NewProvider())
-	def := workflows.BuildPendingEntryWorkflow(ledger, nil, nil)
+	def := workflows.BuildPendingEntryWorkflow(ledger, nil, nil, newHFakeIdempotentWriter())
 	key := fmt.Sprintf("%s:thread-001:%s", userID, workflows.PendingEntryWorkflowID)
 
 	state := hNewExpenseState(userID, workflows.AwaitingSlotCategory, 20000, "loja", "pix", nil)
@@ -1359,4 +1387,105 @@ func TestG12_06_RecorrenciaViaCreateRecurringTemplate(t *testing.T) {
 	assert.Equal(t, "monthly", h.ledger.recurCalls[0].Frequency)
 	assert.Equal(t, int64(180000), h.ledger.recurCalls[0].AmountCents)
 	assert.Equal(t, "boleto", h.ledger.recurCalls[0].PaymentMethod)
+}
+
+func TestIdempotentWriter_ReplayNaoFaz2oInsert(t *testing.T) {
+	userID := uuid.New()
+	ledger := &hFakeTxLedger{}
+	cats := newHFakeCatReader()
+	cats.addLeaf("farmacia", hCustoFixoRootID, "custo-fixo", hFarmaciaSubID, "medicamentos-e-farmacia", "Custo Fixo > Medicamentos e Farmácia")
+	idem := newHFakeIdempotentWriter()
+	store := newHarnessStore()
+	eng := workflow.NewEngine[workflows.PendingEntryState](store, fake.NewProvider())
+	def := workflows.BuildPendingEntryWorkflow(ledger, nil, cats, idem)
+	key := fmt.Sprintf("%s:thread-001:%s", userID, workflows.PendingEntryWorkflowID)
+
+	candidato := hSingleCandidate(hCustoFixoRootID, "custo-fixo", hFarmaciaSubID, "medicamentos-e-farmacia", "Custo Fixo > Medicamentos e Farmácia")
+	state := workflows.PendingEntryState{
+		Status:        workflows.PendingStatusActive,
+		Awaiting:      workflows.AwaitingSlotConfirmation,
+		UserID:        userID,
+		ThreadID:      "thread-001",
+		MessageID:     "wamid-original",
+		AmountCents:   5000,
+		Description:   "farmácia",
+		PaymentMethod: "pix",
+		Kind:          ifaces.CategoryKindExpense,
+		Candidates:    candidato,
+		SuspendedAt:   time.Now().UTC(),
+		OperationKind: workflows.PendingOpRegisterExpense,
+	}
+
+	result1, err := eng.Start(context.Background(), def, key, state)
+	require.NoError(t, err)
+	require.Equal(t, workflow.RunStatusSuspended, result1.Status)
+
+	patch1, _ := json.Marshal(map[string]string{"resumeText": "sim", "incomingMessageId": "wamid-002"})
+	result2, err := eng.Resume(context.Background(), def, key, patch1)
+	require.NoError(t, err)
+	assert.Equal(t, workflow.RunStatusSucceeded, result2.Status)
+	assert.Equal(t, workflows.PendingStatusCompleted, result2.State.Status)
+	assert.Equal(t, 1, ledger.totalWrites(), "primeira escrita: 1 insert")
+
+	idem2 := idem
+	store2 := newHarnessStore()
+	eng2 := workflow.NewEngine[workflows.PendingEntryState](store2, fake.NewProvider())
+	def2 := workflows.BuildPendingEntryWorkflow(ledger, nil, cats, idem2)
+	key2 := fmt.Sprintf("%s:thread-002:%s", userID, workflows.PendingEntryWorkflowID)
+
+	state2 := state
+	state2.ThreadID = "thread-002"
+	result3, err := eng2.Start(context.Background(), def2, key2, state2)
+	require.NoError(t, err)
+	require.Equal(t, workflow.RunStatusSuspended, result3.Status)
+
+	patch2, _ := json.Marshal(map[string]string{"resumeText": "sim", "incomingMessageId": "wamid-003"})
+	result4, err := eng2.Resume(context.Background(), def2, key2, patch2)
+	require.NoError(t, err)
+	assert.Equal(t, workflow.RunStatusSucceeded, result4.Status)
+	assert.Equal(t, workflows.PendingStatusCompleted, result4.State.Status)
+	assert.Equal(t, 1, ledger.totalWrites(), "replay: sem segundo INSERT")
+	assert.NotEmpty(t, result4.State.ResponseText, "replay retorna texto de sucesso")
+}
+
+func TestHarness_OccurredAt_DiaDaSemana(t *testing.T) {
+	userID := uuid.New()
+	ledger := &hFakeTxLedger{}
+	cats := newHFakeCatReader()
+	cats.addLeaf("supermercado", hCustoFixoRootID, "custo-fixo", hSupermercadoSubID, "supermercado", "Custo Fixo > Supermercado")
+	h := newPEHarness(t, userID, ledger, cats, nil)
+
+	tuesdayDate := "2026-07-07"
+	candidato := hSingleCandidate(hCustoFixoRootID, "custo-fixo", hSupermercadoSubID, "supermercado", "Custo Fixo > Supermercado")
+	state := workflows.PendingEntryState{
+		Status:        workflows.PendingStatusActive,
+		Awaiting:      workflows.AwaitingSlotConfirmation,
+		OperationKind: workflows.PendingOpRegisterExpense,
+		UserID:        userID,
+		ResourceID:    userID,
+		ThreadID:      "thread-001",
+		MessageID:     "wamid-terca",
+		AmountCents:   8000,
+		Description:   "mercado na terça",
+		PaymentMethod: "pix",
+		Kind:          ifaces.CategoryKindExpense,
+		Candidates:    candidato,
+		OccurredAt:    tuesdayDate,
+		SuspendedAt:   time.Now().UTC(),
+	}
+	h.start(state)
+	h.confirmSeen = true
+
+	h.sendUser("sim", "wamid-terca-conf")
+	h.assertAgent(harnessAgentStep{
+		expectPendingStatus:      hPtr(workflows.PendingStatusCompleted),
+		expectRunStatus:          hPtr(workflow.RunStatusSucceeded),
+		expectWrite:              &harnessWrite{amountCents: 8000, paymentMethod: "pix"},
+		expectConfirmBeforeWrite: true,
+	})
+
+	ledger.mu.Lock()
+	defer ledger.mu.Unlock()
+	require.Len(t, ledger.calls, 1, "8.2: exatamente 1 write para data de dia da semana")
+	assert.Equal(t, tuesdayDate, ledger.calls[0].OccurredAt, "8.2: OccurredAt derivado de terça preservado na escrita")
 }

@@ -106,6 +106,12 @@ func buildRegisterExpenseExec(registrar entryRegistrar) func(context.Context, Re
 			}
 			subcategoryID = parsed
 		}
+		if err := validateEntryAmount(in.AmountCents); err != nil {
+			return RegisterExpenseOutput{
+				Outcome: "clarify",
+				Message: "❌ Valor inválido. O valor deve ser positivo e não ultrapassar R$ 10.000.000,00.",
+			}, nil
+		}
 		installments := in.Installments
 		if installments <= 0 {
 			installments = 1

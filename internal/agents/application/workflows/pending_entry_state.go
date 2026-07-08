@@ -195,4 +195,5 @@ type PendingEntryState struct {
 	ConfirmRepromptCount int                        `json:"confirmRepromptCount"`
 	IncomingMessageID    string                     `json:"incomingMessageId"`
 	ProcessedMessageID   string                     `json:"processedMessageId"`
+	ItemSeq              int                        `json:"itemSeq"`
 }
