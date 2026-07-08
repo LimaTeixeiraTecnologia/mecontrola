@@ -68,7 +68,7 @@ func BuildQueryMonthTool(ledger interfaces.TransactionsLedger) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[QueryMonthInput, QueryMonthOutput]("query_month", "Consulta o resumo e os lançamentos do mês financeiro do usuário.", in, out, buildQueryMonthExec(ledger))
+	return tool.NewTool("query_month", "Consulta o resumo e os lançamentos do mês financeiro do usuário.", in, out, buildQueryMonthExec(ledger))
 }
 
 func buildQueryMonthExec(ledger interfaces.TransactionsLedger) func(context.Context, QueryMonthInput) (QueryMonthOutput, error) {

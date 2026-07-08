@@ -55,7 +55,7 @@ func BuildSuggestAllocationTool(planner interfaces.BudgetPlanner) tool.ToolHandl
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[SuggestAllocationInput, SuggestAllocationOutput]("suggest_allocation", "Sugere a distribuição em centavos para um orçamento dado o total e as alocações por categoria.", in, out, buildSuggestAllocationExec(planner))
+	return tool.NewTool("suggest_allocation", "Sugere a distribuição em centavos para um orçamento dado o total e as alocações por categoria.", in, out, buildSuggestAllocationExec(planner))
 }
 
 func buildSuggestAllocationExec(planner interfaces.BudgetPlanner) func(context.Context, SuggestAllocationInput) (SuggestAllocationOutput, error) {

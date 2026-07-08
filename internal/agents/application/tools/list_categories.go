@@ -58,7 +58,7 @@ func BuildListCategoriesTool(reader interfaces.CategoriesReader) tool.ToolHandle
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[ListCategoriesInput, ListCategoriesOutput]("list_categories", "Lista as categorias e subcategorias disponíveis para o usuário.", in, out, buildListCategoriesExec(reader))
+	return tool.NewTool("list_categories", "Lista as categorias e subcategorias disponíveis para o usuário.", in, out, buildListCategoriesExec(reader))
 }
 
 func buildListCategoriesExec(reader interfaces.CategoriesReader) func(context.Context, ListCategoriesInput) (ListCategoriesOutput, error) {

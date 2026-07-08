@@ -77,7 +77,7 @@ func BuildQueryPlanTool(planner interfaces.BudgetPlanner) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[QueryPlanInput, QueryPlanOutput]("query_plan", "Consulta o plano orçamentário mensal e alertas do usuário.", in, out, buildQueryPlanExec(planner))
+	return tool.NewTool("query_plan", "Consulta o plano orçamentário mensal e alertas do usuário.", in, out, buildQueryPlanExec(planner))
 }
 
 func buildQueryPlanExec(planner interfaces.BudgetPlanner) func(context.Context, QueryPlanInput) (QueryPlanOutput, error) {

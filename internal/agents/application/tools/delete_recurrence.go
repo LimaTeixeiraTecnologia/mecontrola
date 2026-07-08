@@ -57,7 +57,7 @@ func BuildDeleteRecurrenceTool(engine wf.Engine[workflows.ConfirmState], def wf.
 		},
 	}
 	exec := buildDeleteRecurrenceExec(engine, def)
-	return tool.NewTool[DeleteRecurrenceInput, DeleteRecurrenceOutput]("delete_recurrence", "Solicita confirmação do usuário para remover uma recorrência financeira.", in, out, exec)
+	return tool.NewTool("delete_recurrence", "Solicita confirmação do usuário para remover uma recorrência financeira.", in, out, exec)
 }
 
 func buildDeleteRecurrenceExec(engine wf.Engine[workflows.ConfirmState], def wf.Definition[workflows.ConfirmState]) func(context.Context, DeleteRecurrenceInput) (DeleteRecurrenceOutput, error) {

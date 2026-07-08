@@ -69,7 +69,7 @@ func BuildRegisterExpenseTool(registrar entryRegistrar) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[RegisterExpenseInput, RegisterExpenseOutput]("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário; a categoria é resolvida automaticamente. Para compra no cartão de crédito, use paymentMethod=credit_card com cardId (obtido via resolve_card) e installments (1 para à vista, 2..24 para parcelada).", in, out, buildRegisterExpenseExec(registrar))
+	return tool.NewTool("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário; a categoria é resolvida automaticamente. Para compra no cartão de crédito, use paymentMethod=credit_card com cardId (obtido via resolve_card) e installments (1 para à vista, 2..24 para parcelada).", in, out, buildRegisterExpenseExec(registrar))
 }
 
 func buildRegisterExpenseExec(registrar entryRegistrar) func(context.Context, RegisterExpenseInput) (RegisterExpenseOutput, error) {

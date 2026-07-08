@@ -55,7 +55,7 @@ func BuildAdjustAllocationTool(planner interfaces.BudgetPlanner) tool.ToolHandle
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[AdjustAllocationInput, AdjustAllocationOutput]("adjust_allocation", "Ajusta a porcentagem de alocação de uma categoria no orçamento mensal do usuário.", in, out, buildAdjustAllocationExec(planner))
+	return tool.NewTool("adjust_allocation", "Ajusta a porcentagem de alocação de uma categoria no orçamento mensal do usuário.", in, out, buildAdjustAllocationExec(planner))
 }
 
 func buildAdjustAllocationExec(planner interfaces.BudgetPlanner) func(context.Context, AdjustAllocationInput) (AdjustAllocationOutput, error) {

@@ -63,7 +63,7 @@ func BuildRegisterIncomeTool(registrar entryRegistrar) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[RegisterIncomeInput, RegisterIncomeOutput]("register_income", "Registra um lançamento de receita no ledger financeiro do usuário; a categoria é resolvida automaticamente.", in, out, buildRegisterIncomeExec(registrar))
+	return tool.NewTool("register_income", "Registra um lançamento de receita no ledger financeiro do usuário; a categoria é resolvida automaticamente.", in, out, buildRegisterIncomeExec(registrar))
 }
 
 func buildRegisterIncomeExec(registrar entryRegistrar) func(context.Context, RegisterIncomeInput) (RegisterIncomeOutput, error) {

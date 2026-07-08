@@ -73,7 +73,7 @@ func BuildClassifyCategoryTool(reader interfaces.CategoriesReader) tool.ToolHand
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[ClassifyCategoryInput, ClassifyCategoryOutput]("classify_category", "Classifica um termo em categorias financeiras para o usuário.", in, out, buildClassifyCategoryExec(reader))
+	return tool.NewTool("classify_category", "Classifica um termo em categorias financeiras para o usuário.", in, out, buildClassifyCategoryExec(reader))
 }
 
 func buildClassifyCategoryExec(reader interfaces.CategoriesReader) func(context.Context, ClassifyCategoryInput) (ClassifyCategoryOutput, error) {

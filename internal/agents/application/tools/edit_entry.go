@@ -57,7 +57,7 @@ func BuildEditEntryTool(editor entryEditor) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[EditEntryInput, EditEntryOutput]("edit_entry", "Solicita a edição de um lançamento financeiro; a persistência só ocorre após confirmação explícita do usuário.", in, out, buildEditEntryExec(editor))
+	return tool.NewTool("edit_entry", "Solicita a edição de um lançamento financeiro; a persistência só ocorre após confirmação explícita do usuário.", in, out, buildEditEntryExec(editor))
 }
 
 func buildEditEntryExec(editor entryEditor) func(context.Context, EditEntryInput) (EditEntryOutput, error) {

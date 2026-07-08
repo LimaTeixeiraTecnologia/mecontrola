@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/domain/valueobjects"
 )
@@ -18,165 +18,33 @@ func baseState() PendingEntryState {
 	}
 }
 
-func TestDecideNewOperationReplacement_G7_01(t *testing.T) {
-	state := baseState()
-	msg := PendingMessage{Text: "Gastei R$ 150,00 na farmácia hoje, no pix"}
-	decision := DecideNewOperationReplacement(state, msg)
-	require.Equal(t, PendingActionReplace, decision.Action)
+type PendingEntryDecisionsSuite struct {
+	suite.Suite
+	now time.Time
 }
 
-func TestDecideNewOperationReplacement_NoReplace(t *testing.T) {
-	state := baseState()
-	msg := PendingMessage{Text: "supermercado"}
-	decision := DecideNewOperationReplacement(state, msg)
-	require.Equal(t, PendingActionNone, decision.Action)
+func TestPendingEntryDecisionsSuite(t *testing.T) {
+	suite.Run(t, new(PendingEntryDecisionsSuite))
 }
 
-func TestDecidePendingResume_Expired_G7_08(t *testing.T) {
-	state := baseState()
-	state.SuspendedAt = time.Now().UTC().Add(-31 * time.Minute)
-	msg := PendingMessage{Text: "supermercado"}
-	now := time.Now().UTC()
-	decision, err := DecidePendingResume(state, msg, now)
-	require.NoError(t, err)
-	require.Equal(t, PendingActionExpire, decision.Action)
+func (s *PendingEntryDecisionsSuite) SetupTest() {
+	s.now = time.Now().UTC()
 }
 
-func TestDecidePendingResume_Cancel_G7_04(t *testing.T) {
+func (s *PendingEntryDecisionsSuite) baseState() PendingEntryState {
 	state := baseState()
-	msg := PendingMessage{Text: "cancela"}
-	now := time.Now().UTC()
-	decision, err := DecidePendingResume(state, msg, now)
-	require.NoError(t, err)
-	require.Equal(t, PendingActionCancel, decision.Action)
+	state.SuspendedAt = s.now
+	return state
 }
 
-func TestDecidePendingResume_Cancel_G7_05(t *testing.T) {
-	state := baseState()
-	msg := PendingMessage{Text: "deixa pra lá"}
-	now := time.Now().UTC()
-	decision, err := DecidePendingResume(state, msg, now)
-	require.NoError(t, err)
-	require.Equal(t, PendingActionCancel, decision.Action)
+func (s *PendingEntryDecisionsSuite) resumeState() PendingEntryState {
+	state := s.baseState()
+	state.MessageID = "wamid-001"
+	return state
 }
 
-func TestDecidePendingResume_Cancel_G7_06(t *testing.T) {
-	state := baseState()
-	msg := PendingMessage{Text: "não registra"}
-	now := time.Now().UTC()
-	decision, err := DecidePendingResume(state, msg, now)
-	require.NoError(t, err)
-	require.Equal(t, PendingActionCancel, decision.Action)
-}
-
-func TestDecidePendingResume_Replace_NewOperation(t *testing.T) {
-	state := baseState()
-	msg := PendingMessage{Text: "Gastei R$ 150,00 na farmácia hoje, no pix"}
-	now := time.Now().UTC()
-	decision, err := DecidePendingResume(state, msg, now)
-	require.NoError(t, err)
-	require.Equal(t, PendingActionReplace, decision.Action)
-}
-
-func TestDecidePendingResume_Reprompt_G7_13(t *testing.T) {
-	state := baseState()
-	state.RepromptCount = 0
-	msg := PendingMessage{Text: "tudo bem"}
-	now := time.Now().UTC()
-	decision, err := DecidePendingResume(state, msg, now)
-	require.NoError(t, err)
-	require.Equal(t, PendingActionReprompt, decision.Action)
-}
-
-func TestDecidePendingResume_Cancel_After2Reprompts_G7_14(t *testing.T) {
-	state := baseState()
-	state.RepromptCount = 1
-	msg := PendingMessage{Text: "ok sim"}
-	now := time.Now().UTC()
-	decision, err := DecidePendingResume(state, msg, now)
-	require.NoError(t, err)
-	require.Equal(t, PendingActionCancel, decision.Action)
-}
-
-func TestDecidePendingResume_SimNaoPix_G7_07(t *testing.T) {
-	state := baseState()
-	state.Awaiting = AwaitingSlotCategory
-	state.RepromptCount = 0
-	msg := PendingMessage{Text: "sim e pix"}
-	now := time.Now().UTC()
-	decision, err := DecidePendingResume(state, msg, now)
-	require.NoError(t, err)
-	require.Equal(t, PendingActionReprompt, decision.Action)
-}
-
-func TestDecideConfirmation_Accept(t *testing.T) {
-	state := baseState()
-	state.Awaiting = AwaitingSlotConfirmation
-	now := time.Now().UTC()
-
-	for _, text := range []string{"sim", "confirmar", "confirma", "ok", "pode"} {
-		msg := PendingMessage{Text: text}
-		decision, err := DecideConfirmation(state, msg, now)
-		require.NoError(t, err)
-		require.Equal(t, ConfirmActionAccept, decision.Action, "text=%q", text)
-	}
-}
-
-func TestDecideConfirmation_Cancel_CA13_CA14(t *testing.T) {
-	state := baseState()
-	state.Awaiting = AwaitingSlotConfirmation
-	now := time.Now().UTC()
-
-	for _, text := range []string{"não", "nao", "cancela"} {
-		msg := PendingMessage{Text: text}
-		decision, err := DecideConfirmation(state, msg, now)
-		require.NoError(t, err)
-		require.Equal(t, ConfirmActionCancel, decision.Action, "text=%q", text)
-	}
-}
-
-func TestDecideConfirmation_Ambiguous_Reprompt(t *testing.T) {
-	state := baseState()
-	state.Awaiting = AwaitingSlotConfirmation
-	state.ConfirmRepromptCount = 0
-	now := time.Now().UTC()
-	msg := PendingMessage{Text: "talvez"}
-	decision, err := DecideConfirmation(state, msg, now)
-	require.NoError(t, err)
-	require.Equal(t, ConfirmActionReprompt, decision.Action)
-}
-
-func TestDecideConfirmation_Ambiguous_2nd_Cancels(t *testing.T) {
-	state := baseState()
-	state.Awaiting = AwaitingSlotConfirmation
-	state.ConfirmRepromptCount = 1
-	now := time.Now().UTC()
-	msg := PendingMessage{Text: "sei lá"}
-	decision, err := DecideConfirmation(state, msg, now)
-	require.NoError(t, err)
-	require.Equal(t, ConfirmActionCancel, decision.Action)
-}
-
-func TestDecideConfirmation_Expired(t *testing.T) {
-	state := baseState()
-	state.Awaiting = AwaitingSlotConfirmation
-	state.SuspendedAt = time.Now().UTC().Add(-31 * time.Minute)
-	now := time.Now().UTC()
-	msg := PendingMessage{Text: "sim"}
-	decision, err := DecideConfirmation(state, msg, now)
-	require.NoError(t, err)
-	require.Equal(t, ConfirmActionExpire, decision.Action)
-}
-
-func TestDecideConfirmation_Replay(t *testing.T) {
-	state := baseState()
-	state.Awaiting = AwaitingSlotConfirmation
-	state.ProcessedMessageID = "wamid-123"
-	now := time.Now().UTC()
-	msg := PendingMessage{Text: "sim", MessageID: "wamid-123"}
-	decision, err := DecideConfirmation(state, msg, now)
-	require.NoError(t, err)
-	require.Equal(t, ConfirmActionReplay, decision.Action)
+func (s *PendingEntryDecisionsSuite) decisionMsg(text string) PendingMessage {
+	return PendingMessage{Text: text, MessageID: "wamid-new"}
 }
 
 func makeCandidate(rootSlug, subSlug string) PendingCategoryCandidate {
@@ -189,70 +57,437 @@ func makeCandidate(rootSlug, subSlug string) PendingCategoryCandidate {
 	}
 }
 
-func TestDecideCategoryChoice_ByIndex_CA15(t *testing.T) {
-	candidates := []PendingCategoryCandidate{
-		makeCandidate("custo-fixo", "plano-de-saude"),
-		makeCandidate("custo-fixo", "consultas-e-exames"),
-		makeCandidate("custo-fixo", "terapia-e-saude-mental"),
+func (s *PendingEntryDecisionsSuite) TestDecideNewOperationReplacement() {
+	type args struct {
+		text string
 	}
-	state := baseState()
-
-	decision, err := DecideCategoryChoice(state, candidates, "2")
-	require.NoError(t, err)
-	require.Equal(t, CategoryChoiceActionSelected, decision.Action)
-	require.Equal(t, "consultas-e-exames", decision.Candidate.SubcategorySlug)
-}
-
-func TestDecideCategoryChoice_ByName_CA15(t *testing.T) {
-	candidates := []PendingCategoryCandidate{
-		makeCandidate("custo-fixo", "plano-de-saude"),
-		makeCandidate("custo-fixo", "consultas-e-exames"),
-		makeCandidate("custo-fixo", "terapia-e-saude-mental"),
-	}
-	state := baseState()
-
-	decision, err := DecideCategoryChoice(state, candidates, "consultas-e-exames")
-	require.NoError(t, err)
-	require.Equal(t, CategoryChoiceActionSelected, decision.Action)
-	require.Equal(t, "consultas-e-exames", decision.Candidate.SubcategorySlug)
-}
-
-func TestDecideCategoryChoice_RootOnly_G7_03(t *testing.T) {
-	rootID := uuid.New()
-	candidates := []PendingCategoryCandidate{
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(decision PendingDecision)
+	}{
 		{
-			RootCategoryID:  rootID,
-			RootSlug:        "custo-fixo",
-			SubcategoryID:   rootID,
-			SubcategorySlug: "custo-fixo",
-			Path:            "custo-fixo",
+			name: "G7-01 substitui por frase completa",
+			args: args{text: "Gastei R$ 150,00 na farmácia hoje, no pix"},
+			expect: func(decision PendingDecision) {
+				s.Equal(PendingActionReplace, decision.Action)
+			},
+		},
+		{
+			name: "termo simples nao substitui",
+			args: args{text: "supermercado"},
+			expect: func(decision PendingDecision) {
+				s.Equal(PendingActionNone, decision.Action)
+			},
 		},
 	}
-	state := baseState()
-	decision, err := DecideCategoryChoice(state, candidates, "1")
-	require.NoError(t, err)
-	require.Equal(t, CategoryChoiceActionRootOnly, decision.Action)
-}
 
-func TestDecideCategoryChoice_Reprompt_Incompatible(t *testing.T) {
-	candidates := []PendingCategoryCandidate{
-		makeCandidate("custo-fixo", "supermercado"),
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			decision := DecideNewOperationReplacement(s.baseState(), s.decisionMsg(scenario.args.text))
+			scenario.expect(decision)
+		})
 	}
-	state := baseState()
-	decision, err := DecideCategoryChoice(state, candidates, "textocompletoaleatório")
-	require.NoError(t, err)
-	require.Equal(t, CategoryChoiceActionReprompt, decision.Action)
 }
 
-func TestDecidePendingResume_NoIO(t *testing.T) {
-	state := baseState()
-	msg := PendingMessage{Text: "supermercado"}
-	now := time.Now().UTC()
-	_, err := DecidePendingResume(state, msg, now)
-	require.NoError(t, err)
+func (s *PendingEntryDecisionsSuite) TestDecidePendingResume() {
+	type args struct {
+		mutate func(state *PendingEntryState)
+		text   string
+		now    time.Time
+	}
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(decision PendingDecision, err error)
+	}{
+		{
+			name: "G7-08 expirado",
+			args: args{
+				mutate: func(state *PendingEntryState) { state.SuspendedAt = s.now.Add(-31 * time.Minute) },
+				text:   "supermercado",
+				now:    s.now,
+			},
+			expect: func(decision PendingDecision, err error) {
+				s.NoError(err)
+				s.Equal(PendingActionExpire, decision.Action)
+			},
+		},
+		{
+			name: "G7-04 cancela",
+			args: args{text: "cancela", now: s.now},
+			expect: func(decision PendingDecision, err error) {
+				s.NoError(err)
+				s.Equal(PendingActionCancel, decision.Action)
+			},
+		},
+		{
+			name: "cancelar",
+			args: args{text: "cancelar", now: s.now},
+			expect: func(decision PendingDecision, err error) {
+				s.NoError(err)
+				s.Equal(PendingActionCancel, decision.Action)
+			},
+		},
+		{
+			name: "G7-05 deixa pra la",
+			args: args{text: "deixa pra lá", now: s.now},
+			expect: func(decision PendingDecision, err error) {
+				s.NoError(err)
+				s.Equal(PendingActionCancel, decision.Action)
+			},
+		},
+		{
+			name: "G7-06 nao registra",
+			args: args{text: "não registra", now: s.now},
+			expect: func(decision PendingDecision, err error) {
+				s.NoError(err)
+				s.Equal(PendingActionCancel, decision.Action)
+			},
+		},
+		{
+			name: "replace nova operacao pix",
+			args: args{text: "Gastei R$ 150,00 na farmácia hoje, no pix", now: s.now},
+			expect: func(decision PendingDecision, err error) {
+				s.NoError(err)
+				s.Equal(PendingActionReplace, decision.Action)
+			},
+		},
+		{
+			name: "replace nova operacao mercado pix",
+			args: args{text: "Gastei R$ 150,00 no mercado, pix", now: s.now},
+			expect: func(decision PendingDecision, err error) {
+				s.NoError(err)
+				s.Equal(PendingActionReplace, decision.Action)
+			},
+		},
+		{
+			name: "replace nova operacao cartao",
+			args: args{text: "Paguei R$ 50,00 no restaurante, cartão", now: s.now},
+			expect: func(decision PendingDecision, err error) {
+				s.NoError(err)
+				s.Equal(PendingActionReplace, decision.Action)
+			},
+		},
+		{
+			name: "replace nova operacao recebi",
+			args: args{text: "Recebi R$ 3000,00 de salário", now: s.now},
+			expect: func(decision PendingDecision, err error) {
+				s.NoError(err)
+				s.Equal(PendingActionReplace, decision.Action)
+			},
+		},
+		{
+			name: "G7-13 reprompt primeiro",
+			args: args{
+				mutate: func(state *PendingEntryState) { state.RepromptCount = 0 },
+				text:   "tudo bem",
+				now:    s.now,
+			},
+			expect: func(decision PendingDecision, err error) {
+				s.NoError(err)
+				s.Equal(PendingActionReprompt, decision.Action)
+			},
+		},
+		{
+			name: "reprompt primeiro xpto",
+			args: args{
+				mutate: func(state *PendingEntryState) { state.RepromptCount = 0 },
+				text:   "xpto",
+				now:    s.now,
+			},
+			expect: func(decision PendingDecision, err error) {
+				s.NoError(err)
+				s.Equal(PendingActionReprompt, decision.Action)
+			},
+		},
+		{
+			name: "G7-14 cancela apos 2 reprompts",
+			args: args{
+				mutate: func(state *PendingEntryState) { state.RepromptCount = 1 },
+				text:   "ok sim",
+				now:    s.now,
+			},
+			expect: func(decision PendingDecision, err error) {
+				s.NoError(err)
+				s.Equal(PendingActionCancel, decision.Action)
+			},
+		},
+		{
+			name: "reprompt max atingido cancela",
+			args: args{
+				mutate: func(state *PendingEntryState) { state.RepromptCount = 1 },
+				text:   "xpto",
+				now:    s.now,
+			},
+			expect: func(decision PendingDecision, err error) {
+				s.NoError(err)
+				s.Equal(PendingActionCancel, decision.Action)
+			},
+		},
+		{
+			name: "G7-07 sim e pix reprompt",
+			args: args{
+				mutate: func(state *PendingEntryState) {
+					state.Awaiting = AwaitingSlotCategory
+					state.RepromptCount = 0
+				},
+				text: "sim e pix",
+				now:  s.now,
+			},
+			expect: func(decision PendingDecision, err error) {
+				s.NoError(err)
+				s.Equal(PendingActionReprompt, decision.Action)
+			},
+		},
+		{
+			name: "no IO",
+			args: args{text: "supermercado", now: s.now},
+			expect: func(decision PendingDecision, err error) {
+				s.NoError(err)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			state := s.resumeState()
+			if scenario.args.mutate != nil {
+				scenario.args.mutate(&state)
+			}
+			decision, err := DecidePendingResume(state, s.decisionMsg(scenario.args.text), scenario.args.now)
+			scenario.expect(decision, err)
+		})
+	}
 }
 
-func TestParseWeekday(t *testing.T) {
+func (s *PendingEntryDecisionsSuite) TestDecideConfirmation() {
+	type args struct {
+		mutate func(state *PendingEntryState)
+		msg    PendingMessage
+	}
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(decision ConfirmDecision, err error)
+	}{
+		{
+			name: "accept sim",
+			args: args{msg: PendingMessage{Text: "sim"}},
+			expect: func(decision ConfirmDecision, err error) {
+				s.NoError(err)
+				s.Equal(ConfirmActionAccept, decision.Action)
+			},
+		},
+		{
+			name: "accept confirmar",
+			args: args{msg: PendingMessage{Text: "confirmar"}},
+			expect: func(decision ConfirmDecision, err error) {
+				s.NoError(err)
+				s.Equal(ConfirmActionAccept, decision.Action)
+			},
+		},
+		{
+			name: "accept confirma",
+			args: args{msg: PendingMessage{Text: "confirma"}},
+			expect: func(decision ConfirmDecision, err error) {
+				s.NoError(err)
+				s.Equal(ConfirmActionAccept, decision.Action)
+			},
+		},
+		{
+			name: "accept ok",
+			args: args{msg: PendingMessage{Text: "ok"}},
+			expect: func(decision ConfirmDecision, err error) {
+				s.NoError(err)
+				s.Equal(ConfirmActionAccept, decision.Action)
+			},
+		},
+		{
+			name: "accept pode",
+			args: args{msg: PendingMessage{Text: "pode"}},
+			expect: func(decision ConfirmDecision, err error) {
+				s.NoError(err)
+				s.Equal(ConfirmActionAccept, decision.Action)
+			},
+		},
+		{
+			name: "cancel nao acento",
+			args: args{msg: PendingMessage{Text: "não"}},
+			expect: func(decision ConfirmDecision, err error) {
+				s.NoError(err)
+				s.Equal(ConfirmActionCancel, decision.Action)
+			},
+		},
+		{
+			name: "cancel nao",
+			args: args{msg: PendingMessage{Text: "nao"}},
+			expect: func(decision ConfirmDecision, err error) {
+				s.NoError(err)
+				s.Equal(ConfirmActionCancel, decision.Action)
+			},
+		},
+		{
+			name: "cancel cancela",
+			args: args{msg: PendingMessage{Text: "cancela"}},
+			expect: func(decision ConfirmDecision, err error) {
+				s.NoError(err)
+				s.Equal(ConfirmActionCancel, decision.Action)
+			},
+		},
+		{
+			name: "cancel cancelar",
+			args: args{msg: PendingMessage{Text: "cancelar"}},
+			expect: func(decision ConfirmDecision, err error) {
+				s.NoError(err)
+				s.Equal(ConfirmActionCancel, decision.Action)
+			},
+		},
+		{
+			name: "ambiguo reprompt",
+			args: args{
+				mutate: func(state *PendingEntryState) { state.ConfirmRepromptCount = 0 },
+				msg:    PendingMessage{Text: "talvez"},
+			},
+			expect: func(decision ConfirmDecision, err error) {
+				s.NoError(err)
+				s.Equal(ConfirmActionReprompt, decision.Action)
+			},
+		},
+		{
+			name: "ambiguo segunda vez cancela",
+			args: args{
+				mutate: func(state *PendingEntryState) { state.ConfirmRepromptCount = 1 },
+				msg:    PendingMessage{Text: "sei lá"},
+			},
+			expect: func(decision ConfirmDecision, err error) {
+				s.NoError(err)
+				s.Equal(ConfirmActionCancel, decision.Action)
+			},
+		},
+		{
+			name: "expirado",
+			args: args{
+				mutate: func(state *PendingEntryState) { state.SuspendedAt = s.now.Add(-31 * time.Minute) },
+				msg:    PendingMessage{Text: "sim"},
+			},
+			expect: func(decision ConfirmDecision, err error) {
+				s.NoError(err)
+				s.Equal(ConfirmActionExpire, decision.Action)
+			},
+		},
+		{
+			name: "replay",
+			args: args{
+				mutate: func(state *PendingEntryState) { state.ProcessedMessageID = "wamid-123" },
+				msg:    PendingMessage{Text: "sim", MessageID: "wamid-123"},
+			},
+			expect: func(decision ConfirmDecision, err error) {
+				s.NoError(err)
+				s.Equal(ConfirmActionReplay, decision.Action)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			state := s.baseState()
+			state.Awaiting = AwaitingSlotConfirmation
+			if scenario.args.mutate != nil {
+				scenario.args.mutate(&state)
+			}
+			decision, err := DecideConfirmation(state, scenario.args.msg, s.now)
+			scenario.expect(decision, err)
+		})
+	}
+}
+
+func (s *PendingEntryDecisionsSuite) TestDecideCategoryChoice() {
+	rootID := uuid.New()
+	type args struct {
+		candidates []PendingCategoryCandidate
+		choice     string
+	}
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(decision CategoryChoiceDecision, err error)
+	}{
+		{
+			name: "CA-15 por indice",
+			args: args{
+				candidates: []PendingCategoryCandidate{
+					makeCandidate("custo-fixo", "plano-de-saude"),
+					makeCandidate("custo-fixo", "consultas-e-exames"),
+					makeCandidate("custo-fixo", "terapia-e-saude-mental"),
+				},
+				choice: "2",
+			},
+			expect: func(decision CategoryChoiceDecision, err error) {
+				s.NoError(err)
+				s.Equal(CategoryChoiceActionSelected, decision.Action)
+				s.Equal("consultas-e-exames", decision.Candidate.SubcategorySlug)
+			},
+		},
+		{
+			name: "CA-15 por nome",
+			args: args{
+				candidates: []PendingCategoryCandidate{
+					makeCandidate("custo-fixo", "plano-de-saude"),
+					makeCandidate("custo-fixo", "consultas-e-exames"),
+					makeCandidate("custo-fixo", "terapia-e-saude-mental"),
+				},
+				choice: "consultas-e-exames",
+			},
+			expect: func(decision CategoryChoiceDecision, err error) {
+				s.NoError(err)
+				s.Equal(CategoryChoiceActionSelected, decision.Action)
+				s.Equal("consultas-e-exames", decision.Candidate.SubcategorySlug)
+			},
+		},
+		{
+			name: "G7-03 root only",
+			args: args{
+				candidates: []PendingCategoryCandidate{
+					{
+						RootCategoryID:  rootID,
+						RootSlug:        "custo-fixo",
+						SubcategoryID:   rootID,
+						SubcategorySlug: "custo-fixo",
+						Path:            "custo-fixo",
+					},
+				},
+				choice: "1",
+			},
+			expect: func(decision CategoryChoiceDecision, err error) {
+				s.NoError(err)
+				s.Equal(CategoryChoiceActionRootOnly, decision.Action)
+			},
+		},
+		{
+			name: "reprompt incompativel",
+			args: args{
+				candidates: []PendingCategoryCandidate{
+					makeCandidate("custo-fixo", "supermercado"),
+				},
+				choice: "textocompletoaleatório",
+			},
+			expect: func(decision CategoryChoiceDecision, err error) {
+				s.NoError(err)
+				s.Equal(CategoryChoiceActionReprompt, decision.Action)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			decision, err := DecideCategoryChoice(s.baseState(), scenario.args.candidates, scenario.args.choice)
+			scenario.expect(decision, err)
+		})
+	}
+}
+
+func (s *PendingEntryDecisionsSuite) TestParseWeekday() {
 	now := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
 
 	scenarios := []struct {
@@ -288,14 +523,16 @@ func TestParseWeekday(t *testing.T) {
 		{"hoje", "", false},
 	}
 
-	for _, s := range scenarios {
-		got, ok := parseWeekday(s.text, now)
-		require.Equal(t, s.ok, ok, "text=%q ok mismatch", s.text)
-		require.Equal(t, s.want, got, "text=%q date mismatch", s.text)
+	for _, scenario := range scenarios {
+		s.Run(scenario.text, func() {
+			got, ok := parseWeekday(scenario.text, now)
+			s.Equal(scenario.ok, ok, "text=%q ok mismatch", scenario.text)
+			s.Equal(scenario.want, got, "text=%q date mismatch", scenario.text)
+		})
 	}
 }
 
-func TestParseInputDate_Weekday(t *testing.T) {
+func (s *PendingEntryDecisionsSuite) TestParseInputDate() {
 	now := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
 
 	scenarios := []struct {
@@ -311,15 +548,17 @@ func TestParseInputDate_Weekday(t *testing.T) {
 		{"ontem", "2026-07-05"},
 	}
 
-	for _, s := range scenarios {
-		got := parseInputDate(s.text, now)
-		require.Equal(t, s.want, got, "text=%q", s.text)
+	for _, scenario := range scenarios {
+		s.Run(scenario.text, func() {
+			got := parseInputDate(scenario.text, now)
+			s.Equal(scenario.want, got, "text=%q", scenario.text)
+		})
 	}
 }
 
-func TestKnownPaymentMethods_AllValuesParseValid(t *testing.T) {
+func (s *PendingEntryDecisionsSuite) TestKnownPaymentMethodsAllValuesParseValid() {
 	for key, val := range knownPaymentMethods {
 		_, err := valueobjects.ParsePaymentMethod(val)
-		require.NoError(t, err, "key=%q value=%q deve ser aceito por ParsePaymentMethod", key, val)
+		s.NoError(err, "key=%q value=%q deve ser aceito por ParsePaymentMethod", key, val)
 	}
 }

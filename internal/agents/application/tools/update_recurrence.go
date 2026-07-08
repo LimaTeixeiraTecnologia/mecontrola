@@ -75,7 +75,7 @@ func BuildUpdateRecurrenceTool(engine wf.Engine[workflows.ConfirmState], def wf.
 		},
 	}
 	exec := buildUpdateRecurrenceExec(engine, def)
-	return tool.NewTool[UpdateRecurrenceInput, UpdateRecurrenceOutput]("update_recurrence", "Solicita confirmação do usuário para atualizar uma recorrência financeira.", in, out, exec)
+	return tool.NewTool("update_recurrence", "Solicita confirmação do usuário para atualizar uma recorrência financeira.", in, out, exec)
 }
 
 func buildUpdateRecurrenceExec(engine wf.Engine[workflows.ConfirmState], def wf.Definition[workflows.ConfirmState]) func(context.Context, UpdateRecurrenceInput) (UpdateRecurrenceOutput, error) {

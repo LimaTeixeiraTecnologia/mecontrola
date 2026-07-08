@@ -52,7 +52,7 @@ func BuildListCardsTool(cards interfaces.CardManager) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[ListCardsInput, ListCardsOutput]("list_cards", "Lista os cartões de crédito do usuário.", in, out, buildListCardsExec(cards))
+	return tool.NewTool("list_cards", "Lista os cartões de crédito do usuário.", in, out, buildListCardsExec(cards))
 }
 
 func buildListCardsExec(cards interfaces.CardManager) func(context.Context, ListCardsInput) (ListCardsOutput, error) {

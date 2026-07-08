@@ -62,7 +62,7 @@ func BuildSearchTransactionsTool(ledger interfaces.TransactionsLedger) tool.Tool
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[SearchTransactionsInput, SearchTransactionsOutput]("search_transactions", "Pesquisa lançamentos do usuário por termo no mês informado.", in, out, buildSearchTransactionsExec(ledger))
+	return tool.NewTool("search_transactions", "Pesquisa lançamentos do usuário por termo no mês informado.", in, out, buildSearchTransactionsExec(ledger))
 }
 
 func buildSearchTransactionsExec(ledger interfaces.TransactionsLedger) func(context.Context, SearchTransactionsInput) (SearchTransactionsOutput, error) {

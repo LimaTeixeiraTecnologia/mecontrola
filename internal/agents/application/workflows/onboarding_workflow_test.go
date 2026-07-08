@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -91,6 +92,150 @@ func (s *OnboardingWorkflowSuite) TestDecideGoal() {
 			scenario.expect(goal, err)
 		})
 	}
+}
+
+func (s *OnboardingWorkflowSuite) TestDecideGoalValueCents() {
+	type args struct {
+		hasAmount bool
+		amountBRL float64
+	}
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(cents int64, ok bool)
+	}{
+		{
+			name: "deve converter valor positivo com hasAmount true",
+			args: args{hasAmount: true, amountBRL: 400000},
+			expect: func(cents int64, ok bool) {
+				s.True(ok)
+				s.Equal(int64(40000000), cents)
+			},
+		},
+		{
+			name: "deve converter valor fracionario minimo",
+			args: args{hasAmount: true, amountBRL: 0.01},
+			expect: func(cents int64, ok bool) {
+				s.True(ok)
+				s.Equal(int64(1), cents)
+			},
+		},
+		{
+			name: "deve retornar nao informado para valor zero",
+			args: args{hasAmount: true, amountBRL: 0},
+			expect: func(cents int64, ok bool) {
+				s.False(ok)
+				s.Equal(int64(0), cents)
+			},
+		},
+		{
+			name: "deve retornar nao informado para valor negativo",
+			args: args{hasAmount: true, amountBRL: -50},
+			expect: func(cents int64, ok bool) {
+				s.False(ok)
+				s.Equal(int64(0), cents)
+			},
+		},
+		{
+			name: "deve retornar nao informado quando hasAmount false mesmo com valor positivo",
+			args: args{hasAmount: false, amountBRL: 400000},
+			expect: func(cents int64, ok bool) {
+				s.False(ok)
+				s.Equal(int64(0), cents)
+			},
+		},
+	}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			cents, ok := DecideGoalValueCents(scenario.args.hasAmount, scenario.args.amountBRL)
+			scenario.expect(cents, ok)
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestGoalWithValueSchema_UnmarshalsIntoExtractStruct() {
+	raw := []byte(`{"goal":"comprar uma casa","hasAmount":true,"amountBRL":400000}`)
+	var extract goalWithValueExtract
+	err := json.Unmarshal(raw, &extract)
+	s.NoError(err)
+	s.Equal("comprar uma casa", extract.Goal)
+	s.True(extract.HasAmount)
+	s.Equal(float64(400000), extract.AmountBRL)
+
+	s.Equal("object", goalWithValueSchema["type"])
+	s.Equal(false, goalWithValueSchema["additionalProperties"])
+	required, ok := goalWithValueSchema["required"].([]any)
+	s.True(ok)
+	s.ElementsMatch([]any{"goal", "hasAmount", "amountBRL"}, required)
+	properties, ok := goalWithValueSchema["properties"].(map[string]any)
+	s.True(ok)
+	s.Contains(properties, "goal")
+	s.Contains(properties, "hasAmount")
+	s.Contains(properties, "amountBRL")
+}
+
+func (s *OnboardingWorkflowSuite) TestGoalValueSchema_UnmarshalsIntoExtractStruct() {
+	raw := []byte(`{"hasAmount":false,"amountBRL":0}`)
+	var extract goalValueExtract
+	err := json.Unmarshal(raw, &extract)
+	s.NoError(err)
+	s.False(extract.HasAmount)
+	s.Equal(float64(0), extract.AmountBRL)
+
+	s.Equal("object", goalValueSchema["type"])
+	s.Equal(false, goalValueSchema["additionalProperties"])
+	required, ok := goalValueSchema["required"].([]any)
+	s.True(ok)
+	s.ElementsMatch([]any{"hasAmount", "amountBRL"}, required)
+	properties, ok := goalValueSchema["properties"].(map[string]any)
+	s.True(ok)
+	s.Contains(properties, "hasAmount")
+	s.Contains(properties, "amountBRL")
+}
+
+func (s *OnboardingWorkflowSuite) TestGoalValuePrompts_ContainMonetaryFormatExamples() {
+	formatExamples := []string{
+		"R$ 400.000,00",
+		"400000",
+		"10 mil reais",
+		"400 mil",
+		"1,5 milhão",
+	}
+	for _, example := range formatExamples {
+		s.Contains(_goalWithValueSystemPrompt, example)
+		s.Contains(_goalValueSystemPrompt, example)
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestGoalValueReprompt_InvitesOptionalValueWithoutBlocking() {
+	s.NotEmpty(_goalValueReprompt)
+	s.Contains(strings.ToLower(_goalValueReprompt), "não")
+}
+
+func (s *OnboardingWorkflowSuite) TestOnboardingState_MergePatch_PreservesGoalValueFields() {
+	codec := workflow.NewCodec[OnboardingState]()
+	base := OnboardingState{
+		Phase:          PhaseGoal,
+		UserID:         "user-1",
+		Goal:           "comprar uma casa",
+		GoalValueCents: 40000000,
+		GoalValueAsked: true,
+	}
+
+	baseBytes, err := codec.Encode(base)
+	s.Require().NoError(err)
+
+	patch := []byte(`{"resumeText":"sim, exatamente"}`)
+	merged, err := codec.MergePatch(baseBytes, patch)
+	s.Require().NoError(err)
+
+	result, err := codec.Decode(merged)
+	s.Require().NoError(err)
+
+	s.Equal("comprar uma casa", result.Goal)
+	s.Equal(int64(40000000), result.GoalValueCents)
+	s.True(result.GoalValueAsked)
+	s.Equal("sim, exatamente", result.ResumeText)
 }
 
 func (s *OnboardingWorkflowSuite) TestDecideIncomeCents() {
@@ -366,15 +511,17 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 				s.Equal(_welcomeGoalPrompt, out.Suspend.Prompt)
 				s.Contains(out.Suspend.Prompt, "Vamos começar?")
 				s.Contains(out.Suspend.Prompt, "objetivo")
+				s.Contains(out.Suspend.Prompt, "valor da meta")
+				s.Contains(out.Suspend.Prompt, "R$ 400.000,00")
 				s.Equal(PhaseGoal, out.State.Phase)
 			},
 		},
 		{
-			name: "resume com objetivo valido deve completar e definir Goal",
-			args: args{state: OnboardingState{UserID: "u1", ResumeText: "quero economizar 20%"}},
+			name: "meta e valor juntos devem ser extraidos em uma unica chamada sem repergunta",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "quero comprar uma casa, meta de R$ 400.000,00"}},
 			dependencies: dependencies{
 				agentMock: func() *agentmocks.Agent {
-					payload, _ := json.Marshal(goalExtract{Goal: "economizar 20% do salario"})
+					payload, _ := json.Marshal(goalWithValueExtract{Goal: "comprar uma casa", HasAmount: true, AmountBRL: 400000})
 					s.agentMock.EXPECT().
 						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
 						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
@@ -384,16 +531,39 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusCompleted, out.Status)
-				s.Equal("economizar 20% do salario", out.State.Goal)
+				s.Equal("comprar uma casa", out.State.Goal)
+				s.Equal(int64(40000000), out.State.GoalValueCents)
+				s.False(out.State.GoalValueAsked)
 				s.Empty(out.State.ResumeText)
 			},
 		},
 		{
-			name: "resume com objetivo vazio deve re-perguntar de forma deterministica",
+			name: "meta valida sem valor deve reperguntar especificamente pelo valor",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "quero quitar minhas dividas"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(goalWithValueExtract{Goal: "quitar minhas dividas", HasAmount: false, AmountBRL: 0})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(_goalValueReprompt, out.Suspend.Prompt)
+				s.Equal("quitar minhas dividas", out.State.Goal)
+				s.Equal(int64(0), out.State.GoalValueCents)
+				s.True(out.State.GoalValueAsked)
+			},
+		},
+		{
+			name: "sem objetivo identificavel deve reperguntar de forma combinada",
 			args: args{state: OnboardingState{UserID: "u1", ResumeText: "..."}},
 			dependencies: dependencies{
 				agentMock: func() *agentmocks.Agent {
-					payload, _ := json.Marshal(goalExtract{Goal: ""})
+					payload, _ := json.Marshal(goalWithValueExtract{Goal: "", HasAmount: false, AmountBRL: 0})
 					s.agentMock.EXPECT().
 						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
 						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
@@ -404,6 +574,164 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
 				s.Equal(_goalReprompt, out.Suspend.Prompt)
+				s.Empty(out.State.Goal)
+				s.True(out.State.GoalValueAsked)
+			},
+		},
+		{
+			name: "resume da repergunta combinada com objetivo desta vez valido nao deve reperguntar valor de novo",
+			args: args{state: OnboardingState{UserID: "u1", GoalValueAsked: true, ResumeText: "quero viajar"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(goalWithValueExtract{Goal: "viajar", HasAmount: false, AmountBRL: 0})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.Equal("viajar", out.State.Goal)
+				s.Equal(int64(0), out.State.GoalValueCents)
+				s.True(out.State.GoalValueAsked)
+			},
+		},
+		{
+			name: "resume value-only com valor valido deve salvar e completar",
+			args: args{state: OnboardingState{UserID: "u1", Goal: "quitar minhas dividas", GoalValueAsked: true, ResumeText: "400 mil"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(goalValueExtract{HasAmount: true, AmountBRL: 400000})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.Equal("quitar minhas dividas", out.State.Goal)
+				s.Equal(int64(40000000), out.State.GoalValueCents)
+				s.Empty(out.State.ResumeText)
+			},
+		},
+		{
+			name: "resume value-only com recusa deve avancar sem valor",
+			args: args{state: OnboardingState{UserID: "u1", Goal: "viajar", GoalValueAsked: true, ResumeText: "nao sei quanto"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(goalValueExtract{HasAmount: false, AmountBRL: 0})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.Equal("viajar", out.State.Goal)
+				s.Equal(int64(0), out.State.GoalValueCents)
+			},
+		},
+		{
+			name:         "objetivo previo sem repergunta de valor ainda gasta deve reperguntar valor sem chamar o parser",
+			args:         args{state: OnboardingState{UserID: "u1", Goal: "viajar", GoalValueAsked: false, ResumeText: "seguindo"}},
+			dependencies: dependencies{agentMock: s.agentMock},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(_goalValueReprompt, out.Suspend.Prompt)
+				s.Equal("viajar", out.State.Goal)
+				s.Equal(int64(0), out.State.GoalValueCents)
+				s.True(out.State.GoalValueAsked)
+			},
+		},
+		{
+			name: "resume da repergunta combinada ainda sem objetivo deve manter o loop de meta obrigatoria",
+			args: args{state: OnboardingState{UserID: "u1", GoalValueAsked: true, ResumeText: "ainda sem meta"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(goalWithValueExtract{Goal: "", HasAmount: false, AmountBRL: 0})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(_goalReprompt, out.Suspend.Prompt)
+				s.Empty(out.State.Goal)
+				s.True(out.State.GoalValueAsked)
+			},
+		},
+		{
+			name: "falha do parser na extracao combinada deve falhar o step",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "quero comprar uma casa"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{}, errors.New("llm error")).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.Error(err)
+				s.Equal(workflow.StepStatusFailed, out.Status)
+			},
+		},
+		{
+			name: "json invalido na extracao combinada deve falhar o step",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "quero comprar uma casa"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: []byte("nao-e-json")}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.Error(err)
+				s.Equal(workflow.StepStatusFailed, out.Status)
+			},
+		},
+		{
+			name: "falha do parser na extracao value-only deve falhar o step",
+			args: args{state: OnboardingState{UserID: "u1", Goal: "viajar", GoalValueAsked: true, ResumeText: "400 mil"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{}, errors.New("llm error")).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.Error(err)
+				s.Equal(workflow.StepStatusFailed, out.Status)
+			},
+		},
+		{
+			name: "json invalido na extracao value-only deve falhar o step",
+			args: args{state: OnboardingState{UserID: "u1", Goal: "viajar", GoalValueAsked: true, ResumeText: "400 mil"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: []byte("nao-e-json")}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.Error(err)
+				s.Equal(workflow.StepStatusFailed, out.Status)
 			},
 		},
 	}
@@ -412,6 +740,69 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 			step := workflow.NewStepFunc(stepGoalID, BuildGoalStep(scenario.dependencies.agentMock))
 			out, err := step.Execute(s.ctx, scenario.args.state)
 			scenario.expect(out, err)
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildGoalStep_NoValueCombinationCompletesWithEmptyGoal() {
+	type args struct {
+		state OnboardingState
+	}
+	type dependencies struct {
+		agentMock *agentmocks.Agent
+	}
+	scenarios := []struct {
+		name         string
+		args         args
+		dependencies dependencies
+	}{
+		{
+			name: "valor invalido junto com objetivo vazio nunca completa sem objetivo",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "..."}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(goalWithValueExtract{Goal: "", HasAmount: true, AmountBRL: 400000})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+		},
+		{
+			name: "valor negativo junto com objetivo vazio nunca completa sem objetivo",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "..."}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(goalWithValueExtract{Goal: "", HasAmount: true, AmountBRL: -100})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+		},
+		{
+			name: "ausencia de valor junto com objetivo vazio nunca completa sem objetivo",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "..."}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(goalWithValueExtract{Goal: "", HasAmount: false, AmountBRL: 0})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+		},
+	}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			step := workflow.NewStepFunc(stepGoalID, BuildGoalStep(scenario.dependencies.agentMock))
+			out, err := step.Execute(s.ctx, scenario.args.state)
+			s.NoError(err)
+			s.NotEqual(workflow.StepStatusCompleted, out.Status, "nenhuma combinacao de valor deve completar o step com Goal vazio")
+			s.Empty(out.State.Goal)
 		})
 	}
 }
@@ -832,6 +1223,82 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_AffirmativeCreatesRecu
 	s.Equal(workflow.StepStatusCompleted, out.Status)
 	s.True(out.State.Recurrence)
 	s.Contains(out.State.FinalMessage, "economizar")
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WithGoalValuePersistsMetadataAndMessage() {
+	state := OnboardingState{
+		UserID:         "11111111-1111-1111-1111-111111111111",
+		Goal:           "comprar uma casa",
+		GoalValueCents: 40000000,
+		ResumeText:     "sim",
+	}
+	payload, _ := json.Marshal(yesNoExtract{Confirmed: true})
+	s.agentMock.EXPECT().
+		Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+		Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+	s.budgetsMock.EXPECT().
+		CreateRecurrence(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string"), 12).
+		Return(nil).Once()
+	s.wmMock.EXPECT().
+		Upsert(mock.Anything, state.UserID, "## Objetivo Financeiro\n\n"+state.Goal).
+		Return(nil).Once()
+	s.wmMock.EXPECT().
+		UpsertMetadata(mock.Anything, state.UserID, map[string]any{
+			"objetivo_financeiro":                state.Goal,
+			"objetivo_financeiro_valor_centavos": state.GoalValueCents,
+		}).
+		Return(nil).Once()
+
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.agentMock, s.budgetsMock, s.wmMock))
+	out, err := step.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+	s.Contains(out.State.FinalMessage, "comprar uma casa")
+	s.Contains(out.State.FinalMessage, "meta de "+formatBRL(state.GoalValueCents))
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WithoutGoalValueOmitsMetadataKeyAndMarkdownUnchanged() {
+	state := OnboardingState{
+		UserID:     "11111111-1111-1111-1111-111111111111",
+		Goal:       "economizar",
+		ResumeText: "nao",
+	}
+	payload, _ := json.Marshal(yesNoExtract{Confirmed: false})
+	s.agentMock.EXPECT().
+		Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+		Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+	s.wmMock.EXPECT().
+		Upsert(mock.Anything, state.UserID, "## Objetivo Financeiro\n\n"+state.Goal).
+		Return(nil).Once()
+	s.wmMock.EXPECT().
+		UpsertMetadata(mock.Anything, state.UserID, map[string]any{"objetivo_financeiro": state.Goal}).
+		Return(nil).Once()
+
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.agentMock, s.budgetsMock, s.wmMock))
+	out, err := step.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+	s.False(out.State.Recurrence)
+	s.Contains(out.State.FinalMessage, "economizar")
+	s.NotContains(out.State.FinalMessage, "meta de")
+}
+
+func (s *OnboardingWorkflowSuite) TestConclusionFinalMessage_WithValueMentionsAmount() {
+	msg := conclusionFinalMessage("comprar uma casa", 40000000)
+	s.Contains(msg, fmt.Sprintf(`Seu objetivo "comprar uma casa" (meta de %s)`, formatBRL(40000000)))
+}
+
+func (s *OnboardingWorkflowSuite) TestConclusionFinalMessage_WithoutValueMatchesPreviousBehavior() {
+	msg := conclusionFinalMessage("economizar", 0)
+	expected := fmt.Sprintf(
+		"Tudo pronto! 🚀 %s está registrado.\n\n"+
+			"Agora é só começar: me envie seus gastos e receitas no dia a dia (ex.: \"gastei R$ 50 no mercado\" ou \"recebi R$ 200 de freela\") que eu registro tudo pra você. Vamos juntos! 💪",
+		`Seu objetivo "economizar"`,
+	)
+	s.Equal(expected, msg)
+	s.NotContains(msg, "meta de")
 }
 
 func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_IDAndStructure() {

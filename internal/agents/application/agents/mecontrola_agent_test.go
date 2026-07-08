@@ -370,25 +370,48 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 }
 
 func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_DefaultMaxTokensApplied() {
-	provider := llmmocks.NewProvider(s.T())
-	provider.EXPECT().
-		Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
-		Run(func(_ context.Context, req llm.Request) {
-			s.Equal(mecontrolaAgentDefaultMaxTokens, req.MaxTokens)
-		}).
-		Return(llm.Response{Content: "ok"}, nil).
-		Once()
+	type dependencies struct {
+		provider *llmmocks.Provider
+	}
 
-	obs := fake.NewProvider()
-	a := BuildMeControlaAgent(provider, nil, nil, obs)
+	scenarios := []struct {
+		name         string
+		dependencies dependencies
+		expect       func(result agent.Result, err error)
+	}{
+		{
+			name: "deve aplicar max tokens padrao na request ao llm",
+			dependencies: dependencies{
+				provider: func() *llmmocks.Provider {
+					provider := llmmocks.NewProvider(s.T())
+					provider.EXPECT().
+						Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+						Run(func(_ context.Context, req llm.Request) {
+							s.Equal(mecontrolaAgentDefaultMaxTokens, req.MaxTokens)
+						}).
+						Return(llm.Response{Content: "ok"}, nil).
+						Once()
+					return provider
+				}(),
+			},
+			expect: func(result agent.Result, err error) {
+				s.NoError(err)
+				s.Equal("ok", result.Content)
+			},
+		},
+	}
 
-	result, err := a.Execute(s.ctx, agent.Request{
-		AgentID:  MecontrolaAgentID,
-		Messages: []llm.Message{{Role: "user", Content: "oi"}},
-	})
-
-	s.NoError(err)
-	s.Equal("ok", result.Content)
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			obs := fake.NewProvider()
+			a := BuildMeControlaAgent(scenario.dependencies.provider, nil, nil, obs)
+			result, err := a.Execute(s.ctx, agent.Request{
+				AgentID:  MecontrolaAgentID,
+				Messages: []llm.Message{{Role: "user", Content: "oi"}},
+			})
+			scenario.expect(result, err)
+		})
+	}
 }
 
 func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_DefaultMaxTokensCoversOnboardingResponse() {
@@ -411,33 +434,56 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_OnboardingSummary
 		"  - Prazeres: 20%\n\n" +
 		"Por favor, confirme se deseja ativar o orçamento com as informações acima."
 
-	provider := llmmocks.NewProvider(s.T())
-	provider.EXPECT().
-		Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
-		Run(func(_ context.Context, req llm.Request) {
-			s.GreaterOrEqual(req.MaxTokens, 1536)
-		}).
-		Return(llm.Response{Content: fullResponse}, nil).
-		Once()
-
-	obs := fake.NewProvider()
-	a := BuildMeControlaAgent(provider, nil, nil, obs)
-
-	result, err := a.Execute(s.ctx, agent.Request{
-		AgentID:  MecontrolaAgentID,
-		Messages: []llm.Message{{Role: "user", Content: "quero configurar meu orçamento"}},
-	})
-
-	s.NoError(err)
-	s.False(result.TruncatedByLength)
-
-	normalized := formatting.NormalizeOutboundText(result.Content)
-
-	s.NotContains(normalized, "**")
-	s.Contains(normalized, "📊")
-	s.True(strings.Contains(normalized, "✅") || strings.Contains(normalized, "🎯"))
-	for _, category := range []string{"*Custo Fixo*", "*Conhecimento*", "*Prazeres*", "*Metas*", "*Liberdade Financeira*"} {
-		s.Contains(normalized, category)
+	type dependencies struct {
+		provider *llmmocks.Provider
 	}
-	s.Contains(normalized, "✅ Por favor, confirme")
+
+	scenarios := []struct {
+		name         string
+		dependencies dependencies
+		expect       func(result agent.Result, err error)
+	}{
+		{
+			name: "deve preservar resumo de onboarding com emojis sem truncar",
+			dependencies: dependencies{
+				provider: func() *llmmocks.Provider {
+					provider := llmmocks.NewProvider(s.T())
+					provider.EXPECT().
+						Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+						Run(func(_ context.Context, req llm.Request) {
+							s.GreaterOrEqual(req.MaxTokens, 1536)
+						}).
+						Return(llm.Response{Content: fullResponse}, nil).
+						Once()
+					return provider
+				}(),
+			},
+			expect: func(result agent.Result, err error) {
+				s.NoError(err)
+				s.False(result.TruncatedByLength)
+
+				normalized := formatting.NormalizeOutboundText(result.Content)
+
+				s.NotContains(normalized, "**")
+				s.Contains(normalized, "📊")
+				s.True(strings.Contains(normalized, "✅") || strings.Contains(normalized, "🎯"))
+				for _, category := range []string{"*Custo Fixo*", "*Conhecimento*", "*Prazeres*", "*Metas*", "*Liberdade Financeira*"} {
+					s.Contains(normalized, category)
+				}
+				s.Contains(normalized, "✅ Por favor, confirme")
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			obs := fake.NewProvider()
+			a := BuildMeControlaAgent(scenario.dependencies.provider, nil, nil, obs)
+			result, err := a.Execute(s.ctx, agent.Request{
+				AgentID:  MecontrolaAgentID,
+				Messages: []llm.Message{{Role: "user", Content: "quero configurar meu orçamento"}},
+			})
+			scenario.expect(result, err)
+		})
+	}
 }

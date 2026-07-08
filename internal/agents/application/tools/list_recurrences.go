@@ -62,7 +62,7 @@ func BuildListRecurrencesTool(recurrences interfaces.RecurrenceManager) tool.Too
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[ListRecurrencesInput, ListRecurrencesOutput]("list_recurrences", "Lista as recorrências financeiras do usuário.", in, out, buildListRecurrencesExec(recurrences))
+	return tool.NewTool("list_recurrences", "Lista as recorrências financeiras do usuário.", in, out, buildListRecurrencesExec(recurrences))
 }
 
 func buildListRecurrencesExec(recurrences interfaces.RecurrenceManager) func(context.Context, ListRecurrencesInput) (ListRecurrencesOutput, error) {

@@ -95,6 +95,9 @@ packages:
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup:
     interfaces:
       MessageRepository: {}
+  github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/scorer:
+    interfaces:
+      ScorerRunner: {}
   github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/messaging/database/consumers:
     interfaces:
       notifyThresholdAlertUseCase: {}

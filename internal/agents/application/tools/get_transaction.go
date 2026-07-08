@@ -71,7 +71,7 @@ func BuildGetTransactionTool(ledger interfaces.TransactionsLedger) tool.ToolHand
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[GetTransactionInput, GetTransactionOutput]("get_transaction", "Retorna os detalhes de um lançamento de transação pelo ID.", in, out, buildGetTransactionExec(ledger))
+	return tool.NewTool("get_transaction", "Retorna os detalhes de um lançamento de transação pelo ID.", in, out, buildGetTransactionExec(ledger))
 }
 
 func buildGetTransactionExec(ledger interfaces.TransactionsLedger) func(context.Context, GetTransactionInput) (GetTransactionOutput, error) {

@@ -67,7 +67,7 @@ func BuildQueryCardInvoiceTool(ledger interfaces.TransactionsLedger) tool.ToolHa
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[QueryCardInvoiceInput, QueryCardInvoiceOutput]("query_card_invoice", "Consulta a fatura de um cartão de crédito para o mês informado.", in, out, buildQueryCardInvoiceExec(ledger))
+	return tool.NewTool("query_card_invoice", "Consulta a fatura de um cartão de crédito para o mês informado.", in, out, buildQueryCardInvoiceExec(ledger))
 }
 
 func buildQueryCardInvoiceExec(ledger interfaces.TransactionsLedger) func(context.Context, QueryCardInvoiceInput) (QueryCardInvoiceOutput, error) {

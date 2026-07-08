@@ -144,18 +144,20 @@ func ParseAllocationInputKind(s string) (allocationInputKind, error) {
 }
 
 type OnboardingState struct {
-	Phase        OnboardingPhase `json:"phase"`
-	UserID       string          `json:"userID"`
-	PeerID       string          `json:"peerID"`
-	Goal         string          `json:"goal"`
-	IncomeCents  int64           `json:"incomeCents"`
-	CardsDone    bool            `json:"cardsDone"`
-	Allocations  map[string]int  `json:"allocations"`
-	CardNickname string          `json:"cardNickname"`
-	CardDueDay   int             `json:"cardDueDay"`
-	Recurrence   bool            `json:"recurrence"`
-	ResumeText   string          `json:"resumeText"`
-	FinalMessage string          `json:"finalMessage"`
+	Phase          OnboardingPhase `json:"phase"`
+	UserID         string          `json:"userID"`
+	PeerID         string          `json:"peerID"`
+	Goal           string          `json:"goal"`
+	GoalValueCents int64           `json:"goalValueCents"`
+	GoalValueAsked bool            `json:"goalValueAsked"`
+	IncomeCents    int64           `json:"incomeCents"`
+	CardsDone      bool            `json:"cardsDone"`
+	Allocations    map[string]int  `json:"allocations"`
+	CardNickname   string          `json:"cardNickname"`
+	CardDueDay     int             `json:"cardDueDay"`
+	Recurrence     bool            `json:"recurrence"`
+	ResumeText     string          `json:"resumeText"`
+	FinalMessage   string          `json:"finalMessage"`
 }
 
 func DecideGoal(text string) (string, error) {
@@ -164,6 +166,13 @@ func DecideGoal(text string) (string, error) {
 		return "", errors.New("goal: texto nao pode ser vazio")
 	}
 	return trimmed, nil
+}
+
+func DecideGoalValueCents(hasAmount bool, amountBRL float64) (int64, bool) {
+	if !hasAmount || amountBRL <= 0 {
+		return 0, false
+	}
+	return int64(math.Round(amountBRL * 100)), true
 }
 
 func DecideIncomeCents(amountBRL float64) (int64, error) {
@@ -328,8 +337,15 @@ func renderAllocationLines(items []interfaces.AllocationCents) string {
 	return b.String()
 }
 
-type goalExtract struct {
-	Goal string `json:"goal"`
+type goalWithValueExtract struct {
+	Goal      string  `json:"goal"`
+	HasAmount bool    `json:"hasAmount"`
+	AmountBRL float64 `json:"amountBRL"`
+}
+
+type goalValueExtract struct {
+	HasAmount bool    `json:"hasAmount"`
+	AmountBRL float64 `json:"amountBRL"`
 }
 
 type incomeExtract struct {
@@ -356,12 +372,24 @@ type yesNoExtract struct {
 	Confirmed bool `json:"confirmed"`
 }
 
-var goalSchema = map[string]any{
+var goalWithValueSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
-		"goal": map[string]any{"type": "string"},
+		"goal":      map[string]any{"type": "string"},
+		"hasAmount": map[string]any{"type": "boolean"},
+		"amountBRL": map[string]any{"type": "number"},
 	},
-	"required":             []any{"goal"},
+	"required":             []any{"goal", "hasAmount", "amountBRL"},
+	"additionalProperties": false,
+}
+
+var goalValueSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"hasAmount": map[string]any{"type": "boolean"},
+		"amountBRL": map[string]any{"type": "number"},
+	},
+	"required":             []any{"hasAmount", "amountBRL"},
 	"additionalProperties": false,
 }
 
@@ -412,9 +440,11 @@ var recurrenceSchema = map[string]any{
 const _welcomeGoalPrompt = "🎉 Bem-vindo ao MeControla! 🎉\n\n" +
 	"Estou aqui para te ajudar a organizar suas finanças e conquistar seus objetivos. 💪💰\n\n" +
 	"Vamos começar? Qual é o seu principal objetivo financeiro para este mês?\n" +
-	"(por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva)"
+	"(por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva; se quiser, já pode me contar o valor da meta, tipo \"comprar uma casa, meta de R$ 400.000,00\")"
 
-const _goalReprompt = "Não consegui identificar seu objetivo. Qual é o seu principal objetivo financeiro para este mês? Por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva."
+const _goalReprompt = "Não consegui identificar seu objetivo. Qual é o seu principal objetivo financeiro para este mês? Por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva. Se souber, pode me contar também o valor da meta — mas isso é totalmente opcional."
+
+const _goalValueReprompt = "Legal! E você já tem uma ideia de quanto (em R$) representa essa meta? Pode responder com um número, por exemplo \"R$ 400.000,00\" ou \"400 mil\" — se preferir não informar agora, é só responder \"não\" que a gente segue em frente."
 
 const _incomePrompt = "Perfeito! Agora me conta: qual é a sua renda mensal líquida em reais? (por exemplo: R$ 3.500,00)"
 
@@ -431,6 +461,26 @@ const _allocationInputSystemPrompt = "Você classifica a resposta do usuário so
 	"Defina action='percent' quando ele informar percentuais (números pequenos que somam cerca de 100). " +
 	"Defina action='reais' quando ele informar valores em reais (R$). " +
 	"Preencha cada categoria com o número informado pelo usuário; use 0 quando a categoria não for citada."
+
+const _goalWithValueSystemPrompt = "Extraia o objetivo financeiro principal do texto do usuário (campo goal, string concisa) e, se houver, o valor em reais associado a essa meta. " +
+	"Defina hasAmount=true somente quando o texto mencionar explicitamente um valor monetário para a meta; caso contrário hasAmount=false e amountBRL=0. " +
+	"Converta o valor mencionado para um número em reais (amountBRL), sempre em ponto decimal, nunca com símbolo de moeda ou separador de milhar. Exemplos de conversão: " +
+	"\"R$ 400.000,00\" -> amountBRL=400000; " +
+	"\"400000\" -> amountBRL=400000; " +
+	"\"10 mil reais\" -> amountBRL=10000; " +
+	"\"400 mil\" -> amountBRL=400000; " +
+	"\"1,5 milhão\" -> amountBRL=1500000. " +
+	"Se o usuário não mencionar nenhum valor, ou disser que não sabe, ou recusar informar, defina hasAmount=false e amountBRL=0 — nunca invente um valor que não esteja no texto."
+
+const _goalValueSystemPrompt = "Extraia, se houver, o valor em reais que o usuário informou para a meta financeira dele. " +
+	"Defina hasAmount=true somente quando o texto mencionar explicitamente um valor monetário; caso contrário hasAmount=false e amountBRL=0. " +
+	"Converta o valor mencionado para um número em reais (amountBRL), sempre em ponto decimal, nunca com símbolo de moeda ou separador de milhar. Exemplos de conversão: " +
+	"\"R$ 400.000,00\" -> amountBRL=400000; " +
+	"\"400000\" -> amountBRL=400000; " +
+	"\"10 mil reais\" -> amountBRL=10000; " +
+	"\"400 mil\" -> amountBRL=400000; " +
+	"\"1,5 milhão\" -> amountBRL=1500000. " +
+	"Se o usuário recusar (ex.: \"não\", \"não sei\", \"prefiro não dizer\") ou não mencionar nenhum valor, defina hasAmount=false e amountBRL=0 — nunca invente um valor que não esteja no texto."
 
 func cardsPrompt(existing int) string {
 	if existing > 0 {
@@ -465,11 +515,15 @@ func summaryPrompt(state OnboardingState, items []interfaces.AllocationCents) st
 	return b.String()
 }
 
-func conclusionFinalMessage(goal string) string {
+func conclusionFinalMessage(goal string, valueCents int64) string {
+	objetivo := fmt.Sprintf("Seu objetivo \"%s\"", goal)
+	if valueCents > 0 {
+		objetivo = fmt.Sprintf("Seu objetivo \"%s\" (meta de %s)", goal, formatBRL(valueCents))
+	}
 	return fmt.Sprintf(
-		"Tudo pronto! 🚀 Seu objetivo \"%s\" está registrado.\n\n"+
+		"Tudo pronto! 🚀 %s está registrado.\n\n"+
 			"Agora é só começar: me envie seus gastos e receitas no dia a dia (ex.: \"gastei R$ 50 no mercado\" ou \"recebi R$ 200 de freela\") que eu registro tudo pra você. Vamos juntos! 💪",
-		goal,
+		objetivo,
 	)
 }
 
@@ -497,25 +551,60 @@ func BuildGoalStep(a agent.Agent) func(context.Context, OnboardingState) (workfl
 		}
 		resumeText := state.ResumeText
 		state.ResumeText = ""
+
+		if state.Goal == "" {
+			extracted, err := a.Execute(ctx, agent.Request{
+				Messages: []llm.Message{
+					{Role: "system", Content: _goalWithValueSystemPrompt},
+					{Role: "user", Content: resumeText},
+				},
+				Schema: &llm.Schema{Name: "goal_with_value_extract", Strict: true, Schema: goalWithValueSchema},
+			})
+			if err != nil {
+				return failStep(state, fmt.Errorf("agents.onboarding.goal: parse: %w", err))
+			}
+			var extract goalWithValueExtract
+			if err := json.Unmarshal(extracted.RawJSON, &extract); err != nil {
+				return failStep(state, fmt.Errorf("agents.onboarding.goal: unmarshal: %w", err))
+			}
+			goal, err := DecideGoal(extract.Goal)
+			if err != nil {
+				state.GoalValueAsked = true
+				return suspendStep(state, _goalReprompt), nil
+			}
+			state.Goal = goal
+			if cents, ok := DecideGoalValueCents(extract.HasAmount, extract.AmountBRL); ok {
+				state.GoalValueCents = cents
+			}
+			if state.GoalValueCents == 0 && !state.GoalValueAsked {
+				state.GoalValueAsked = true
+				return suspendStep(state, _goalValueReprompt), nil
+			}
+			return completeStep(state), nil
+		}
+
+		if !state.GoalValueAsked {
+			state.GoalValueAsked = true
+			return suspendStep(state, _goalValueReprompt), nil
+		}
+
 		extracted, err := a.Execute(ctx, agent.Request{
 			Messages: []llm.Message{
-				{Role: "system", Content: "Extraia o objetivo financeiro principal do texto do usuario. Retorne como string concisa."},
+				{Role: "system", Content: _goalValueSystemPrompt},
 				{Role: "user", Content: resumeText},
 			},
-			Schema: &llm.Schema{Name: "goal_extract", Strict: true, Schema: goalSchema},
+			Schema: &llm.Schema{Name: "goal_value_extract", Strict: true, Schema: goalValueSchema},
 		})
 		if err != nil {
-			return failStep(state, fmt.Errorf("agents.onboarding.goal: parse: %w", err))
+			return failStep(state, fmt.Errorf("agents.onboarding.goal_value: parse: %w", err))
 		}
-		var extract goalExtract
+		var extract goalValueExtract
 		if err := json.Unmarshal(extracted.RawJSON, &extract); err != nil {
-			return failStep(state, fmt.Errorf("agents.onboarding.goal: unmarshal: %w", err))
+			return failStep(state, fmt.Errorf("agents.onboarding.goal_value: unmarshal: %w", err))
 		}
-		goal, err := DecideGoal(extract.Goal)
-		if err != nil {
-			return suspendStep(state, _goalReprompt), nil
+		if cents, ok := DecideGoalValueCents(extract.HasAmount, extract.AmountBRL); ok {
+			state.GoalValueCents = cents
 		}
-		state.Goal = goal
 		return completeStep(state), nil
 	}
 }
@@ -774,10 +863,14 @@ func BuildConclusionStep(a agent.Agent, budgets interfaces.BudgetPlanner, workin
 		if err := workingMem.Upsert(ctx, state.UserID, "## Objetivo Financeiro\n\n"+state.Goal); err != nil {
 			return failStep(state, fmt.Errorf("agents.onboarding.conclusion: upsert_wm: %w", err))
 		}
-		if err := workingMem.UpsertMetadata(ctx, state.UserID, map[string]any{"objetivo_financeiro": state.Goal}); err != nil {
+		metadata := map[string]any{"objetivo_financeiro": state.Goal}
+		if state.GoalValueCents > 0 {
+			metadata["objetivo_financeiro_valor_centavos"] = state.GoalValueCents
+		}
+		if err := workingMem.UpsertMetadata(ctx, state.UserID, metadata); err != nil {
 			return failStep(state, fmt.Errorf("agents.onboarding.conclusion: upsert_metadata: %w", err))
 		}
-		state.FinalMessage = conclusionFinalMessage(state.Goal)
+		state.FinalMessage = conclusionFinalMessage(state.Goal, state.GoalValueCents)
 		return completeStep(state), nil
 	}
 }

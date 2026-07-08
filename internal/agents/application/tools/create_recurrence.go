@@ -71,7 +71,7 @@ func BuildCreateRecurrenceTool(registrar recurrenceRegistrar) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool[CreateRecurrenceInput, CreateRecurrenceOutput]("create_recurrence", "Solicita a criação de um template de lançamento recorrente; a persistência só ocorre após confirmação explícita do usuário.", in, out, buildCreateRecurrenceExec(registrar))
+	return tool.NewTool("create_recurrence", "Solicita a criação de um template de lançamento recorrente; a persistência só ocorre após confirmação explícita do usuário.", in, out, buildCreateRecurrenceExec(registrar))
 }
 
 func buildCreateRecurrenceExec(registrar recurrenceRegistrar) func(context.Context, CreateRecurrenceInput) (CreateRecurrenceOutput, error) {
