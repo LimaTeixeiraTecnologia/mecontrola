@@ -2,7 +2,7 @@
 # taskfiles/scripts/build-image.sh
 # Helper cross-platform para `docker build` da imagem mecontrola.
 # Usado por: task docker:build
-# ADR-011: builder golang:1.26.3-alpine + runtime distroless nonroot; imagem ≤ 30 MB
+# ADR-011: builder golang:1.26.5-alpine + runtime distroless nonroot; imagem ≤ 30 MB
 
 set -eu
 
