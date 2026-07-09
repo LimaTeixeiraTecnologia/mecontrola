@@ -20,27 +20,6 @@ const (
 	CardConfirmReplay
 )
 
-func (a CardConfirmAction) String() string {
-	switch a {
-	case CardConfirmAccept:
-		return "accept"
-	case CardConfirmCancel:
-		return "cancel"
-	case CardConfirmReprompt:
-		return "reprompt"
-	case CardConfirmExpire:
-		return "expire"
-	case CardConfirmReplay:
-		return "replay"
-	default:
-		return "unknown"
-	}
-}
-
-func (a CardConfirmAction) IsValid() bool {
-	return a >= CardConfirmAccept && a <= CardConfirmReplay
-}
-
 func isCardCreateExpired(state CardCreateState, now time.Time) bool {
 	return !state.SuspendedAt.IsZero() && now.Sub(state.SuspendedAt) > cardCreateConfirmTTL
 }

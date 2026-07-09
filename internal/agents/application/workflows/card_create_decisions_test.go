@@ -142,38 +142,3 @@ func (s *CardCreateDecisionsSuite) TestDecideCardCreateConfirmation() {
 		})
 	}
 }
-
-func (s *CardCreateDecisionsSuite) TestCardConfirmActionRoundTrip() {
-	type args struct {
-		action CardConfirmAction
-		text   string
-	}
-
-	scenarios := []struct {
-		name string
-		args args
-	}{
-		{name: "accept", args: args{action: CardConfirmAccept, text: "accept"}},
-		{name: "cancel", args: args{action: CardConfirmCancel, text: "cancel"}},
-		{name: "reprompt", args: args{action: CardConfirmReprompt, text: "reprompt"}},
-		{name: "expire", args: args{action: CardConfirmExpire, text: "expire"}},
-		{name: "replay", args: args{action: CardConfirmReplay, text: "replay"}},
-	}
-
-	for _, scenario := range scenarios {
-		s.Run(scenario.name, func() {
-			s.Equal(scenario.args.text, scenario.args.action.String())
-			s.True(scenario.args.action.IsValid())
-		})
-	}
-}
-
-func (s *CardCreateDecisionsSuite) TestCardConfirmActionIsValidRejectsOutOfRange() {
-	s.False(CardConfirmAction(0).IsValid())
-	s.False(CardConfirmAction(99).IsValid())
-}
-
-func (s *CardCreateDecisionsSuite) TestCardConfirmActionStringUnknown() {
-	s.Equal("unknown", CardConfirmAction(0).String())
-	s.Equal("unknown", CardConfirmAction(99).String())
-}

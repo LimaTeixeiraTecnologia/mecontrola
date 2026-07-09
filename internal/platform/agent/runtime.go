@@ -114,12 +114,6 @@ func (r *agentRuntime) Execute(ctx context.Context, in InboundRequest) (Outcome,
 		return Outcome{}, fmt.Errorf("agent.runtime.execute: insert_run: %w", err)
 	}
 
-	span.SetAttributes(
-		observability.String("thread_id", run.ThreadID),
-		observability.String("run_id", run.ID.String()),
-		observability.String("wamid", run.CorrelationKey),
-	)
-
 	ctx = WithRunID(workflow.WithRuntime(ctx, in), runID)
 	ctx = withToolIdentity(ctx, in)
 
@@ -165,9 +159,7 @@ func (r *agentRuntime) failRun(ctx context.Context, span observability.Span, run
 
 func (r *agentRuntime) logRunError(ctx context.Context, run Run, stage string, err error) {
 	r.o11y.Logger().Error(ctx, "agent.runtime.execute: "+stage+" falhou",
-		observability.String("thread_id", run.ThreadID),
-		observability.String("run_id", run.ID.String()),
-		observability.String("wamid", run.CorrelationKey),
+		observability.String("agent_id", run.AgentID),
 		observability.Error(err),
 	)
 }
@@ -249,9 +241,7 @@ func firstToolErrorContent(calls []ToolCallRecord) string {
 func (r *agentRuntime) recordRunFailure(ctx context.Context, run Run, errStr string) {
 	_, span := r.o11y.Tracer().Start(ctx, "agents.runtime.tool_call_failure",
 		observability.WithAttributes(
-			observability.String("thread_id", run.ThreadID),
-			observability.String("run_id", run.ID.String()),
-			observability.String("wamid", run.CorrelationKey),
+			observability.String("agent_id", run.AgentID),
 		),
 	)
 	defer span.End()
@@ -261,9 +251,7 @@ func (r *agentRuntime) recordRunFailure(ctx context.Context, run Run, errStr str
 	span.SetStatus(observability.StatusCodeError, "tool_call_failure")
 
 	r.o11y.Logger().Error(ctx, "agent.runtime.finish_run: falha na execucao do run",
-		observability.String("thread_id", run.ThreadID),
-		observability.String("run_id", run.ID.String()),
-		observability.String("wamid", run.CorrelationKey),
+		observability.String("agent_id", run.AgentID),
 		observability.String("error", errStr),
 	)
 }

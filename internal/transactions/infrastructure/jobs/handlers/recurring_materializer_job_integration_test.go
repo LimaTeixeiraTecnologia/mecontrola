@@ -42,7 +42,7 @@ func (s *RecurringMaterializerJobIntegrationSuite) buildTemplate(userID uuid.UUI
 		seedIncomeRootID, seedIncomeLeafID, "income", "salario/decimo-terceiro",
 		"matched", 1.0, "high", "exact", "canonical_name", "salário",
 		"matched canonical_name salário", valueobjects.CategoryDecisionSourceAutoMatched,
-		7, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		9, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 	)
 	t := entities.NewRecurringTemplate(
 		uuid.New(),

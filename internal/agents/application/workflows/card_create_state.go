@@ -1,8 +1,6 @@
 package workflows
 
 import (
-	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,42 +14,6 @@ const (
 	CardCreateStatusCancelled
 	CardCreateStatusExpired
 )
-
-func (s CardCreateStatus) String() string {
-	switch s {
-	case CardCreateStatusActive:
-		return "active"
-	case CardCreateStatusCompleted:
-		return "completed"
-	case CardCreateStatusCancelled:
-		return "cancelled"
-	case CardCreateStatusExpired:
-		return "expired"
-	default:
-		return "unknown"
-	}
-}
-
-func (s CardCreateStatus) IsValid() bool {
-	return s >= CardCreateStatusActive && s <= CardCreateStatusExpired
-}
-
-var errInvalidCardCreateStatus = errors.New("workflows: card create status inválido")
-
-func ParseCardCreateStatus(v string) (CardCreateStatus, error) {
-	switch v {
-	case "active":
-		return CardCreateStatusActive, nil
-	case "completed":
-		return CardCreateStatusCompleted, nil
-	case "cancelled":
-		return CardCreateStatusCancelled, nil
-	case "expired":
-		return CardCreateStatusExpired, nil
-	default:
-		return 0, fmt.Errorf("%w: %q", errInvalidCardCreateStatus, v)
-	}
-}
 
 type CardCreateState struct {
 	Status             CardCreateStatus `json:"status"`
