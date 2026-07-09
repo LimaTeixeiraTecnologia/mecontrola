@@ -42,6 +42,9 @@ func (f *fakeHousekeepingStore) Insert(_ context.Context, _ Snapshot) error { re
 func (f *fakeHousekeepingStore) Load(_ context.Context, _, _ string) (Snapshot, bool, error) {
 	return Snapshot{}, false, nil
 }
+func (f *fakeHousekeepingStore) LoadLatest(_ context.Context, _, _ string) (Snapshot, bool, error) {
+	return Snapshot{}, false, nil
+}
 func (f *fakeHousekeepingStore) Save(_ context.Context, _ Snapshot, _ int64) error { return nil }
 func (f *fakeHousekeepingStore) AppendStep(_ context.Context, _ StepRecord) error  { return nil }
 func (f *fakeHousekeepingStore) ListSuspended(_ context.Context, _ string, _ time.Time, _ int) ([]Snapshot, error) {

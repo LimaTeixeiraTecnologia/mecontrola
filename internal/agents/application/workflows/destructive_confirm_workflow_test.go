@@ -48,6 +48,13 @@ func (s *wfStore) Load(_ context.Context, wid, key string) (workflow.Snapshot, b
 	return snap, ok, nil
 }
 
+func (s *wfStore) LoadLatest(_ context.Context, wid, key string) (workflow.Snapshot, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	snap, ok := s.data[s.key(wid, key)]
+	return snap, ok, nil
+}
+
 func (s *wfStore) Save(_ context.Context, snap workflow.Snapshot, expected int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

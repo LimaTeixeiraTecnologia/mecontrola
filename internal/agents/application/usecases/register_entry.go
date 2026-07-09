@@ -11,6 +11,7 @@ import (
 const (
 	registerDirectionIncome     = "income"
 	registerIncomePaymentMethod = "pix"
+	mecontrolaAgentID           = "mecontrola-agent"
 )
 
 type RegisterResult struct {

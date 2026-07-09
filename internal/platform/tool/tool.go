@@ -16,18 +16,19 @@ type ToolHandle interface {
 	ID() string
 	Description() string
 	Parameters() map[string]any
-	Invoke(ctx context.Context, argsJSON []byte) ([]byte, error)
+	Invoke(ctx context.Context, argsJSON []byte) (result []byte, verbatimText string, err error)
 }
 
 type tool[I, O any] struct {
-	id        string
-	desc      string
-	in        llm.Schema
-	out       llm.Schema
-	execFn    func(context.Context, I) (O, error)
-	validator *jsonschema.Schema
-	valErr    error
-	valOnce   sync.Once
+	id              string
+	desc            string
+	in              llm.Schema
+	out             llm.Schema
+	execFn          func(context.Context, I) (O, error)
+	extractVerbatim func(O) (string, bool)
+	validator       *jsonschema.Schema
+	valErr          error
+	valOnce         sync.Once
 }
 
 func NewTool[I, O any](id, desc string, in, out llm.Schema, exec func(context.Context, I) (O, error)) ToolHandle {
@@ -37,6 +38,17 @@ func NewTool[I, O any](id, desc string, in, out llm.Schema, exec func(context.Co
 		in:     in,
 		out:    out,
 		execFn: exec,
+	}
+}
+
+func NewVerbatimTool[I, O any](id, desc string, in, out llm.Schema, exec func(context.Context, I) (O, error), extractVerbatim func(O) (string, bool)) ToolHandle {
+	return &tool[I, O]{
+		id:              id,
+		desc:            desc,
+		in:              in,
+		out:             out,
+		execFn:          exec,
+		extractVerbatim: extractVerbatim,
 	}
 }
 
@@ -80,31 +92,37 @@ func (t *tool[I, O]) compileValidator() {
 	t.validator = sch
 }
 
-func (t *tool[I, O]) Invoke(ctx context.Context, argsJSON []byte) ([]byte, error) {
+func (t *tool[I, O]) Invoke(ctx context.Context, argsJSON []byte) ([]byte, string, error) {
 	t.valOnce.Do(t.compileValidator)
 	if t.valErr != nil {
-		return nil, fmt.Errorf("tool.invoke: %w", t.valErr)
+		return nil, "", fmt.Errorf("tool.invoke: %w", t.valErr)
 	}
 	if t.validator != nil {
 		instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(argsJSON))
 		if err != nil {
-			return nil, fmt.Errorf("tool.invoke: parse input: %w", err)
+			return nil, "", fmt.Errorf("tool.invoke: parse input: %w", err)
 		}
 		if err := t.validator.Validate(instance); err != nil {
-			return nil, fmt.Errorf("tool.invoke: schema validation: %w", err)
+			return nil, "", fmt.Errorf("tool.invoke: schema validation: %w", err)
 		}
 	}
 	var input I
 	if err := json.Unmarshal(argsJSON, &input); err != nil {
-		return nil, fmt.Errorf("tool.invoke: unmarshal input: %w", err)
+		return nil, "", fmt.Errorf("tool.invoke: unmarshal input: %w", err)
 	}
 	result, err := t.execFn(ctx, input)
 	if err != nil {
-		return nil, fmt.Errorf("tool.invoke: exec: %w", err)
+		return nil, "", fmt.Errorf("tool.invoke: exec: %w", err)
 	}
 	out, err := json.Marshal(result)
 	if err != nil {
-		return nil, fmt.Errorf("tool.invoke: marshal output: %w", err)
+		return nil, "", fmt.Errorf("tool.invoke: marshal output: %w", err)
 	}
-	return out, nil
+	verbatimText := ""
+	if t.extractVerbatim != nil {
+		if text, ok := t.extractVerbatim(result); ok && text != "" {
+			verbatimText = text
+		}
+	}
+	return out, verbatimText, nil
 }

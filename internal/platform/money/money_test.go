@@ -17,6 +17,14 @@ func TestMoney_BRLFormat(t *testing.T) {
 	require.Equal(t, "R$ 1.000,00", money.FromCents(-100000).BRL())
 }
 
+func TestMoney_BRLFormat_PRDValues(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "R$ 5.549,76", money.FromCents(554976).BRL())
+	require.Equal(t, "R$ 800.000,00", money.FromCents(80000000).BRL())
+	require.Equal(t, "R$ 50,00", money.FromCents(5000).BRL())
+	require.Equal(t, "R$ 50,50", money.FromCents(5050).BRL())
+}
+
 func TestMoney_Amount(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "2.000,00", money.FromCents(200000).Amount())

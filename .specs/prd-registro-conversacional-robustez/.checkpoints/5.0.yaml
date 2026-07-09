@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-registro-conversacional-robustez/5.0_execution_report.md
+summary: Guarda de kind income/expense com reclassificacao automatica e clarify unico implementada em pending_entry_workflow.go, com ErrKindMismatch preservado como defesa final.
+timestamp: 2026-07-08T22:22:35Z

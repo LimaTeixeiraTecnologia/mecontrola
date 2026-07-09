@@ -38,7 +38,7 @@ func TestListCardsTool_Success(t *testing.T) {
 	h := BuildListCardsTool(cards)
 	assert.Equal(t, "list_cards", h.ID())
 
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListCardsInput{}))
+	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListCardsInput{}))
 	require.NoError(t, err)
 
 	var res ListCardsOutput
@@ -53,7 +53,7 @@ func TestListCardsTool_BindingError(t *testing.T) {
 	cards.EXPECT().ListCards(mock.Anything, testUserID).Return(nil, errBinding).Once()
 
 	h := BuildListCardsTool(cards)
-	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListCardsInput{}))
+	_, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListCardsInput{}))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errBinding)
 }
@@ -61,7 +61,7 @@ func TestListCardsTool_BindingError(t *testing.T) {
 func TestListCardsTool_NoIdentity(t *testing.T) {
 	cards := imocks.NewCardManager(t)
 	h := BuildListCardsTool(cards)
-	_, err := h.Invoke(noIdentityCtx(), mustMarshal(ListCardsInput{}))
+	_, _, err := h.Invoke(noIdentityCtx(), mustMarshal(ListCardsInput{}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "identidade não disponível")
 }
@@ -75,7 +75,7 @@ func TestGetCardTool_Success(t *testing.T) {
 	h := BuildGetCardTool(cards)
 	assert.Equal(t, "get_card", h.ID())
 
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetCardInput{CardID: testCardID.String()}))
+	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetCardInput{CardID: testCardID.String()}))
 	require.NoError(t, err)
 
 	var res GetCardOutput
@@ -89,7 +89,7 @@ func TestGetCardTool_BindingError(t *testing.T) {
 	cards.EXPECT().GetCard(mock.Anything, testCardID, testUserID).Return(interfaces.Card{}, errBinding).Once()
 
 	h := BuildGetCardTool(cards)
-	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetCardInput{CardID: testCardID.String()}))
+	_, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetCardInput{CardID: testCardID.String()}))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errBinding)
 }
@@ -97,7 +97,7 @@ func TestGetCardTool_BindingError(t *testing.T) {
 func TestGetCardTool_InvalidCardID(t *testing.T) {
 	cards := imocks.NewCardManager(t)
 	h := BuildGetCardTool(cards)
-	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetCardInput{CardID: "not-a-uuid"}))
+	_, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetCardInput{CardID: "not-a-uuid"}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cardId inválido")
 }
@@ -105,7 +105,7 @@ func TestGetCardTool_InvalidCardID(t *testing.T) {
 func TestGetCardTool_NoIdentity(t *testing.T) {
 	cards := imocks.NewCardManager(t)
 	h := BuildGetCardTool(cards)
-	_, err := h.Invoke(noIdentityCtx(), mustMarshal(GetCardInput{CardID: testCardID.String()}))
+	_, _, err := h.Invoke(noIdentityCtx(), mustMarshal(GetCardInput{CardID: testCardID.String()}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "identidade não disponível")
 }
@@ -127,7 +127,7 @@ func TestQueryCardInvoiceTool_Success(t *testing.T) {
 	h := BuildQueryCardInvoiceTool(ledger)
 	assert.Equal(t, "query_card_invoice", h.ID())
 
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(QueryCardInvoiceInput{CardID: testCardID.String(), RefMonth: "2026-01"}))
+	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(QueryCardInvoiceInput{CardID: testCardID.String(), RefMonth: "2026-01"}))
 	require.NoError(t, err)
 
 	var res QueryCardInvoiceOutput
@@ -147,7 +147,7 @@ func TestQueryCardInvoiceTool_DefaultRefMonth(t *testing.T) {
 	}, nil).Once()
 
 	h := BuildQueryCardInvoiceTool(ledger)
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(QueryCardInvoiceInput{CardID: testCardID.String()}))
+	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(QueryCardInvoiceInput{CardID: testCardID.String()}))
 	require.NoError(t, err)
 	require.NotEmpty(t, out)
 }
@@ -155,7 +155,7 @@ func TestQueryCardInvoiceTool_DefaultRefMonth(t *testing.T) {
 func TestQueryCardInvoiceTool_InvalidCardID(t *testing.T) {
 	ledger := imocks.NewTransactionsLedger(t)
 	h := BuildQueryCardInvoiceTool(ledger)
-	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(QueryCardInvoiceInput{CardID: "bad"}))
+	_, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(QueryCardInvoiceInput{CardID: "bad"}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cardId inválido")
 }
@@ -165,7 +165,7 @@ func TestQueryCardInvoiceTool_BindingError(t *testing.T) {
 	ledger.EXPECT().GetCardInvoice(mock.Anything, testCardID, "2026-01").Return(interfaces.CardInvoice{}, errBinding).Once()
 
 	h := BuildQueryCardInvoiceTool(ledger)
-	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(QueryCardInvoiceInput{CardID: testCardID.String(), RefMonth: "2026-01"}))
+	_, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(QueryCardInvoiceInput{CardID: testCardID.String(), RefMonth: "2026-01"}))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errBinding)
 }
@@ -179,7 +179,7 @@ func TestBestPurchaseDayTool_Success(t *testing.T) {
 	h := BuildBestPurchaseDayTool(cards)
 	assert.Equal(t, "best_purchase_day", h.ID())
 
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(BestPurchaseDayInput{Bank: "nubank", DueDay: 10}))
+	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(BestPurchaseDayInput{Bank: "nubank", DueDay: 10}))
 	require.NoError(t, err)
 
 	var res BestPurchaseDayOutput
@@ -193,7 +193,7 @@ func TestBestPurchaseDayTool_BindingError(t *testing.T) {
 	cards.EXPECT().BestPurchaseDay(mock.Anything, "nubank", 10).Return(interfaces.BestPurchaseDay{}, errBinding).Once()
 
 	h := BuildBestPurchaseDayTool(cards)
-	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(BestPurchaseDayInput{Bank: "nubank", DueDay: 10}))
+	_, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(BestPurchaseDayInput{Bank: "nubank", DueDay: 10}))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errBinding)
 }
@@ -207,7 +207,7 @@ func TestSearchTransactionsTool_Success(t *testing.T) {
 	h := BuildSearchTransactionsTool(ledger)
 	assert.Equal(t, "search_transactions", h.ID())
 
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(SearchTransactionsInput{Query: "almoço", RefMonth: "2026-01"}))
+	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(SearchTransactionsInput{Query: "almoço", RefMonth: "2026-01"}))
 	require.NoError(t, err)
 
 	var res SearchTransactionsOutput
@@ -221,7 +221,7 @@ func TestSearchTransactionsTool_DefaultRefMonthAndLimit(t *testing.T) {
 	ledger.EXPECT().SearchTransactions(mock.Anything, testUserID, "café", mock.AnythingOfType("string"), 20).Return(nil, nil).Once()
 
 	h := BuildSearchTransactionsTool(ledger)
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(SearchTransactionsInput{Query: "café"}))
+	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(SearchTransactionsInput{Query: "café"}))
 	require.NoError(t, err)
 	var res SearchTransactionsOutput
 	require.NoError(t, json.Unmarshal(out, &res))
@@ -233,7 +233,7 @@ func TestSearchTransactionsTool_BindingError(t *testing.T) {
 	ledger.EXPECT().SearchTransactions(mock.Anything, testUserID, "x", mock.Anything, mock.Anything).Return(nil, errBinding).Once()
 
 	h := BuildSearchTransactionsTool(ledger)
-	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(SearchTransactionsInput{Query: "x"}))
+	_, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(SearchTransactionsInput{Query: "x"}))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errBinding)
 }
@@ -241,7 +241,7 @@ func TestSearchTransactionsTool_BindingError(t *testing.T) {
 func TestSearchTransactionsTool_NoIdentity(t *testing.T) {
 	ledger := imocks.NewTransactionsLedger(t)
 	h := BuildSearchTransactionsTool(ledger)
-	_, err := h.Invoke(noIdentityCtx(), mustMarshal(SearchTransactionsInput{Query: "x"}))
+	_, _, err := h.Invoke(noIdentityCtx(), mustMarshal(SearchTransactionsInput{Query: "x"}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "identidade não disponível")
 }
@@ -268,7 +268,7 @@ func TestListRecurrencesTool_Success(t *testing.T) {
 	h := BuildListRecurrencesTool(recurrences)
 	assert.Equal(t, "list_recurrences", h.ID())
 
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListRecurrencesInput{ActiveOnly: true}))
+	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListRecurrencesInput{ActiveOnly: true}))
 	require.NoError(t, err)
 
 	var res ListRecurrencesOutput
@@ -284,7 +284,7 @@ func TestListRecurrencesTool_DefaultLimit(t *testing.T) {
 	recurrences.EXPECT().ListRecurrences(mock.Anything, false, "", 50).Return(nil, nil).Once()
 
 	h := BuildListRecurrencesTool(recurrences)
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListRecurrencesInput{}))
+	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListRecurrencesInput{}))
 	require.NoError(t, err)
 	var res ListRecurrencesOutput
 	require.NoError(t, json.Unmarshal(out, &res))
@@ -296,7 +296,7 @@ func TestListRecurrencesTool_BindingError(t *testing.T) {
 	recurrences.EXPECT().ListRecurrences(mock.Anything, false, "", 50).Return(nil, errBinding).Once()
 
 	h := BuildListRecurrencesTool(recurrences)
-	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListRecurrencesInput{}))
+	_, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListRecurrencesInput{}))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errBinding)
 }
@@ -322,7 +322,7 @@ func TestGetTransactionTool_Success(t *testing.T) {
 	h := BuildGetTransactionTool(ledger)
 	assert.Equal(t, "get_transaction", h.ID())
 
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetTransactionInput{TxID: "tx-abc"}))
+	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetTransactionInput{TxID: "tx-abc"}))
 	require.NoError(t, err)
 
 	var res GetTransactionOutput
@@ -354,7 +354,7 @@ func TestGetTransactionTool_NoSubcategory(t *testing.T) {
 
 	h := BuildGetTransactionTool(ledger)
 
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetTransactionInput{TxID: "tx-xyz"}))
+	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetTransactionInput{TxID: "tx-xyz"}))
 	require.NoError(t, err)
 
 	var res GetTransactionOutput
@@ -369,7 +369,7 @@ func TestGetTransactionTool_BindingError(t *testing.T) {
 	ledger.EXPECT().GetTransaction(mock.Anything, "tx-abc").Return(interfaces.Entry{}, errBinding).Once()
 
 	h := BuildGetTransactionTool(ledger)
-	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetTransactionInput{TxID: "tx-abc"}))
+	_, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(GetTransactionInput{TxID: "tx-abc"}))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errBinding)
 }
@@ -381,7 +381,7 @@ func TestCountCardsTool_Success(t *testing.T) {
 	h := BuildCountCardsTool(cards)
 	assert.Equal(t, "count_cards", h.ID())
 
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(CountCardsInput{}))
+	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(CountCardsInput{}))
 	require.NoError(t, err)
 
 	var res CountCardsOutput
@@ -394,7 +394,7 @@ func TestCountCardsTool_BindingError(t *testing.T) {
 	cards.EXPECT().CountCards(mock.Anything, testUserID).Return(int64(0), errBinding).Once()
 
 	h := BuildCountCardsTool(cards)
-	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(CountCardsInput{}))
+	_, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(CountCardsInput{}))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errBinding)
 }
@@ -402,7 +402,7 @@ func TestCountCardsTool_BindingError(t *testing.T) {
 func TestCountCardsTool_NoIdentity(t *testing.T) {
 	cards := imocks.NewCardManager(t)
 	h := BuildCountCardsTool(cards)
-	_, err := h.Invoke(noIdentityCtx(), mustMarshal(CountCardsInput{}))
+	_, _, err := h.Invoke(noIdentityCtx(), mustMarshal(CountCardsInput{}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "identidade não disponível")
 }
@@ -417,7 +417,7 @@ func TestSuggestAllocationTool_Success(t *testing.T) {
 	h := BuildSuggestAllocationTool(planner)
 	assert.Equal(t, "suggest_allocation", h.ID())
 
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(SuggestAllocationInput{
+	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(SuggestAllocationInput{
 		TotalCents: 100000,
 		Allocations: []SuggestAllocationInputItem{
 			{RootSlug: "moradia", BasisPoints: 3000},
@@ -438,7 +438,7 @@ func TestSuggestAllocationTool_BindingError(t *testing.T) {
 	planner.EXPECT().SuggestAllocation(mock.Anything, int64(100000), mock.AnythingOfType("[]interfaces.AllocationBP")).Return(nil, errBinding).Once()
 
 	h := BuildSuggestAllocationTool(planner)
-	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(SuggestAllocationInput{
+	_, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(SuggestAllocationInput{
 		TotalCents:  100000,
 		Allocations: []SuggestAllocationInputItem{{RootSlug: "moradia", BasisPoints: 3000}},
 	}))
@@ -465,7 +465,7 @@ func TestListCategoriesTool_Success(t *testing.T) {
 	h := BuildListCategoriesTool(reader)
 	assert.Equal(t, "list_categories", h.ID())
 
-	out, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListCategoriesInput{}))
+	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListCategoriesInput{}))
 	require.NoError(t, err)
 
 	var res ListCategoriesOutput
@@ -482,7 +482,7 @@ func TestListCategoriesTool_BindingError(t *testing.T) {
 	reader.EXPECT().ListCategories(mock.Anything, testUserID).Return(nil, errBinding).Once()
 
 	h := BuildListCategoriesTool(reader)
-	_, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListCategoriesInput{}))
+	_, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(ListCategoriesInput{}))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errBinding)
 }
@@ -490,7 +490,7 @@ func TestListCategoriesTool_BindingError(t *testing.T) {
 func TestListCategoriesTool_NoIdentity(t *testing.T) {
 	reader := imocks.NewCategoriesReader(t)
 	h := BuildListCategoriesTool(reader)
-	_, err := h.Invoke(noIdentityCtx(), mustMarshal(ListCategoriesInput{}))
+	_, _, err := h.Invoke(noIdentityCtx(), mustMarshal(ListCategoriesInput{}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "identidade não disponível")
 }

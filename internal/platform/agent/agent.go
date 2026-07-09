@@ -196,8 +196,9 @@ func (a *agentImpl) completeWithTools(ctx context.Context, llmReq *llm.Request, 
 			ToolCalls: resp.ToolCalls,
 		})
 		roundStatus := toolExecOK
+		verbatimText := ""
 		for _, tc := range resp.ToolCalls {
-			msg, record, status, ok := a.invokeToolCall(ctx, toolMap, tc)
+			msg, record, status, verbatim, ok := a.invokeToolCall(ctx, toolMap, tc)
 			if ok {
 				llmReq.Messages = append(llmReq.Messages, msg)
 				allRecords = append(allRecords, record)
@@ -205,20 +206,26 @@ func (a *agentImpl) completeWithTools(ctx context.Context, llmReq *llm.Request, 
 			if status == toolExecError {
 				roundStatus = toolExecError
 			}
+			if verbatimText == "" && verbatim != "" {
+				verbatimText = verbatim
+			}
 		}
 		lastToolStatus = roundStatus
+		if verbatimText != "" {
+			return llm.Response{Content: verbatimText}, false, lastToolStatus, allRecords, nil
+		}
 	}
 	return resp, len(resp.ToolCalls) > 0 && resp.Content == "", lastToolStatus, allRecords, nil
 }
 
-func (a *agentImpl) invokeToolCall(ctx context.Context, toolMap map[string]tool.ToolHandle, tc llm.ToolCall) (llm.Message, ToolCallRecord, toolExecStatus, bool) {
+func (a *agentImpl) invokeToolCall(ctx context.Context, toolMap map[string]tool.ToolHandle, tc llm.ToolCall) (llm.Message, ToolCallRecord, toolExecStatus, string, bool) {
 	h, ok := toolMap[tc.FunctionName]
 	if !ok {
-		return llm.Message{}, ToolCallRecord{}, toolExecError, false
+		return llm.Message{}, ToolCallRecord{}, toolExecError, "", false
 	}
 	argsBytes, marshalErr := json.Marshal(tc.ArgumentsJSON)
 	if marshalErr != nil {
-		return llm.Message{}, ToolCallRecord{}, toolExecError, false
+		return llm.Message{}, ToolCallRecord{}, toolExecError, "", false
 	}
 	tCtx := a.hooks.BeforeTool(ctx, a.id, h.ID())
 	if id, idOk := ctx.Value(identityKey{}).(*toolIdentity); idOk && id != nil {
@@ -226,7 +233,7 @@ func (a *agentImpl) invokeToolCall(ctx context.Context, toolMap map[string]tool.
 		id.itemSeq++
 		tCtx = context.WithValue(tCtx, invocationItemSeqKey{}, seq)
 	}
-	result, invokeErr := h.Invoke(tCtx, argsBytes)
+	result, verbatimText, invokeErr := h.Invoke(tCtx, argsBytes)
 	a.hooks.AfterTool(ctx, a.id, h.ID(), result, invokeErr)
 	a.metrics.toolInvocations.Add(ctx, 1,
 		observability.String("agent_id", a.id),
@@ -235,10 +242,10 @@ func (a *agentImpl) invokeToolCall(ctx context.Context, toolMap map[string]tool.
 	if invokeErr != nil {
 		content := fmt.Errorf("tool %s: %w", h.ID(), invokeErr).Error()
 		record := ToolCallRecord{Tool: h.ID(), Outcome: ToolCallOutcomeError, Content: content}
-		return llm.Message{Role: roleTool, ToolCallID: tc.ID, Content: content}, record, toolExecError, true
+		return llm.Message{Role: roleTool, ToolCallID: tc.ID, Content: content}, record, toolExecError, "", true
 	}
 	record := ToolCallRecord{Tool: h.ID(), Outcome: ToolCallOutcomeSuccess, Content: string(result)}
-	return llm.Message{Role: roleTool, ToolCallID: tc.ID, Content: string(result)}, record, toolExecOK, true
+	return llm.Message{Role: roleTool, ToolCallID: tc.ID, Content: string(result)}, record, toolExecOK, verbatimText, true
 }
 
 func (a *agentImpl) Stream(ctx context.Context, in Request) (ResultStream, error) {

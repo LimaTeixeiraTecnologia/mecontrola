@@ -21,6 +21,9 @@ func (f *reaperFakeStore) Insert(_ context.Context, _ Snapshot) error { return n
 func (f *reaperFakeStore) Load(_ context.Context, _, _ string) (Snapshot, bool, error) {
 	return Snapshot{}, false, nil
 }
+func (f *reaperFakeStore) LoadLatest(_ context.Context, _, _ string) (Snapshot, bool, error) {
+	return Snapshot{}, false, nil
+}
 func (f *reaperFakeStore) Save(_ context.Context, snap Snapshot, _ int64) error {
 	if f.saveErr != nil {
 		return f.saveErr

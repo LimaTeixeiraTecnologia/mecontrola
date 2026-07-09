@@ -105,6 +105,7 @@ func (r *agentRuntime) Execute(ctx context.Context, in InboundRequest) (Outcome,
 		ResourceID:       in.ResourceID,
 		ThreadID:         in.ThreadID,
 		AgentID:          in.AgentID,
+		CorrelationKey:   in.MessageID,
 		Status:           RunStatusRunning,
 		StartedAt:        time.Now().UTC(),
 	}
@@ -113,20 +114,24 @@ func (r *agentRuntime) Execute(ctx context.Context, in InboundRequest) (Outcome,
 		return Outcome{}, fmt.Errorf("agent.runtime.execute: insert_run: %w", err)
 	}
 
+	span.SetAttributes(
+		observability.String("thread_id", run.ThreadID),
+		observability.String("run_id", run.ID.String()),
+		observability.String("wamid", run.CorrelationKey),
+	)
+
 	ctx = WithRunID(workflow.WithRuntime(ctx, in), runID)
 	ctx = withToolIdentity(ctx, in)
 
 	a, err := r.agents.Resolve(in.AgentID)
 	if err != nil {
-		r.closeRun(ctx, run, RunStatusFailed, ToolOutcomeMissingResolver, err.Error(), start)
-		span.RecordError(err)
+		r.failRun(ctx, span, run, ToolOutcomeMissingResolver, "resolve_agent", err, start)
 		return Outcome{}, fmt.Errorf("agent.runtime.execute: resolve_agent: %w", err)
 	}
 
 	msgs, err := r.buildMessages(ctx, a, thread.ID, in)
 	if err != nil {
-		r.closeRun(ctx, run, RunStatusFailed, ToolOutcomeUsecaseError, err.Error(), start)
-		span.RecordError(err)
+		r.failRun(ctx, span, run, ToolOutcomeUsecaseError, "build_messages", err, start)
 		return Outcome{}, fmt.Errorf("agent.runtime.execute: build_messages: %w", err)
 	}
 
@@ -144,12 +149,27 @@ func (r *agentRuntime) Execute(ctx context.Context, in InboundRequest) (Outcome,
 	r.hooks.AfterExecute(ctx, in.AgentID, result, execErr)
 
 	if execErr != nil {
-		r.closeRun(ctx, run, RunStatusFailed, ToolOutcomeUsecaseError, execErr.Error(), start)
-		span.RecordError(execErr)
+		r.failRun(ctx, span, run, ToolOutcomeUsecaseError, "agent.execute", execErr, start)
 		return Outcome{}, fmt.Errorf("agent.runtime.execute: agent.execute: %w", execErr)
 	}
 
 	return r.finishRun(ctx, run, thread.ID, in, result, start), nil
+}
+
+func (r *agentRuntime) failRun(ctx context.Context, span observability.Span, run Run, outcome ToolOutcome, stage string, err error, start time.Time) {
+	r.closeRun(ctx, run, RunStatusFailed, outcome, err.Error(), start)
+	r.logRunError(ctx, run, stage, err)
+	span.RecordError(err)
+	span.SetStatus(observability.StatusCodeError, stage)
+}
+
+func (r *agentRuntime) logRunError(ctx context.Context, run Run, stage string, err error) {
+	r.o11y.Logger().Error(ctx, "agent.runtime.execute: "+stage+" falhou",
+		observability.String("thread_id", run.ThreadID),
+		observability.String("run_id", run.ID.String()),
+		observability.String("wamid", run.CorrelationKey),
+		observability.Error(err),
+	)
 }
 
 func (r *agentRuntime) finishRun(ctx context.Context, run Run, platformThreadID uuid.UUID, in InboundRequest, result Result, start time.Time) Outcome {
@@ -185,16 +205,23 @@ func (r *agentRuntime) finishRun(ctx context.Context, run Run, platformThreadID 
 		toolOutcome = ToolOutcomeUsecaseError
 	}
 	runStatus := RunStatusSucceeded
+	errStr := ""
 	if toolOutcome == ToolOutcomeUsecaseError || strings.TrimSpace(result.Content) == "" {
 		runStatus = RunStatusFailed
 		toolOutcome = ToolOutcomeUsecaseError
+		errStr = firstToolErrorContent(result.ToolCalls)
 	}
 	if runStatus == RunStatusSucceeded && r.writeToolGuardFailed(result.ToolCalls) {
 		runStatus = RunStatusFailed
 		toolOutcome = ToolOutcomeUsecaseError
+		errStr = firstToolErrorContent(result.ToolCalls)
 	}
 
-	r.closeRun(ctx, run, runStatus, toolOutcome, "", start)
+	if runStatus == RunStatusFailed {
+		r.recordRunFailure(ctx, run, errStr)
+	}
+
+	r.closeRun(ctx, run, runStatus, toolOutcome, errStr, start)
 
 	content := result.Content
 	if runStatus != RunStatusSucceeded {
@@ -208,6 +235,37 @@ func (r *agentRuntime) finishRun(ctx context.Context, run Run, platformThreadID 
 		Outcome: toolOutcome,
 		Mode:    ExecutionModeSync,
 	}
+}
+
+func firstToolErrorContent(calls []ToolCallRecord) string {
+	for _, c := range calls {
+		if c.Outcome == ToolCallOutcomeError {
+			return c.Content
+		}
+	}
+	return ""
+}
+
+func (r *agentRuntime) recordRunFailure(ctx context.Context, run Run, errStr string) {
+	_, span := r.o11y.Tracer().Start(ctx, "agents.runtime.tool_call_failure",
+		observability.WithAttributes(
+			observability.String("thread_id", run.ThreadID),
+			observability.String("run_id", run.ID.String()),
+			observability.String("wamid", run.CorrelationKey),
+		),
+	)
+	defer span.End()
+	if errStr != "" {
+		span.RecordError(fmt.Errorf("agent.runtime.finish_run: %s", errStr))
+	}
+	span.SetStatus(observability.StatusCodeError, "tool_call_failure")
+
+	r.o11y.Logger().Error(ctx, "agent.runtime.finish_run: falha na execucao do run",
+		observability.String("thread_id", run.ThreadID),
+		observability.String("run_id", run.ID.String()),
+		observability.String("wamid", run.CorrelationKey),
+		observability.String("error", errStr),
+	)
 }
 
 func (r *agentRuntime) writeToolGuardFailed(calls []ToolCallRecord) bool {

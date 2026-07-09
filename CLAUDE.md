@@ -65,6 +65,7 @@ Toda implementação, alteração ou revisão de código Go DEVE obrigatoriament
 **Robustez obrigatória:**
 - R0: sem `init()`.
 - R5.12: sem `panic` em produção.
+- R5.26 `[HARD]`: prefixo `_` em identificador é TOTALMENTE PROIBIDO — não é Go idiomático. Nenhuma constante, variável, campo, função, método ou global (exportado ou não) pode começar com `_` (ex.: `_maxWriteAttempts` proibido; usar `maxWriteAttempts`). Única exceção: o blank identifier `_` para descartar valores. Revoga a tolerância da Uber R5.26 ao prefixo `_` (decisão do projeto 2026-06-04).
 - R6: `context.Context` em toda fronteira de IO; interface no consumidor, nunca no produtor.
 - R7.6: `errors.Join` para agregar erros; `fmt.Errorf("ctx: %w", err)` para wrapping.
 - Goroutines sempre canceláveis, com shutdown cooperativo e sem leak.

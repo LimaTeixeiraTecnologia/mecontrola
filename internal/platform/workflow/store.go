@@ -47,6 +47,7 @@ type StepRecord struct {
 type Store interface {
 	Insert(ctx context.Context, snap Snapshot) error
 	Load(ctx context.Context, workflow, key string) (Snapshot, bool, error)
+	LoadLatest(ctx context.Context, workflow, key string) (Snapshot, bool, error)
 	Save(ctx context.Context, snap Snapshot, expectedVersion int64) error
 	AppendStep(ctx context.Context, rec StepRecord) error
 	DeleteCompleted(ctx context.Context, retention time.Duration, limit int) (int64, error)

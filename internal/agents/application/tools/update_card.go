@@ -67,7 +67,11 @@ func BuildUpdateCardTool(engine wf.Engine[workflows.ConfirmState], def wf.Defini
 		},
 	}
 	exec := buildUpdateCardExec(engine, def, cards)
-	return tool.NewTool("update_card", "Atualiza os dados de um cartão. Requer confirmação quando o dia de vencimento é alterado.", in, out, exec)
+	return tool.NewVerbatimTool("update_card", "Atualiza os dados de um cartão. Requer confirmação quando o dia de vencimento é alterado.", in, out, exec, extractUpdateCardVerbatim)
+}
+
+func extractUpdateCardVerbatim(o UpdateCardOutput) (string, bool) {
+	return o.ImpactNote, o.NeedsConfirmation && o.ImpactNote != ""
 }
 
 func buildUpdateCardExec(engine wf.Engine[workflows.ConfirmState], def wf.Definition[workflows.ConfirmState], cards interfaces.CardManager) func(context.Context, UpdateCardInput) (UpdateCardOutput, error) {

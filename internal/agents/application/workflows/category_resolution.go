@@ -55,6 +55,7 @@ func EnrichCandidatesFromSearch(ctx context.Context, reader categorySearcher, re
 			Confidence:      c.Confidence,
 			MatchQuality:    c.MatchQuality,
 			MatchReason:     c.MatchReason,
+			SignalType:      c.SignalType,
 		})
 	}
 	return candidates, nil

@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	ifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	catusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
@@ -45,6 +46,13 @@ func (s *harnessStore) Insert(_ context.Context, snap workflow.Snapshot) error {
 }
 
 func (s *harnessStore) Load(_ context.Context, wid, key string) (workflow.Snapshot, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	snap, ok := s.data[s.storeKey(wid, key)]
+	return snap, ok, nil
+}
+
+func (s *harnessStore) LoadLatest(_ context.Context, wid, key string) (workflow.Snapshot, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	snap, ok := s.data[s.storeKey(wid, key)]
@@ -247,7 +255,7 @@ func (f *hFakeCatReader) ResolveForWrite(_ context.Context, in ifaces.CategoryWr
 			}
 		}
 	}
-	return ifaces.CategoryWriteDecision{}, errors.New("fake: category not found or invalid")
+	return ifaces.CategoryWriteDecision{}, catusecases.ErrSubcategoryNotFound
 }
 
 func (f *hFakeCatReader) ListCategories(_ context.Context, _ uuid.UUID) ([]ifaces.Category, error) {
@@ -373,6 +381,22 @@ func (h *pendingEntryHarness) start(state PendingEntryState) {
 
 func (h *pendingEntryHarness) sendUser(text, messageID string) {
 	h.t.Helper()
+	result, err := h.sendUserResult(text, messageID)
+	if err != nil {
+		h.t.Fatalf("resume: %v", err)
+	}
+	h.last = &result
+}
+
+func (h *pendingEntryHarness) sendUserAllowError(text, messageID string) error {
+	h.t.Helper()
+	result, err := h.sendUserResult(text, messageID)
+	h.last = &result
+	return err
+}
+
+func (h *pendingEntryHarness) sendUserResult(text, messageID string) (workflow.RunResult[PendingEntryState], error) {
+	h.t.Helper()
 
 	var patch []byte
 	var err error
@@ -389,11 +413,7 @@ func (h *pendingEntryHarness) sendUser(text, messageID string) {
 		h.t.Fatalf("marshal patch: %v", err)
 	}
 
-	result, err := h.engine.Resume(context.Background(), h.def, h.key, patch)
-	if err != nil {
-		h.t.Fatalf("resume: %v", err)
-	}
-	h.last = &result
+	return h.engine.Resume(context.Background(), h.def, h.key, patch)
 }
 
 func (h *pendingEntryHarness) buildCategoryPatch(text, messageID string) ([]byte, error) {
@@ -1052,14 +1072,22 @@ func (s *PendingEntryHarnessSuite) TestPendingEntryScenarios() {
 			},
 		},
 		{
-			name:         "G10-03 sucesso simulado proibido",
-			dependencies: dependencies{ledger: &hFakeTxLedger{forceErr: errors.New("db unavailable")}, cats: newHFakeCatReader()},
+			name: "G10-03 sucesso simulado proibido",
+			dependencies: dependencies{
+				ledger: &hFakeTxLedger{forceErr: errors.New("db unavailable")},
+				cats: func() *hFakeCatReader {
+					cats := newHFakeCatReader()
+					cats.addLeaf("supermercado", hCustoFixoRootID, "custo-fixo", hSupermercadoSubID, "supermercado", "Custo Fixo > Supermercado")
+					return cats
+				}(),
+			},
 			exec: func(h *pendingEntryHarness, ledger *hFakeTxLedger) {
 				candidato := hSingleCandidate(hCustoFixoRootID, "custo-fixo", hSupermercadoSubID, "supermercado", "Custo Fixo > Supermercado")
 				state := hNewExpenseState(s.userID, AwaitingSlotConfirmation, 10000, "mercado", "pix", candidato)
 				h.start(state)
 				h.confirmSeen = true
-				h.sendUser("sim", "wamid-002")
+				writeErr := h.sendUserAllowError("sim", "wamid-002")
+				s.Require().Error(writeErr, "G10-03/RF-10: real write failure must propagate as error, not be swallowed")
 				s.NotEqual(PendingStatusCompleted, h.last.State.Status, "status must not be completed on ledger error")
 				resp := h.last.State.ResponseText
 				s.NotContains(resp, "registrei", "M-03=0: no false 'registrei'")
@@ -1405,14 +1433,17 @@ func (s *PendingEntryHarnessSuite) TestG7_14_RespostaAmbiguaSegundaVezCancela() 
 
 func (s *PendingEntryHarnessSuite) TestG7_15_ErroLedgerSemSucessoSimulado() {
 	ledger := &hFakeTxLedger{forceErr: errors.New("db error 500")}
-	h := newPEHarness(s.T(), s.obs, s.userID, ledger, newHFakeCatReader(), nil)
+	cats := newHFakeCatReader()
+	cats.addLeaf("supermercado", hCustoFixoRootID, "custo-fixo", hSupermercadoSubID, "supermercado", "Custo Fixo > Supermercado")
+	h := newPEHarness(s.T(), s.obs, s.userID, ledger, cats, nil)
 
 	candidato := hSingleCandidate(hCustoFixoRootID, "custo-fixo", hSupermercadoSubID, "supermercado", "Custo Fixo > Supermercado")
 	state := hNewExpenseState(s.userID, AwaitingSlotConfirmation, 30000, "supermercado", "pix", candidato)
 	h.start(state)
 	h.confirmSeen = true
 
-	h.sendUser("sim", "wamid-002")
+	writeErr := h.sendUserAllowError("sim", "wamid-002")
+	s.Require().Error(writeErr, "G7-15/RF-10: real write failure must propagate as error, not be swallowed")
 	s.NotEqual(PendingStatusCompleted, h.last.State.Status, "status must not be completed on ledger error")
 
 	resp := h.last.State.ResponseText

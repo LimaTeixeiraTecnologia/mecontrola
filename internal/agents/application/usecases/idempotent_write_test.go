@@ -243,6 +243,30 @@ func (s *IdempotentWriteSuite) TestExecute() {
 	}
 }
 
+func (s *IdempotentWriteSuite) TestReprocessAfterLedgerInsertFailure_ReconciledNotDoubleWrite_RF25() {
+	resourceID := uuid.New()
+	ledger := &fakeLedger{found: false, insertErr: errors.New("insert error")}
+	uc := NewIdempotentWrite(ledger, s.obs)
+
+	_, err := uc.Execute(
+		s.ctx, s.userID, s.wamid, 0, "create_transaction", "transaction",
+		func(_ context.Context) (uuid.UUID, bool, error) { return resourceID, false, nil },
+	)
+	s.Error(err)
+	s.Empty(ledger.inserted)
+
+	ledger.insertErr = nil
+	result, err2 := uc.Execute(
+		s.ctx, s.userID, s.wamid, 0, "create_transaction", "transaction",
+		func(_ context.Context) (uuid.UUID, bool, error) { return resourceID, true, nil },
+	)
+
+	s.NoError(err2)
+	s.Equal(resourceID, result.ResourceID)
+	s.Equal(agent.ToolOutcomeReconciled, result.Outcome)
+	s.Len(ledger.inserted, 1)
+}
+
 func (s *IdempotentWriteSuite) TestNoAdvisoryLockRequired() {
 	newResourceID := uuid.New()
 	ledger := &fakeLedger{found: false}

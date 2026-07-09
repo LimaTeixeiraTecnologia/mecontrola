@@ -29,6 +29,11 @@ func (m *mockConfirmEngine) Resume(ctx context.Context, def workflow.Definition[
 	return args.Get(0).(workflow.RunResult[workflows.ConfirmState]), args.Error(1)
 }
 
+func (m *mockConfirmEngine) LoadLatestState(ctx context.Context, def workflow.Definition[workflows.ConfirmState], key string) (workflows.ConfirmState, workflow.Snapshot, bool, error) {
+	args := m.Called(ctx, def, key)
+	return args.Get(0).(workflows.ConfirmState), args.Get(1).(workflow.Snapshot), args.Bool(2), args.Error(3)
+}
+
 type DestructiveConfirmContinuerSuite struct {
 	suite.Suite
 	ctx        context.Context

@@ -49,7 +49,7 @@ func BuildRegisterExpenseTool(registrar entryRegistrar) tool.ToolHandle {
 				"subcategoryId":   map[string]any{"type": "string"},
 				"categoryVersion": map[string]any{"type": "integer"},
 			},
-			"required":             []string{"amountCents", "description", "paymentMethod"},
+			"required":             []string{"amountCents", "description"},
 			"additionalProperties": false,
 		},
 	}
@@ -69,7 +69,11 @@ func BuildRegisterExpenseTool(registrar entryRegistrar) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário; a categoria é resolvida automaticamente. Para compra no cartão de crédito, use paymentMethod=credit_card com cardId (obtido via resolve_card) e installments (1 para à vista, 2..24 para parcelada).", in, out, buildRegisterExpenseExec(registrar))
+	return tool.NewVerbatimTool("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário; a categoria é resolvida automaticamente por busca textual do campo description (nunca parafraseie o termo do usuário). Para compra no cartão de crédito, use paymentMethod=credit_card com cardId (obtido via resolve_card) e installments (1 para à vista, 2..24 para parcelada).", in, out, buildRegisterExpenseExec(registrar), extractRegisterExpenseVerbatim)
+}
+
+func extractRegisterExpenseVerbatim(o RegisterExpenseOutput) (string, bool) {
+	return o.Message, o.Outcome == agent.ToolOutcomeClarify.String() && o.Message != ""
 }
 
 func buildRegisterExpenseExec(registrar entryRegistrar) func(context.Context, RegisterExpenseInput) (RegisterExpenseOutput, error) {

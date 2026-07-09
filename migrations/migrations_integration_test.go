@@ -219,7 +219,7 @@ func (s *MigrationSuite) TestReconcilePlatformThreadColumnsFromLegacy() {
 
 	version, dirty, err := migrator.Version()
 	s.Require().NoError(err)
-	s.Equal(uint(5), version)
+	s.Equal(uint(7), version)
 	s.False(dirty)
 }
 
@@ -235,7 +235,7 @@ func (s *MigrationSuite) TestReconcileIsNoopOnFreshBaseline() {
 
 	version, dirty, err := migrator.Version()
 	s.Require().NoError(err)
-	s.Equal(uint(5), version)
+	s.Equal(uint(7), version)
 	s.False(dirty)
 }
 
@@ -455,6 +455,116 @@ func (s *MigrationSuite) TestCategoryDictionarySeedV2_aliases() {
 	`).Scan(&dupCount)
 	s.Require().NoError(dupErr)
 	s.Equal(int64(0), dupCount)
+}
+
+func (s *MigrationSuite) TestSalarioBaseLeafSeed() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	const salarioRootID = "86dd34b0-7342-525a-9a30-b1b5a76b109f"
+	const salarioBaseLeafID = "a1742a1d-85ef-5f94-af85-940e27e32178"
+	const decimoTerceiroLeafID = "98455e74-b1f3-5b9c-a8d8-05db0cdb465d"
+
+	var slug, name, kind string
+	var parentID sql.NullString
+	var allocationType string
+	var deprecatedAt sql.NullTime
+	err := s.db.QueryRowContext(s.ctx, `
+		SELECT slug, name, kind, parent_id::text, allocation_type, deprecated_at
+		FROM mecontrola.categories WHERE id = $1::uuid
+	`, salarioBaseLeafID).Scan(&slug, &name, &kind, &parentID, &allocationType, &deprecatedAt)
+	s.Require().NoError(err)
+	s.Equal("salario-base", slug)
+	s.Equal("Salário", name)
+	s.Equal("income", kind)
+	s.True(parentID.Valid)
+	s.Equal(salarioRootID, parentID.String)
+	s.Equal("consumption", allocationType)
+	s.False(deprecatedAt.Valid)
+
+	s.assertDictionaryTermResolvesTo("salario", "income", salarioBaseLeafID)
+	s.assertDictionaryTermResolvesTo("meu salario", "income", salarioBaseLeafID)
+	s.assertDictionaryTermResolvesTo("recebi salario", "income", salarioBaseLeafID)
+	s.assertDictionaryTermResolvesTo("recebi meu salario", "income", salarioBaseLeafID)
+
+	s.assertDictionaryTermResolvesTo("decimo terceiro salario", "income", decimoTerceiroLeafID)
+	s.assertDictionaryTermResolvesTo("13 salario", "income", decimoTerceiroLeafID)
+
+	var editorialVersion int64
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT version FROM mecontrola.category_editorial_version`,
+	).Scan(&editorialVersion))
+	s.GreaterOrEqual(editorialVersion, int64(5))
+
+	upErrRerun := migrator.Up()
+	s.Require().True(
+		upErrRerun == nil || errors.Is(upErrRerun, migrate.ErrNoChange),
+		"reexecucao da migracao de seed deve ser idempotente: %v",
+		upErrRerun,
+	)
+
+	var leafCountAfterRerun int64
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT COUNT(*) FROM mecontrola.categories WHERE id = $1::uuid`,
+		salarioBaseLeafID,
+	).Scan(&leafCountAfterRerun))
+	s.Equal(int64(1), leafCountAfterRerun)
+
+	var dictCountAfterRerun int64
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT COUNT(*) FROM mecontrola.category_dictionary WHERE category_id = $1::uuid AND deprecated_at IS NULL`,
+		salarioBaseLeafID,
+	).Scan(&dictCountAfterRerun))
+	s.Equal(int64(4), dictCountAfterRerun)
+}
+
+func (s *MigrationSuite) TestFixDecimoTerceiroDictionaryCollision() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	const salarioBaseLeafID = "a1742a1d-85ef-5f94-af85-940e27e32178"
+	const decimoTerceiroLeafID = "98455e74-b1f3-5b9c-a8d8-05db0cdb465d"
+
+	var salarioBaseSignalType string
+	err := s.db.QueryRowContext(s.ctx, `
+		SELECT signal_type FROM mecontrola.category_dictionary
+		WHERE id = '1382e2c5-db89-5abf-9793-93fb89053937'::uuid
+	`).Scan(&salarioBaseSignalType)
+	s.Require().NoError(err)
+	s.Equal("alias", salarioBaseSignalType,
+		"RF-05: termo canonico 'salario' da folha-base deve ser rebaixado para 'alias' para nao vencer aliases de Decimo Terceiro na busca por token")
+
+	s.assertDictionaryTermResolvesTo("recebi meu 13º salario", "income", decimoTerceiroLeafID)
+	s.assertDictionaryTermResolvesTo("13o salario", "income", decimoTerceiroLeafID)
+	s.assertDictionaryTermResolvesTo("recebi 13º salario", "income", decimoTerceiroLeafID)
+	s.assertDictionaryTermResolvesTo("recebi decimo terceiro", "income", decimoTerceiroLeafID)
+
+	s.assertDictionaryTermResolvesTo("salario", "income", salarioBaseLeafID)
+
+	upErrRerun := migrator.Up()
+	s.Require().True(
+		upErrRerun == nil || errors.Is(upErrRerun, migrate.ErrNoChange),
+		"reexecucao da migracao 000007 deve ser idempotente: %v",
+		upErrRerun,
+	)
+
+	var dictCountAfterRerun int64
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT COUNT(*) FROM mecontrola.category_dictionary WHERE category_id = $1::uuid AND deprecated_at IS NULL`,
+		decimoTerceiroLeafID,
+	).Scan(&dictCountAfterRerun))
+	s.GreaterOrEqual(dictCountAfterRerun, int64(9))
+}
+
+func (s *MigrationSuite) assertDictionaryTermResolvesTo(termNormalized, kind, expectedCategoryID string) {
+	var categoryID string
+	err := s.db.QueryRowContext(s.ctx, `
+		SELECT category_id::text FROM mecontrola.category_dictionary
+		WHERE deprecated_at IS NULL AND kind = $1 AND term_normalized = $2
+		LIMIT 1
+	`, kind, termNormalized).Scan(&categoryID)
+	s.Require().NoErrorf(err, "term_normalized=%s", termNormalized)
+	s.Equalf(expectedCategoryID, categoryID, "term_normalized=%s resolveu para categoria inesperada", termNormalized)
 }
 
 func (s *MigrationSuite) TestTransactionsConstraints() {

@@ -11,9 +11,13 @@ import (
 const (
 	MecontrolaAgentID               = "mecontrola-agent"
 	mecontrolaAgentDefaultMaxTokens = 1536
+	registerExpenseToolID           = "register_expense"
+	registerIncomeToolID            = "register_income"
 
-	mecontrolaAgentInstructions = `ATENÇÃO MÁXIMA — REGRA DE PRIORIDADE 0 (aplica antes de qualquer outra instrução):
-Se a mensagem do usuário contiver dois ou mais valores monetários diferentes OU dois ou mais locais/itens de gasto separados por "e", "mais", "também" ou vírgula, PARE IMEDIATAMENTE e responda EXATAMENTE (em português): "Percebi mais de um lançamento na mesma mensagem. Por segurança, registro um de cada vez — me manda o primeiro (ex.: \"gastei 30 no ônibus\") que eu já cuido dele. 🙂" — NÃO chame register_expense, register_income nem qualquer outra ferramenta. Exemplo que dispara esta regra: "Hoje gastei 30 reais no ônibus e 15 no café" → dois gastos → responda a frase acima e pare.
+	mecontrolaAgentInstructions = `ATENÇÃO MÁXIMA — REGRA DE PRIORIDADE 0 (aplica antes de qualquer outra instrução, inclusive antes de perguntar forma de pagamento, data ou categoria):
+No padrão brasileiro, o ponto DENTRO de um valor monetário é separador de milhar, não separa dois valores: "R$ 1.234,56", "R$ 13.874,40" e "1.234" são UM único valor. Antes de contar quantos valores existem na mensagem, ignore pontos e vírgulas internos a um número monetário — eles não indicam um segundo lançamento. Se, mesmo assim, a mensagem do usuário contiver dois ou mais valores monetários distintos OU dois ou mais locais/itens de gasto separados por "e", "mais", "também" ou vírgula ENTRE itens (não entre dígitos do mesmo valor), PARE IMEDIATAMENTE — ANTES de verificar forma de pagamento, categoria ou qualquer outro campo faltante — e responda EXATAMENTE (em português): "Percebi mais de um lançamento na mesma mensagem. Por segurança, registro um de cada vez — me manda o primeiro (ex.: \"gastei 30 no ônibus\") que eu já cuido dele. 🙂" — NÃO chame register_expense, register_income nem qualquer outra ferramenta, mesmo que falte forma de pagamento ou qualquer outro dado. Esta regra tem prioridade sobre a REGRA ABSOLUTA DE FORMA DE PAGAMENTO: nunca pergunte forma de pagamento antes de checar múltiplos lançamentos. Exemplo que dispara esta regra: "Hoje gastei 30 reais no ônibus e 15 no café" → dois gastos, SEM forma de pagamento informada → mesmo assim responda a frase acima e pare, NÃO pergunte forma de pagamento. Exemplo que NÃO dispara esta regra: "gastei R$ 13.874,40 no carro" → um único valor com separador de milhar → prossiga normalmente (pode perguntar forma de pagamento se faltar).
+
+ATENÇÃO MÁXIMA — REGRA DE PRIORIDADE 0-B (description NUNCA parafraseada): o campo description de register_expense/register_income é usado por busca textual determinística para achar a categoria — copie o termo LITERAL que o usuário digitou para o item/fonte do lançamento, palavra por palavra, sem reescrever, resumir, formalizar ou adicionar verbos como "Recebimento de"/"Pagamento de"/"Compra de". Exemplo correto: usuário escreve "recebi meu 13º salário" → description="13º salário". Exemplo PROIBIDO: description="Recebimento do 13º salário" (parafraseado, quebra a busca de categoria). Exemplo correto: usuário escreve "gastei 50 no mercado" → description="mercado". Exemplo PROIBIDO: description="Compra no mercado" (parafraseado).
 
 REGRA ABSOLUTA DE IDIOMA: responda SEMPRE e EXCLUSIVAMENTE em português do Brasil, sem nenhuma exceção. Nunca responda em inglês ou qualquer outro idioma, mesmo que o usuário escreva em outro idioma.
 
@@ -44,6 +48,13 @@ REGRA ABSOLUTA DE CAMPOS OBRIGATÓRIOS:
 - Se qualquer dos campos 1–4 não puder ser extraído da mensagem, pergunte ao usuário — NUNCA invente, estime ou infira campo sem evidência explícita na mensagem
 - NUNCA infira uma nova transação a partir de memória de transações anteriores ou de suposições próprias
 - Informação incompleta ou ambígua → pedir esclarecimento, um campo por vez
+- O campo description segue a REGRA DE PRIORIDADE 0-B (nunca parafraseada; ver início das instruções)
+
+REGRA ABSOLUTA DE FORMA DE PAGAMENTO (despesa):
+- Em despesa (register_expense), NUNCA assuma, infira ou invente a forma de pagamento (paymentMethod) quando o usuário não a informou explicitamente na mensagem — "dinheiro" NÃO é padrão nem suposição válida
+- Se a mensagem não trouxer forma de pagamento, pergunte exatamente: "Como você pagou? Ex.: dinheiro, pix, débito, crédito, boleto, vale-refeição"
+- Só chame register_expense com paymentMethod preenchido depois que o usuário responder essa pergunta ou já a tiver informado na mensagem original
+- Receita (register_income) NUNCA pergunta forma de pagamento — o sistema usa um valor fixo internamente
 
 REGRA ABSOLUTA DE DATA (occurredAt):
 - Repasse o texto de data CRU em occurredAt exatamente como o usuário escreveu (ex.: "terça", "segunda passada", "ontem", "15/07") — o sistema converte; o agente NÃO converte nem interpreta
@@ -52,11 +63,12 @@ REGRA ABSOLUTA DE DATA (occurredAt):
 
 REGRA ABSOLUTA DE LANÇAMENTO ÚNICO:
 - O MeControla registra UMA transação por mensagem
+- Ponto separador de milhar dentro de um valor (ex.: "R$ 1.234,56") NÃO conta como múltiplos valores nem dispara esta regra — é um único lançamento
 - Ao detectar mais de um lançamento na mesma mensagem (ex.: "gastei 30 no ônibus e 15 no café"), responda EXATAMENTE: "Percebi mais de um lançamento na mesma mensagem. Por segurança, registro um de cada vez — me manda o primeiro (ex.: \"gastei 30 no ônibus\") que eu já cuido dele. 🙂"
 - NÃO registre nem chame nenhuma ferramenta de escrita quando detectar múltiplos lançamentos na mesma mensagem
 
 REGRA ABSOLUTA DE PENDÊNCIA CONVERSACIONAL:
-- Quando qualquer ferramenta de escrita (register_expense, register_income, create_recurrence) retornar outcome=clarify com o campo message não-vazio, sua resposta ao usuário DEVE ser EXATAMENTE o conteúdo de message — é a pergunta de confirmação ("Confirma? ...") ou de dado faltante ("Qual categoria..."), já formatada e pronta para o WhatsApp. NÃO reescreva, NÃO resuma, NÃO acrescente texto de sucesso, erro ou "dificuldades técnicas", e NÃO invente que houve falha
+- Quando qualquer ferramenta de escrita (register_expense, register_income, create_recurrence) retornar outcome=clarify com o campo message não-vazio, sua resposta ao usuário DEVE ser EXATAMENTE o conteúdo de message, copiado caractere por caractere — é a pergunta de confirmação ("Confirma? ...") ou de dado faltante ("Qual categoria..."), já formatada e pronta para o WhatsApp. NÃO reescreva, NÃO resuma, NÃO parafraseie, NÃO combine com texto de outra chamada, NÃO acrescente texto de sucesso, erro ou "dificuldades técnicas", e NÃO invente que houve falha. Se você chamou a ferramenta de escrita mais de uma vez nesta mensagem (o que é proibido pela REGRA DE PRIORIDADE 0), copie o message da chamada que retornou o aviso de múltiplos lançamentos, ignorando qualquer message de chamada anterior
 - Para edit_entry, use o campo impactNote como a resposta ao usuário quando needsConfirmation=true, do mesmo modo
 - Quando register_expense ou register_income retornar outcome=clarify, o sistema registrou a intenção do usuário e aguarda um dado para completar
 - Faça APENAS UMA pergunta pelo dado pendente — pergunte somente o que ainda falta (categoria, cartão, data ou pagamento)
@@ -157,12 +169,12 @@ Use emojis de forma natural e contextual:
 
 ## Regras de Confirmação
 
-Toda escrita financeira (register_expense, register_income, create_recurrence, edit_entry, delete_entry, update_recurrence, delete_recurrence, update_card com mudança de vencimento) exige confirmação humana explícita antes de persistir:
-- A ferramenta ou o sistema retorna um resumo de confirmação no formato "Confirma? R$ X em *Raiz > Folha* para data no pagamento?"
-- Aguarde resposta explícita "sim"/"confirmar"/"ok"/"pode" ou "não"/"cancela"
-- NÃO efetive a operação sem confirmação
-- Após confirmar, o sistema executa automaticamente — não chame a ferramenta novamente
-- Para operações de alteração/exclusão que retornam needsConfirmation=true: apresente o impacto (impactNote) ao usuário antes de aguardar confirmação
+A confirmação de toda escrita financeira (register_expense, register_income, create_recurrence, edit_entry, delete_entry, update_recurrence, delete_recurrence, update_card com mudança de vencimento) é responsabilidade EXCLUSIVA do sistema (gate do workflow) — NUNCA do LLM:
+- Você NUNCA formula, redige ou improvisa uma pergunta de confirmação própria
+- Ao registrar ou alterar um lançamento, SEMPRE chame a ferramenta de escrita imediatamente com os dados disponíveis — não pare para "pedir confirmação antes"; o próprio sistema decide se precisa confirmar e devolve isso via outcome=clarify (ou needsConfirmation=true com impactNote)
+- Quando a ferramenta retornar outcome=clarify com um resumo de confirmação, responda EXATAMENTE o conteúdo de message (ver REGRA ABSOLUTA DE PENDÊNCIA) — sem reescrever, resumir ou complementar
+- Após o usuário responder "sim"/"confirmar"/"ok"/"pode" a essa pergunta, NÃO chame a ferramenta de escrita novamente — o sistema efetiva a operação automaticamente no próximo turno
+- Para operações de alteração/exclusão que retornam needsConfirmation=true: repasse o impactNote ao usuário exatamente como recebido, sem formular pergunta própria
 
 ## Regras de Domínio
 
@@ -229,11 +241,24 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 	if hooks != nil {
 		opts = append(opts, agent.WithHooks(hooks))
 	}
-	return agent.NewAgent(
+	built := agent.NewAgent(
 		MecontrolaAgentID,
 		mecontrolaAgentInstructions,
 		provider,
 		o11y,
 		opts...,
 	)
+	if hasEntryRegistrationTool(tools) {
+		return WithMultiItemGuard(built)
+	}
+	return built
+}
+
+func hasEntryRegistrationTool(tools []tool.ToolHandle) bool {
+	for _, t := range tools {
+		if t.ID() == registerExpenseToolID || t.ID() == registerIncomeToolID {
+			return true
+		}
+	}
+	return false
 }

@@ -31,6 +31,11 @@ func (m *mockOnboardingEngine) Resume(ctx context.Context, def workflow.Definiti
 	return args.Get(0).(workflow.RunResult[workflows.OnboardingState]), args.Error(1)
 }
 
+func (m *mockOnboardingEngine) LoadLatestState(ctx context.Context, def workflow.Definition[workflows.OnboardingState], key string) (workflows.OnboardingState, workflow.Snapshot, bool, error) {
+	args := m.Called(ctx, def, key)
+	return args.Get(0).(workflows.OnboardingState), args.Get(1).(workflow.Snapshot), args.Bool(2), args.Error(3)
+}
+
 type mockOnboardingStore struct {
 	mock.Mock
 }

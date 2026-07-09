@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-registro-conversacional-robustez/4.0_execution_report.md
+summary: Retry transitorio limitado (max 2 tentativas, backoff+jitter <2s) via IsTransient no consumidor; idempotencia RF-24/RF-25 comprovada; permanece gap arquitetural documentado em RF-23 (retomada entre turnos apos exaustao)
+timestamp: 2026-07-08T21:37:19Z

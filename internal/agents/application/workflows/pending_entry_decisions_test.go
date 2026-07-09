@@ -562,3 +562,14 @@ func (s *PendingEntryDecisionsSuite) TestKnownPaymentMethodsAllValuesParseValid(
 		s.NoError(err, "key=%q value=%q deve ser aceito por ParsePaymentMethod", key, val)
 	}
 }
+
+func (s *PendingEntryDecisionsSuite) TestKnownPaymentMethodsAllValuesParseValidForCreate() {
+	for key, val := range knownPaymentMethods {
+		_, err := valueobjects.ParsePaymentMethodForCreate(val)
+		s.NoError(err, "key=%q value=%q deve ser aceito por ParsePaymentMethodForCreate (register_expense)", key, val)
+	}
+}
+
+func (s *PendingEntryDecisionsSuite) TestRecognizePaymentMethod_Doc_MapsToTED() {
+	s.Equal("ted", recognizePaymentMethod("doc"))
+}

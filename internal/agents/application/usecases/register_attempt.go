@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -101,6 +102,9 @@ func (uc *RegisterAttempt) RegisterExpense(ctx context.Context, cmd RegisterExpe
 	key := workflows.PendingEntryKey(cmd.UserID.String(), cmd.ThreadID)
 	startResult, err := uc.engine.Start(ctx, uc.def, key, state)
 	if err != nil {
+		if errors.Is(err, wf.ErrRunAlreadyExists) {
+			return RegisterResult{Outcome: agent.ToolOutcomeClarify, Message: workflows.MultiItemOrientationMessage}, nil
+		}
 		span.RecordError(err)
 		return RegisterResult{}, fmt.Errorf("agents.usecase.register_attempt.expense: start workflow: %w", err)
 	}
@@ -139,6 +143,9 @@ func (uc *RegisterAttempt) RegisterIncome(ctx context.Context, cmd RegisterIncom
 	key := workflows.PendingEntryKey(cmd.UserID.String(), cmd.ThreadID)
 	startResult, err := uc.engine.Start(ctx, uc.def, key, state)
 	if err != nil {
+		if errors.Is(err, wf.ErrRunAlreadyExists) {
+			return RegisterResult{Outcome: agent.ToolOutcomeClarify, Message: workflows.MultiItemOrientationMessage}, nil
+		}
 		span.RecordError(err)
 		return RegisterResult{}, fmt.Errorf("agents.usecase.register_attempt.income: start workflow: %w", err)
 	}

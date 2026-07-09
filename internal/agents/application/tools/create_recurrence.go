@@ -71,7 +71,11 @@ func BuildCreateRecurrenceTool(registrar recurrenceRegistrar) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool("create_recurrence", "Solicita a criação de um template de lançamento recorrente; a persistência só ocorre após confirmação explícita do usuário.", in, out, buildCreateRecurrenceExec(registrar))
+	return tool.NewVerbatimTool("create_recurrence", "Solicita a criação de um template de lançamento recorrente; a persistência só ocorre após confirmação explícita do usuário.", in, out, buildCreateRecurrenceExec(registrar), extractCreateRecurrenceVerbatim)
+}
+
+func extractCreateRecurrenceVerbatim(o CreateRecurrenceOutput) (string, bool) {
+	return o.Message, o.Outcome == agent.ToolOutcomeClarify.String() && o.Message != ""
 }
 
 func buildCreateRecurrenceExec(registrar recurrenceRegistrar) func(context.Context, CreateRecurrenceInput) (CreateRecurrenceOutput, error) {

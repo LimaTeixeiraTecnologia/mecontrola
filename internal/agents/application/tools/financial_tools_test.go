@@ -33,6 +33,10 @@ func (f *fakeConfirmEngine) Resume(_ context.Context, _ wf.Definition[workflows.
 	return wf.RunResult[workflows.ConfirmState]{}, nil
 }
 
+func (f *fakeConfirmEngine) LoadLatestState(_ context.Context, _ wf.Definition[workflows.ConfirmState], _ string) (workflows.ConfirmState, wf.Snapshot, bool, error) {
+	return workflows.ConfirmState{}, wf.Snapshot{}, false, nil
+}
+
 func fakeConfirmDef() wf.Definition[workflows.ConfirmState] {
 	return wf.Definition[workflows.ConfirmState]{
 		ID:      workflows.DestructiveConfirmWorkflowID,
@@ -96,8 +100,9 @@ func TestBuildRegisterExpenseToolDelegatesAndMapsOutput(t *testing.T) {
 		Description:   "Almoço",
 		PaymentMethod: "debit_card",
 	})
-	out, err := handle.Invoke(identityCtx("wamid1", 2), argsJSON)
+	out, verbatimText, err := handle.Invoke(identityCtx("wamid1", 2), argsJSON)
 	require.NoError(t, err)
+	assert.Empty(t, verbatimText)
 
 	var result RegisterExpenseOutput
 	require.NoError(t, json.Unmarshal(out, &result))
@@ -122,7 +127,7 @@ func TestBuildRegisterExpenseToolReplay(t *testing.T) {
 
 	handle := BuildRegisterExpenseTool(registrar)
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "Almoço", PaymentMethod: "debit_card"})
-	out, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
+	out, _, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result RegisterExpenseOutput
@@ -133,13 +138,14 @@ func TestBuildRegisterExpenseToolReplay(t *testing.T) {
 
 func TestBuildRegisterExpenseToolClarifyOmitsResource(t *testing.T) {
 	registrar := &fakeRegistrar{
-		expenseResult: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify},
+		expenseResult: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify, Message: "Percebi mais de um lançamento na mesma mensagem."},
 	}
 
 	handle := BuildRegisterExpenseTool(registrar)
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "algo ambíguo", PaymentMethod: "pix"})
-	out, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
+	out, verbatimText, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
 	require.NoError(t, err)
+	assert.Equal(t, "Percebi mais de um lançamento na mesma mensagem.", verbatimText)
 
 	var result RegisterExpenseOutput
 	require.NoError(t, json.Unmarshal(out, &result))
@@ -153,7 +159,7 @@ func TestBuildRegisterExpenseToolInvalidUserID(t *testing.T) {
 	handle := BuildRegisterExpenseTool(registrar)
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "Almoço", PaymentMethod: "debit_card"})
 	invalidCtx := agent.WithToolInvocationContext(context.Background(), "not-a-uuid", "wamid1", 0)
-	_, err := handle.Invoke(invalidCtx, argsJSON)
+	_, _, err := handle.Invoke(invalidCtx, argsJSON)
 	require.Error(t, err)
 	assert.Equal(t, 0, registrar.expenseCalls)
 }
@@ -162,7 +168,7 @@ func TestBuildRegisterExpenseToolMissingIdentity(t *testing.T) {
 	registrar := &fakeRegistrar{}
 	handle := BuildRegisterExpenseTool(registrar)
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "Almoço", PaymentMethod: "debit_card"})
-	_, err := handle.Invoke(context.Background(), argsJSON)
+	_, _, err := handle.Invoke(context.Background(), argsJSON)
 	require.Error(t, err)
 	assert.Equal(t, 0, registrar.expenseCalls)
 }
@@ -171,7 +177,7 @@ func TestBuildRegisterExpenseToolDelegateError(t *testing.T) {
 	registrar := &fakeRegistrar{expenseErr: errors.New("ledger error")}
 	handle := BuildRegisterExpenseTool(registrar)
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "Almoço", PaymentMethod: "debit_card"})
-	_, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
+	_, _, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
 	require.Error(t, err)
 }
 
@@ -184,7 +190,7 @@ func TestBuildRegisterIncomeToolDelegatesWithoutPaymentMethod(t *testing.T) {
 	assert.Equal(t, "register_income", handle.ID())
 
 	argsJSON, _ := json.Marshal(RegisterIncomeInput{AmountCents: 100000, Description: "Salário"})
-	out, err := handle.Invoke(identityCtx("wamid2", 0), argsJSON)
+	out, _, err := handle.Invoke(identityCtx("wamid2", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result RegisterIncomeOutput
@@ -199,11 +205,12 @@ func TestBuildRegisterIncomeToolDelegatesWithoutPaymentMethod(t *testing.T) {
 }
 
 func TestBuildRegisterIncomeToolClarify(t *testing.T) {
-	registrar := &fakeRegistrar{incomeResult: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify}}
+	registrar := &fakeRegistrar{incomeResult: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify, Message: "Percebi mais de um lançamento na mesma mensagem."}}
 	handle := BuildRegisterIncomeTool(registrar)
 	argsJSON, _ := json.Marshal(RegisterIncomeInput{AmountCents: 100000, Description: "algo"})
-	out, err := handle.Invoke(identityCtx("wamid2", 0), argsJSON)
+	out, verbatimText, err := handle.Invoke(identityCtx("wamid2", 0), argsJSON)
 	require.NoError(t, err)
+	assert.Equal(t, "Percebi mais de um lançamento na mesma mensagem.", verbatimText)
 
 	var result RegisterIncomeOutput
 	require.NoError(t, json.Unmarshal(out, &result))
@@ -226,7 +233,7 @@ func TestBuildRegisterExpenseToolCreditCardDelegatesCardIDAndInstallments(t *tes
 		CardID:        cardID.String(),
 		Installments:  3,
 	})
-	out, err := handle.Invoke(identityCtx("wamid3", 0), argsJSON)
+	out, _, err := handle.Invoke(identityCtx("wamid3", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result RegisterExpenseOutput
@@ -255,7 +262,7 @@ func TestBuildRegisterExpenseToolCreditCardDefaultsInstallmentsToOne(t *testing.
 		PaymentMethod: "credit_card",
 		CardID:        cardID.String(),
 	})
-	_, err := handle.Invoke(identityCtx("wamid3", 0), argsJSON)
+	_, _, err := handle.Invoke(identityCtx("wamid3", 0), argsJSON)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, registrar.expenseCalls)
@@ -272,7 +279,7 @@ func TestBuildRegisterExpenseToolInvalidCardID(t *testing.T) {
 		CardID:        "not-a-uuid",
 		Installments:  1,
 	})
-	_, err := handle.Invoke(identityCtx("wamid3", 0), argsJSON)
+	_, _, err := handle.Invoke(identityCtx("wamid3", 0), argsJSON)
 	require.Error(t, err)
 	assert.Equal(t, 0, registrar.expenseCalls)
 }
@@ -299,7 +306,7 @@ func TestBuildQueryMonthToolSuccess(t *testing.T) {
 	argsJSON, _ := json.Marshal(QueryMonthInput{
 		RefMonth: "2026-06",
 	})
-	out, err := handle.Invoke(identityCtx("msg-q", 0), argsJSON)
+	out, _, err := handle.Invoke(identityCtx("msg-q", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result QueryMonthOutput
@@ -318,7 +325,7 @@ func TestBuildQueryMonthToolSummaryError(t *testing.T) {
 
 	handle := BuildQueryMonthTool(ledger)
 	argsJSON, _ := json.Marshal(QueryMonthInput{RefMonth: "2026-06"})
-	_, err := handle.Invoke(identityCtx("msg-q", 0), argsJSON)
+	_, _, err := handle.Invoke(identityCtx("msg-q", 0), argsJSON)
 	require.Error(t, err)
 }
 
@@ -343,7 +350,7 @@ func TestBuildQueryPlanToolSuccess(t *testing.T) {
 	assert.Equal(t, "query_plan", handle.ID())
 
 	argsJSON, _ := json.Marshal(QueryPlanInput{Competence: "2026-06"})
-	out, err := handle.Invoke(identityCtx("msg-q", 0), argsJSON)
+	out, _, err := handle.Invoke(identityCtx("msg-q", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result QueryPlanOutput
@@ -369,7 +376,7 @@ func TestBuildAdjustAllocationToolSuccess(t *testing.T) {
 		Percentage: 30,
 	})
 	ctx := agent.WithToolInvocationContext(context.Background(), testUserID.String(), "wamid-adjust", 0)
-	out, err := handle.Invoke(ctx, argsJSON)
+	out, _, err := handle.Invoke(ctx, argsJSON)
 	require.NoError(t, err)
 
 	var result AdjustAllocationOutput
@@ -392,7 +399,7 @@ func TestBuildAdjustAllocationToolError(t *testing.T) {
 		Percentage: 30,
 	})
 	ctx := agent.WithToolInvocationContext(context.Background(), testUserID.String(), "wamid-adjust", 0)
-	_, err := handle.Invoke(ctx, argsJSON)
+	_, _, err := handle.Invoke(ctx, argsJSON)
 	require.Error(t, err)
 }
 
@@ -413,7 +420,7 @@ func TestBuildClassifyCategoryToolSuccess(t *testing.T) {
 	assert.Equal(t, "classify_category", handle.ID())
 
 	argsJSON, _ := json.Marshal(ClassifyCategoryInput{Term: "restaurante", Kind: "outcome"})
-	out, err := handle.Invoke(context.Background(), argsJSON)
+	out, _, err := handle.Invoke(context.Background(), argsJSON)
 	require.NoError(t, err)
 
 	var result ClassifyCategoryOutput
@@ -440,7 +447,7 @@ func TestBuildClassifyCategoryToolAmbiguous(t *testing.T) {
 
 	handle := BuildClassifyCategoryTool(reader)
 	argsJSON, _ := json.Marshal(ClassifyCategoryInput{Term: "mercado", Kind: "outcome"})
-	out, err := handle.Invoke(context.Background(), argsJSON)
+	out, _, err := handle.Invoke(context.Background(), argsJSON)
 	require.NoError(t, err)
 
 	var result ClassifyCategoryOutput
@@ -468,7 +475,7 @@ func TestBuildEditEntryTool(t *testing.T) {
 	assert.Equal(t, "edit_entry", handle.ID())
 
 	argsJSON, _ := json.Marshal(EditEntryInput{EntryID: testResourceID.String(), AmountCents: 15000})
-	out, err := handle.Invoke(identityCtx("wamid-edit-001", 0), argsJSON)
+	out, verbatimText, err := handle.Invoke(identityCtx("wamid-edit-001", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result EditEntryOutput
@@ -477,6 +484,8 @@ func TestBuildEditEntryTool(t *testing.T) {
 	assert.Equal(t, testResourceID.String(), result.TargetRef)
 	assert.True(t, editor.called)
 	assert.Equal(t, testResourceID, editor.lastID)
+	assert.NotEmpty(t, verbatimText)
+	assert.Equal(t, result.ImpactNote, verbatimText)
 }
 
 func TestBuildDeleteEntryTool(t *testing.T) {
@@ -492,7 +501,7 @@ func TestBuildDeleteEntryTool(t *testing.T) {
 	assert.Equal(t, "delete_entry", handle.ID())
 
 	argsJSON, _ := json.Marshal(DeleteEntryInput{EntryID: testResourceID.String(), EntryKind: "card_purchase"})
-	out, err := handle.Invoke(inboundCtx(), argsJSON)
+	out, verbatimText, err := handle.Invoke(inboundCtx(), argsJSON)
 	require.NoError(t, err)
 
 	var result DeleteEntryOutput
@@ -500,6 +509,8 @@ func TestBuildDeleteEntryTool(t *testing.T) {
 	assert.True(t, result.NeedsConfirmation)
 	assert.Equal(t, testResourceID.String(), result.TargetRef)
 	assert.Equal(t, "card_purchase", result.TargetKind)
+	assert.NotEmpty(t, verbatimText)
+	assert.Equal(t, result.ImpactNote, verbatimText)
 }
 
 func TestRegisterExpenseOutput_OutcomeField_Routed(t *testing.T) {
@@ -509,7 +520,7 @@ func TestRegisterExpenseOutput_OutcomeField_Routed(t *testing.T) {
 
 	handle := BuildRegisterExpenseTool(registrar)
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 1000, Description: "café", PaymentMethod: "debit_card"})
-	out, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
+	out, _, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result RegisterExpenseOutput
@@ -528,7 +539,7 @@ func TestBuildUpdateRecurrenceTool_NeedsConfirmation(t *testing.T) {
 
 	templateID := uuid.New().String()
 	argsJSON, _ := json.Marshal(UpdateRecurrenceInput{TemplateID: templateID, Version: 1})
-	out, err := handle.Invoke(inboundCtx(), argsJSON)
+	out, _, err := handle.Invoke(inboundCtx(), argsJSON)
 	require.NoError(t, err)
 
 	var result UpdateRecurrenceOutput
@@ -546,7 +557,7 @@ func TestBuildUpdateRecurrenceTool_AlreadyExists(t *testing.T) {
 
 	templateID := uuid.New().String()
 	argsJSON, _ := json.Marshal(UpdateRecurrenceInput{TemplateID: templateID, Version: 1})
-	out, err := handle.Invoke(inboundCtx(), argsJSON)
+	out, _, err := handle.Invoke(inboundCtx(), argsJSON)
 	require.NoError(t, err)
 
 	var result UpdateRecurrenceOutput
@@ -565,7 +576,7 @@ func TestBuildDeleteRecurrenceTool_NeedsConfirmation(t *testing.T) {
 
 	templateID := uuid.New().String()
 	argsJSON, _ := json.Marshal(DeleteRecurrenceInput{TemplateID: templateID, Version: 2})
-	out, err := handle.Invoke(inboundCtx(), argsJSON)
+	out, _, err := handle.Invoke(inboundCtx(), argsJSON)
 	require.NoError(t, err)
 
 	var result DeleteRecurrenceOutput
@@ -583,7 +594,7 @@ func TestBuildDeleteRecurrenceTool_AlreadyExists(t *testing.T) {
 	handle := BuildDeleteRecurrenceTool(engine, fakeConfirmDef())
 
 	argsJSON, _ := json.Marshal(DeleteRecurrenceInput{TemplateID: uuid.New().String(), Version: 1})
-	out, err := handle.Invoke(inboundCtx(), argsJSON)
+	out, _, err := handle.Invoke(inboundCtx(), argsJSON)
 	require.NoError(t, err)
 
 	var result DeleteRecurrenceOutput
@@ -605,13 +616,14 @@ func TestBuildUpdateCardTool_DirectExecution_NoDueDay(t *testing.T) {
 	assert.NotEmpty(t, handle.Description())
 
 	argsJSON, _ := json.Marshal(UpdateCardInput{CardID: testResourceID.String(), Version: 1, Nickname: &nickname})
-	out, err := handle.Invoke(inboundCtx(), argsJSON)
+	out, verbatimText, err := handle.Invoke(inboundCtx(), argsJSON)
 	require.NoError(t, err)
 
 	var result UpdateCardOutput
 	require.NoError(t, json.Unmarshal(out, &result))
 	assert.False(t, result.NeedsConfirmation)
 	assert.True(t, result.Executed)
+	assert.Empty(t, verbatimText)
 }
 
 func TestBuildUpdateCardTool_Gate_WithDueDay(t *testing.T) {
@@ -624,7 +636,7 @@ func TestBuildUpdateCardTool_Gate_WithDueDay(t *testing.T) {
 
 	dueDay := 15
 	argsJSON, _ := json.Marshal(UpdateCardInput{CardID: testResourceID.String(), Version: 1, DueDay: &dueDay})
-	out, err := handle.Invoke(inboundCtx(), argsJSON)
+	out, verbatimText, err := handle.Invoke(inboundCtx(), argsJSON)
 	require.NoError(t, err)
 
 	var result UpdateCardOutput
@@ -632,6 +644,8 @@ func TestBuildUpdateCardTool_Gate_WithDueDay(t *testing.T) {
 	assert.True(t, result.NeedsConfirmation)
 	assert.False(t, result.Executed)
 	assert.Contains(t, result.ImpactNote, "vencimento")
+	assert.NotEmpty(t, verbatimText)
+	assert.Equal(t, result.ImpactNote, verbatimText)
 }
 
 func TestBuildUpdateCardTool_AlreadyExists(t *testing.T) {
@@ -644,7 +658,7 @@ func TestBuildUpdateCardTool_AlreadyExists(t *testing.T) {
 
 	dueDay := 20
 	argsJSON, _ := json.Marshal(UpdateCardInput{CardID: testResourceID.String(), Version: 1, DueDay: &dueDay})
-	out, err := handle.Invoke(inboundCtx(), argsJSON)
+	out, _, err := handle.Invoke(inboundCtx(), argsJSON)
 	require.NoError(t, err)
 
 	var result UpdateCardOutput
@@ -660,7 +674,7 @@ func TestRegisterIncomeOutput_OutcomeField_Replay(t *testing.T) {
 
 	handle := BuildRegisterIncomeTool(registrar)
 	argsJSON, _ := json.Marshal(RegisterIncomeInput{AmountCents: 2000, Description: "salário"})
-	out, err := handle.Invoke(identityCtx("wamid2", 0), argsJSON)
+	out, _, err := handle.Invoke(identityCtx("wamid2", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result RegisterIncomeOutput
@@ -676,7 +690,7 @@ func TestRegisterExpenseOutput_OutcomeField_Reconciled(t *testing.T) {
 
 	handle := BuildRegisterExpenseTool(registrar)
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "café", PaymentMethod: "pix"})
-	out, err := handle.Invoke(identityCtx("wamid-rec", 0), argsJSON)
+	out, _, err := handle.Invoke(identityCtx("wamid-rec", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result RegisterExpenseOutput
@@ -696,7 +710,7 @@ func TestBuildResolveCardToolFound(t *testing.T) {
 	assert.Equal(t, "resolve_card", handle.ID())
 
 	argsJSON, _ := json.Marshal(ResolveCardInput{Nickname: "Nubank"})
-	out, err := handle.Invoke(identityCtx("wamid-rc", 0), argsJSON)
+	out, _, err := handle.Invoke(identityCtx("wamid-rc", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result ResolveCardOutput
@@ -713,7 +727,7 @@ func TestBuildResolveCardToolNotFound(t *testing.T) {
 
 	handle := BuildResolveCardTool(cardMgr)
 	argsJSON, _ := json.Marshal(ResolveCardInput{Nickname: "Inexistente"})
-	out, err := handle.Invoke(identityCtx("wamid-rc", 0), argsJSON)
+	out, _, err := handle.Invoke(identityCtx("wamid-rc", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result ResolveCardOutput
@@ -731,7 +745,7 @@ func TestBuildRegisterExpenseToolCeilingRejectsWithoutRegistrarCall(t *testing.T
 		Description:   "compra absurda",
 		PaymentMethod: "pix",
 	})
-	out, err := handle.Invoke(identityCtx("wamid-ceiling", 0), argsJSON)
+	out, _, err := handle.Invoke(identityCtx("wamid-ceiling", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result RegisterExpenseOutput
@@ -749,7 +763,7 @@ func TestBuildRegisterIncomeToolCeilingRejectsWithoutRegistrarCall(t *testing.T)
 		AmountCents: maxEntryAmountCents + 1,
 		Description: "receita absurda",
 	})
-	out, err := handle.Invoke(identityCtx("wamid-income-ceiling", 0), argsJSON)
+	out, _, err := handle.Invoke(identityCtx("wamid-income-ceiling", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result RegisterIncomeOutput

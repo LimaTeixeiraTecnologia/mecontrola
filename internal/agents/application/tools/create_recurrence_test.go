@@ -43,14 +43,14 @@ func recurrenceInput() CreateRecurrenceInput {
 }
 
 func TestBuildCreateRecurrenceTool_OpensPendingNoSyncWrite_CA16(t *testing.T) {
-	registrar := &fakeRecurrenceRegistrar{result: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify}}
+	registrar := &fakeRecurrenceRegistrar{result: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify, Message: "Confirma a criação desta recorrência?"}}
 
 	handle := BuildCreateRecurrenceTool(registrar)
 	assert.Equal(t, "create_recurrence", handle.ID())
 	assert.NotEmpty(t, handle.Description())
 
 	argsJSON, _ := json.Marshal(recurrenceInput())
-	out, err := handle.Invoke(identityCtx("wamid-recur", 1), argsJSON)
+	out, verbatimText, err := handle.Invoke(identityCtx("wamid-recur", 1), argsJSON)
 	require.NoError(t, err)
 
 	var result CreateRecurrenceOutput
@@ -62,6 +62,7 @@ func TestBuildCreateRecurrenceTool_OpensPendingNoSyncWrite_CA16(t *testing.T) {
 	assert.Equal(t, testRecurrenceSubID, registrar.lastAt.SubcategoryID)
 	assert.Equal(t, "monthly", registrar.lastAt.Frequency)
 	assert.Equal(t, 5, registrar.lastAt.DayOfMonth)
+	assert.Equal(t, "Confirma a criação desta recorrência?", verbatimText)
 }
 
 func TestBuildCreateRecurrenceTool_MissingSubcategory_Errors(t *testing.T) {
@@ -71,7 +72,7 @@ func TestBuildCreateRecurrenceTool_MissingSubcategory_Errors(t *testing.T) {
 	in := recurrenceInput()
 	in.SubcategoryID = ""
 	argsJSON, _ := json.Marshal(in)
-	_, err := handle.Invoke(identityCtx("wamid-recur", 1), argsJSON)
+	_, _, err := handle.Invoke(identityCtx("wamid-recur", 1), argsJSON)
 	require.Error(t, err)
 	assert.False(t, registrar.called)
 }
@@ -82,7 +83,7 @@ func TestBuildCreateRecurrenceTool_InvalidUserID(t *testing.T) {
 	handle := BuildCreateRecurrenceTool(registrar)
 	argsJSON, _ := json.Marshal(recurrenceInput())
 	invalidCtx := agent.WithToolInvocationContext(context.Background(), "not-a-uuid", "wamid-recur", 1)
-	_, err := handle.Invoke(invalidCtx, argsJSON)
+	_, _, err := handle.Invoke(invalidCtx, argsJSON)
 	require.Error(t, err)
 }
 
@@ -91,6 +92,6 @@ func TestBuildCreateRecurrenceTool_RegistrarError(t *testing.T) {
 
 	handle := BuildCreateRecurrenceTool(registrar)
 	argsJSON, _ := json.Marshal(recurrenceInput())
-	_, err := handle.Invoke(identityCtx("wamid-recur", 1), argsJSON)
+	_, _, err := handle.Invoke(identityCtx("wamid-recur", 1), argsJSON)
 	require.Error(t, err)
 }

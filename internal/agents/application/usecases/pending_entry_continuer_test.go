@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
@@ -12,6 +14,8 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/memory"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
@@ -29,12 +33,49 @@ func (m *mockPendingEntryEngine) Resume(ctx context.Context, def workflow.Defini
 	return args.Get(0).(workflow.RunResult[workflows.PendingEntryState]), args.Error(1)
 }
 
+func (m *mockPendingEntryEngine) LoadLatestState(ctx context.Context, def workflow.Definition[workflows.PendingEntryState], key string) (workflows.PendingEntryState, workflow.Snapshot, bool, error) {
+	args := m.Called(ctx, def, key)
+	return args.Get(0).(workflows.PendingEntryState), args.Get(1).(workflow.Snapshot), args.Bool(2), args.Error(3)
+}
+
+type fakePendingEntryThreadGateway struct {
+	thread memory.Thread
+	err    error
+}
+
+func (f *fakePendingEntryThreadGateway) GetOrCreate(_ context.Context, _, _ string) (memory.Thread, error) {
+	return f.thread, f.err
+}
+
+type fakePendingEntryRunStore struct {
+	insertErr error
+	updateErr error
+	inserted  []agent.Run
+	updated   []agent.Run
+}
+
+func (f *fakePendingEntryRunStore) Insert(_ context.Context, run agent.Run) error {
+	f.inserted = append(f.inserted, run)
+	return f.insertErr
+}
+
+func (f *fakePendingEntryRunStore) Update(_ context.Context, run agent.Run) error {
+	f.updated = append(f.updated, run)
+	return f.updateErr
+}
+
+func (f *fakePendingEntryRunStore) Load(_ context.Context, _ uuid.UUID) (agent.Run, error) {
+	return agent.Run{}, nil
+}
+
 type PendingEntryContinuerSuite struct {
 	suite.Suite
 	ctx        context.Context
 	obs        observability.Observability
 	emptyDef   workflow.Definition[workflows.PendingEntryState]
 	engineMock *mockPendingEntryEngine
+	threads    *fakePendingEntryThreadGateway
+	runs       *fakePendingEntryRunStore
 }
 
 func TestPendingEntryContinuerSuite(t *testing.T) {
@@ -48,6 +89,8 @@ func (s *PendingEntryContinuerSuite) SetupTest() {
 	s.engineMock = &mockPendingEntryEngine{}
 	s.engineMock.Test(s.T())
 	s.T().Cleanup(func() { s.engineMock.AssertExpectations(s.T()) })
+	s.threads = &fakePendingEntryThreadGateway{thread: memory.Thread{ID: uuid.New()}}
+	s.runs = &fakePendingEntryRunStore{}
 }
 
 func (s *PendingEntryContinuerSuite) TestContinue() {
@@ -74,6 +117,8 @@ func (s *PendingEntryContinuerSuite) TestContinue() {
 				engine: func() *mockPendingEntryEngine {
 					s.engineMock.On("Resume", mock.Anything, mock.Anything, "user-1:+5511999999999:pending-entry", mock.Anything).
 						Return(workflow.RunResult[workflows.PendingEntryState]{}, nil).Once()
+					s.engineMock.On("LoadLatestState", mock.Anything, mock.Anything, "user-1:+5511999999999:pending-entry").
+						Return(workflows.PendingEntryState{}, workflow.Snapshot{}, false, nil).Once()
 					return s.engineMock
 				}(),
 			},
@@ -194,9 +239,130 @@ func (s *PendingEntryContinuerSuite) TestContinue() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			uc := NewPendingEntryContinuer(scenario.dependencies.engine, s.emptyDef, s.obs)
+			uc := NewPendingEntryContinuer(scenario.dependencies.engine, s.emptyDef, s.threads, s.runs, s.obs)
 			result, err := uc.Continue(s.ctx, scenario.args.userID, scenario.args.peer, scenario.args.message, scenario.args.messageID)
 			scenario.expect(result, err)
 		})
 	}
+}
+
+func (s *PendingEntryContinuerSuite) TestContinue_AbreEFechaRunAuditavel() {
+	s.engineMock.On("Resume", mock.Anything, mock.Anything, "user-7:+5511999999999:pending-entry", mock.Anything).
+		Return(workflow.RunResult[workflows.PendingEntryState]{
+			Status: workflow.RunStatusSucceeded,
+			State: workflows.PendingEntryState{
+				Status:       workflows.PendingStatusCompleted,
+				ResponseText: "Despesa registrada",
+			},
+		}, nil).Once()
+
+	uc := NewPendingEntryContinuer(s.engineMock, s.emptyDef, s.threads, s.runs, s.obs)
+	_, err := uc.Continue(s.ctx, "user-7", "+5511999999999", "sim", "wamid-007")
+
+	s.NoError(err)
+	s.Require().Len(s.runs.inserted, 1)
+	s.Equal(agent.RunStatusRunning, s.runs.inserted[0].Status)
+	s.Require().Len(s.runs.updated, 1)
+	s.Equal(agent.RunStatusSucceeded, s.runs.updated[0].Status)
+	s.Empty(s.runs.updated[0].Error)
+}
+
+func (s *PendingEntryContinuerSuite) TestContinue_EscritaFalhaGravaErroRealNoRun() {
+	writeErr := errors.New("db unavailable")
+	s.engineMock.On("Resume", mock.Anything, mock.Anything, "user-8:+5511999999999:pending-entry", mock.Anything).
+		Return(workflow.RunResult[workflows.PendingEntryState]{}, writeErr).Once()
+
+	uc := NewPendingEntryContinuer(s.engineMock, s.emptyDef, s.threads, s.runs, s.obs)
+	_, err := uc.Continue(s.ctx, "user-8", "+5511999999999", "sim", "wamid-008")
+
+	s.Error(err)
+	s.Require().Len(s.runs.updated, 1)
+	s.Equal(agent.RunStatusFailed, s.runs.updated[0].Status)
+	s.Contains(s.runs.updated[0].Error, "db unavailable")
+}
+
+func (s *PendingEntryContinuerSuite) TestContinue_RF23_RevivaRunFalhoESeReexecutaAEscritaSemReclassificar() {
+	key := "user-9:+5511999999999:pending-entry"
+	candidates := []workflows.PendingCategoryCandidate{
+		{RootCategoryID: uuid.New(), SubcategoryID: uuid.New(), Path: "Alimentação > Mercado"},
+	}
+	failedState := workflows.PendingEntryState{
+		Status:          workflows.PendingStatusActive,
+		Awaiting:        workflows.AwaitingSlotConfirmation,
+		Candidates:      candidates,
+		CategoryVersion: 7,
+		AmountCents:     5000,
+		SuspendedAt:     time.Now().UTC(),
+	}
+
+	s.engineMock.On("Resume", mock.Anything, mock.Anything, key, mock.Anything).
+		Return(workflow.RunResult[workflows.PendingEntryState]{}, nil).Once()
+	s.engineMock.On("LoadLatestState", mock.Anything, mock.Anything, key).
+		Return(failedState, workflow.Snapshot{Status: workflow.RunStatusFailed}, true, nil).Once()
+	s.engineMock.On("Start", mock.Anything, mock.Anything, key, mock.MatchedBy(func(seeded workflows.PendingEntryState) bool {
+		return seeded.ResumeText == "sim" &&
+			seeded.IncomingMessageID == "wamid-009" &&
+			len(seeded.Candidates) == 1 &&
+			seeded.CategoryVersion == 7
+	})).Return(workflow.RunResult[workflows.PendingEntryState]{
+		Status: workflow.RunStatusSucceeded,
+		State: workflows.PendingEntryState{
+			Status:       workflows.PendingStatusCompleted,
+			ResponseText: "Despesa de R$ 50,00 registrada ✅",
+		},
+	}, nil).Once()
+
+	uc := NewPendingEntryContinuer(s.engineMock, s.emptyDef, s.threads, s.runs, s.obs)
+	result, err := uc.Continue(s.ctx, "user-9", "+5511999999999", "sim", "wamid-009")
+
+	s.NoError(err)
+	s.True(result.Handled)
+	s.Equal(workflows.PendingEntryModeCompleted, result.Mode)
+	s.Equal("Despesa de R$ 50,00 registrada ✅", result.Message)
+}
+
+func (s *PendingEntryContinuerSuite) TestContinue_RF23_NaoRevivaQuandoRunFalhoNaoTemCategoriaResolvida() {
+	key := "user-10:+5511999999999:pending-entry"
+	failedState := workflows.PendingEntryState{
+		Status:      workflows.PendingStatusActive,
+		Awaiting:    workflows.AwaitingSlotCategory,
+		Candidates:  nil,
+		SuspendedAt: time.Now().UTC(),
+	}
+
+	s.engineMock.On("Resume", mock.Anything, mock.Anything, key, mock.Anything).
+		Return(workflow.RunResult[workflows.PendingEntryState]{}, nil).Once()
+	s.engineMock.On("LoadLatestState", mock.Anything, mock.Anything, key).
+		Return(failedState, workflow.Snapshot{Status: workflow.RunStatusFailed}, true, nil).Once()
+
+	uc := NewPendingEntryContinuer(s.engineMock, s.emptyDef, s.threads, s.runs, s.obs)
+	result, err := uc.Continue(s.ctx, "user-10", "+5511999999999", "sim", "wamid-010")
+
+	s.NoError(err)
+	s.False(result.Handled)
+}
+
+func (s *PendingEntryContinuerSuite) TestContinue_RF23_NaoRevivaQuandoRunFalhoExpirado() {
+	key := "user-11:+5511999999999:pending-entry"
+	candidates := []workflows.PendingCategoryCandidate{
+		{RootCategoryID: uuid.New(), SubcategoryID: uuid.New(), Path: "Alimentação > Mercado"},
+	}
+	failedState := workflows.PendingEntryState{
+		Status:          workflows.PendingStatusActive,
+		Awaiting:        workflows.AwaitingSlotConfirmation,
+		Candidates:      candidates,
+		CategoryVersion: 7,
+		SuspendedAt:     time.Now().UTC().Add(-time.Hour),
+	}
+
+	s.engineMock.On("Resume", mock.Anything, mock.Anything, key, mock.Anything).
+		Return(workflow.RunResult[workflows.PendingEntryState]{}, nil).Once()
+	s.engineMock.On("LoadLatestState", mock.Anything, mock.Anything, key).
+		Return(failedState, workflow.Snapshot{Status: workflow.RunStatusFailed}, true, nil).Once()
+
+	uc := NewPendingEntryContinuer(s.engineMock, s.emptyDef, s.threads, s.runs, s.obs)
+	result, err := uc.Continue(s.ctx, "user-11", "+5511999999999", "sim", "wamid-011")
+
+	s.NoError(err)
+	s.False(result.Handled)
 }

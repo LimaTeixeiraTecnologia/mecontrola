@@ -533,6 +533,16 @@ func (f *FakeStore) Load(_ context.Context, workflow, key string) (Snapshot, boo
 	return snap, true, nil
 }
 
+func (f *FakeStore) LoadLatest(_ context.Context, workflow, key string) (Snapshot, bool, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	snap, ok := f.snaps[f.storeKey(workflow, key)]
+	if !ok {
+		return Snapshot{}, false, nil
+	}
+	return snap, true, nil
+}
+
 func (f *FakeStore) Save(_ context.Context, snap Snapshot, expectedVersion int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

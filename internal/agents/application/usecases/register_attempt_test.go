@@ -37,6 +37,10 @@ func (f *fakeEngine) Resume(_ context.Context, _ wf.Definition[workflows.Pending
 	return wf.RunResult[workflows.PendingEntryState]{}, nil
 }
 
+func (f *fakeEngine) LoadLatestState(_ context.Context, _ wf.Definition[workflows.PendingEntryState], _ string) (workflows.PendingEntryState, wf.Snapshot, bool, error) {
+	return workflows.PendingEntryState{}, wf.Snapshot{}, false, nil
+}
+
 type RegisterAttemptSuite struct {
 	suite.Suite
 	ctx        context.Context

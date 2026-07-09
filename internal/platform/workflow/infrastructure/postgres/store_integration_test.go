@@ -118,6 +118,70 @@ func (s *StoreIntegrationSuite) TestLoadNotFound() {
 	s.False(found)
 }
 
+func (s *StoreIntegrationSuite) TestLoadLatestFindsFailedRunInvisibleToLoad_RF23() {
+	store := s.store()
+	key := uuid.NewString()
+	snap := s.newSnap("rf23_wf", key)
+	snap.Status = workflow.RunStatusRunning
+
+	err := store.Insert(s.ctx, snap)
+	s.Require().NoError(err)
+
+	now := time.Now().UTC()
+	snap.Status = workflow.RunStatusFailed
+	snap.LastError = "db unavailable"
+	snap.EndedAt = &now
+	snap.UpdatedAt = now
+	snap.State = []byte(`{"candidates":[{"path":"Alimentação"}],"categoryVersion":7}`)
+
+	err = store.Save(s.ctx, snap, 1)
+	s.Require().NoError(err)
+
+	_, found, loadErr := store.Load(s.ctx, "rf23_wf", key)
+	s.Require().NoError(loadErr)
+	s.False(found, "Load nao deve encontrar run com status failed")
+
+	latest, latestFound, latestErr := store.LoadLatest(s.ctx, "rf23_wf", key)
+	s.Require().NoError(latestErr)
+	s.Require().True(latestFound, "LoadLatest deve encontrar run failed")
+	s.Equal(workflow.RunStatusFailed, latest.Status)
+	s.Equal("db unavailable", latest.LastError)
+	s.Equal(snap.RunID, latest.RunID)
+	s.JSONEq(string(snap.State), string(latest.State))
+}
+
+func (s *StoreIntegrationSuite) TestLoadLatestReturnsMostRecentAcrossMultipleRuns_RF23() {
+	store := s.store()
+	key := uuid.NewString()
+
+	first := s.newSnap("rf23_wf_multi", key)
+	first.Status = workflow.RunStatusFailed
+	endedFirst := time.Now().UTC()
+	first.EndedAt = &endedFirst
+	s.Require().NoError(store.Insert(s.ctx, first))
+
+	time.Sleep(10 * time.Millisecond)
+
+	second := s.newSnap("rf23_wf_multi", key)
+	second.Status = workflow.RunStatusFailed
+	endedSecond := time.Now().UTC()
+	second.EndedAt = &endedSecond
+	second.State = []byte(`{"value":2}`)
+	s.Require().NoError(store.Insert(s.ctx, second))
+
+	latest, found, err := store.LoadLatest(s.ctx, "rf23_wf_multi", key)
+	s.Require().NoError(err)
+	s.Require().True(found)
+	s.Equal(second.RunID, latest.RunID)
+}
+
+func (s *StoreIntegrationSuite) TestLoadLatestNotFound() {
+	store := s.store()
+	_, found, err := store.LoadLatest(s.ctx, "nonexistent", "nonexistent-key")
+	s.Require().NoError(err)
+	s.False(found)
+}
+
 func (s *StoreIntegrationSuite) TestDurabilityResume() {
 	store := s.store()
 	key := uuid.NewString()

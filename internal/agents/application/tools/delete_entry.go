@@ -60,7 +60,11 @@ func BuildDeleteEntryTool(engine wf.Engine[workflows.ConfirmState], def wf.Defin
 		},
 	}
 	exec := buildDeleteEntryExec(engine, def, cards)
-	return tool.NewTool("delete_entry", "Solicita confirmação do usuário para excluir um lançamento financeiro.", in, out, exec)
+	return tool.NewVerbatimTool("delete_entry", "Solicita confirmação do usuário para excluir um lançamento financeiro.", in, out, exec, extractDeleteEntryVerbatim)
+}
+
+func extractDeleteEntryVerbatim(o DeleteEntryOutput) (string, bool) {
+	return o.ImpactNote, o.NeedsConfirmation && o.ImpactNote != ""
 }
 
 func buildDeleteEntryExec(engine wf.Engine[workflows.ConfirmState], def wf.Definition[workflows.ConfirmState], cards interfaces.CardManager) func(context.Context, DeleteEntryInput) (DeleteEntryOutput, error) {

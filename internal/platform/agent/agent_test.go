@@ -193,6 +193,86 @@ func (s *AgentTestSuite) TestExecute_ToolLoop_FeedsResultsBackToModel() {
 	s.True(hasToolResult)
 }
 
+func (s *AgentTestSuite) TestExecute_ToolLoop_VerbatimTool_BypassesSecondProviderCall() {
+	var invocations atomic.Int32
+	verbatimTool := tool.NewVerbatimTool(
+		"clarify_tool",
+		"Clarifies pending multi-item entry",
+		llm.Schema{Schema: map[string]any{"type": "object"}},
+		llm.Schema{},
+		func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			invocations.Add(1)
+			return map[string]any{"outcome": "clarify", "message": "texto canônico verbatim"}, nil
+		},
+		func(o map[string]any) (string, bool) {
+			return "texto canônico verbatim", true
+		},
+	)
+
+	s.providerMock.EXPECT().
+		Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+		Return(llm.Response{
+			ToolCalls: []llm.ToolCall{{
+				ID:            "tc1",
+				FunctionName:  "clarify_tool",
+				ArgumentsJSON: map[string]any{},
+			}},
+		}, nil).
+		Once()
+
+	a := NewAgent("agent-1", "instr", s.providerMock, s.obs, WithTools(verbatimTool))
+	result, err := a.Execute(s.ctx, Request{
+		AgentID:  "agent-1",
+		Messages: []llm.Message{{Role: "user", Content: "gastei 30 no ônibus e 15 no café"}},
+	})
+
+	s.NoError(err)
+	s.Equal("texto canônico verbatim", result.Content)
+	s.Equal(ExecutionModeSync, result.Mode)
+	s.Equal(int32(1), invocations.Load())
+	s.providerMock.AssertNumberOfCalls(s.T(), "Complete", 1)
+}
+
+func (s *AgentTestSuite) TestExecute_ToolLoop_EmptyVerbatim_PreservesCurrentBehavior() {
+	var invocations atomic.Int32
+	weatherTool := tool.NewTool(
+		"get_weather",
+		"Get weather",
+		llm.Schema{Schema: map[string]any{"type": "object"}},
+		llm.Schema{},
+		func(_ context.Context, _ map[string]any) (map[string]any, error) {
+			invocations.Add(1)
+			return map[string]any{"temp": "20C"}, nil
+		},
+	)
+
+	s.providerMock.EXPECT().
+		Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+		Return(llm.Response{
+			ToolCalls: []llm.ToolCall{{
+				ID:            "tc1",
+				FunctionName:  "get_weather",
+				ArgumentsJSON: map[string]any{"city": "New York"},
+			}},
+		}, nil).
+		Once()
+	s.providerMock.EXPECT().
+		Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+		Return(llm.Response{Content: "It is 20C in New York."}, nil).
+		Once()
+
+	a := NewAgent("agent-1", "instr", s.providerMock, s.obs, WithTools(weatherTool))
+	result, err := a.Execute(s.ctx, Request{
+		AgentID:  "agent-1",
+		Messages: []llm.Message{{Role: "user", Content: "What is the weather in New York?"}},
+	})
+
+	s.NoError(err)
+	s.Equal("It is 20C in New York.", result.Content)
+	s.Equal(int32(1), invocations.Load())
+	s.providerMock.AssertNumberOfCalls(s.T(), "Complete", 2)
+}
+
 func (s *AgentTestSuite) TestExecute_ToolLoop_MaxRoundsEmptyContentErrors() {
 	loopTool := tool.NewTool(
 		"loop_tool",

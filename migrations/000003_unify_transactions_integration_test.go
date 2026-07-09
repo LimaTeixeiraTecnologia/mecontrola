@@ -58,7 +58,7 @@ func (s *Unify000003Suite) TestUnifyUpThenDownThenUp() {
 	migrator := s.newMigrator()
 	s.applyUp(migrator)
 
-	s.assertVersion(migrator, 5)
+	s.assertVersion(migrator, 7)
 
 	s.assertColumnPresent("transactions", "card_id")
 	s.assertColumnPresent("transactions", "installments_total")
@@ -83,7 +83,7 @@ func (s *Unify000003Suite) TestUnifyUpThenDownThenUp() {
 
 	s.assertCompletenessCheckRejectsPartialCard()
 
-	s.Require().NoError(migrator.Steps(-3))
+	s.Require().NoError(migrator.Steps(-5))
 	s.assertVersion(migrator, 2)
 
 	s.assertColumnMissing("transactions", "card_id")
@@ -99,7 +99,7 @@ func (s *Unify000003Suite) TestUnifyUpThenDownThenUp() {
 	s.assertColumnPresent("transactions_recurring_materializations", "materialized_purchase_id")
 
 	s.applyUp(migrator)
-	s.assertVersion(migrator, 5)
+	s.assertVersion(migrator, 7)
 	s.assertColumnPresent("transactions", "card_id")
 	s.assertColumnPresent("transactions_card_invoice_items", "transaction_id")
 	s.assertTableMissing("mecontrola.transactions_card_purchases")

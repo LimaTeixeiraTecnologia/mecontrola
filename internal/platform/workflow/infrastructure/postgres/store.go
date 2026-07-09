@@ -103,6 +103,32 @@ func (s *postgresStore) Load(ctx context.Context, wf, key string) (workflow.Snap
 	return snap, true, nil
 }
 
+func (s *postgresStore) LoadLatest(ctx context.Context, wf, key string) (workflow.Snapshot, bool, error) {
+	ctx, span := s.o11y.Tracer().Start(ctx, "workflow.store.pg.load_latest")
+	defer span.End()
+
+	const query = `
+		SELECT id, workflow, correlation_key, status, suspend_reason, cursor,
+		       state, attempts, max_attempts, version, last_error, created_at, updated_at, ended_at
+		  FROM mecontrola.workflow_runs
+		 WHERE workflow = $1
+		   AND correlation_key = $2
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1
+	`
+
+	row := s.conn(ctx).QueryRowContext(ctx, query, wf, key)
+	snap, err := s.scanSnapshot(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return workflow.Snapshot{}, false, nil
+	}
+	if err != nil {
+		span.RecordError(err)
+		return workflow.Snapshot{}, false, fmt.Errorf("%s load_latest: %w", prefixWorkflowStore, err)
+	}
+	return snap, true, nil
+}
+
 type scanner interface {
 	Scan(dest ...any) error
 }

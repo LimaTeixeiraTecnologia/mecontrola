@@ -22,6 +22,9 @@ func DecideInitialAwaiting(categoryAwaiting AwaitingSlot, paymentMethod string, 
 	if categoryAwaiting == AwaitingSlotCategory {
 		return AwaitingSlotCategory
 	}
+	if paymentMethod == "" {
+		return AwaitingSlotPaymentMethod
+	}
 	if paymentMethod == PaymentMethodCreditCard && !hasCard {
 		return AwaitingSlotCard
 	}
@@ -115,7 +118,7 @@ var (
 		"especie":         "cash",
 		"boleto":          "boleto",
 		"ted":             "ted",
-		"doc":             "doc",
+		"doc":             "ted",
 		"transferencia":   "ted",
 	}
 )

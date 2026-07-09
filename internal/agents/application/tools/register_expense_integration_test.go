@@ -103,7 +103,7 @@ func (a *toolInvokingAgent) Execute(ctx context.Context, _ agent.Request) (agent
 		PaymentMethod: "debit_card",
 		OccurredAt:    "2026-07-02",
 	})
-	raw, err := a.handle.Invoke(ctx, args)
+	raw, _, err := a.handle.Invoke(ctx, args)
 	if err != nil {
 		return agent.Result{}, err
 	}

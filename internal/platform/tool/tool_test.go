@@ -48,12 +48,76 @@ func (s *ToolSuite) TestNewTool_Invoke_Success() {
 	s.NotNil(h.Parameters())
 
 	args, _ := json.Marshal(weatherInput{City: "São Paulo"})
-	out, err := h.Invoke(s.ctx, args)
+	out, verbatimText, err := h.Invoke(s.ctx, args)
 	s.NoError(err)
+	s.Empty(verbatimText)
 
 	var result weatherOutput
 	s.NoError(json.Unmarshal(out, &result))
 	s.Equal(25.0, result.Temperature)
+}
+
+func (s *ToolSuite) TestNewVerbatimTool_Invoke_ExtractVerbatimTrueNonEmpty_ReturnsVerbatimText() {
+	h := NewVerbatimTool[weatherInput, weatherOutput](
+		"weather",
+		"get weather for city",
+		llm.Schema{Name: "weatherInput", Schema: map[string]any{"type": "object"}},
+		llm.Schema{Name: "weatherOutput", Schema: map[string]any{"type": "object"}},
+		func(_ context.Context, in weatherInput) (weatherOutput, error) {
+			return weatherOutput{Temperature: 25.0}, nil
+		},
+		func(o weatherOutput) (string, bool) {
+			return "texto canônico verbatim", true
+		},
+	)
+
+	args, _ := json.Marshal(weatherInput{City: "São Paulo"})
+	out, verbatimText, err := h.Invoke(s.ctx, args)
+	s.NoError(err)
+	s.Equal("texto canônico verbatim", verbatimText)
+	s.NotNil(out)
+}
+
+func (s *ToolSuite) TestNewVerbatimTool_Invoke_ExtractVerbatimFalse_ReturnsEmptyVerbatimText() {
+	h := NewVerbatimTool[weatherInput, weatherOutput](
+		"weather",
+		"get weather for city",
+		llm.Schema{Name: "weatherInput", Schema: map[string]any{"type": "object"}},
+		llm.Schema{Name: "weatherOutput", Schema: map[string]any{"type": "object"}},
+		func(_ context.Context, in weatherInput) (weatherOutput, error) {
+			return weatherOutput{Temperature: 25.0}, nil
+		},
+		func(o weatherOutput) (string, bool) {
+			return "não deveria aparecer", false
+		},
+	)
+
+	args, _ := json.Marshal(weatherInput{City: "São Paulo"})
+	out, verbatimText, err := h.Invoke(s.ctx, args)
+	s.NoError(err)
+	s.Empty(verbatimText)
+	s.NotNil(out)
+}
+
+func (s *ToolSuite) TestNewVerbatimTool_Invoke_ExtractVerbatimTrueButEmptyText_ReturnsEmptyVerbatimText() {
+	h := NewVerbatimTool[weatherInput, weatherOutput](
+		"weather",
+		"get weather for city",
+		llm.Schema{Name: "weatherInput", Schema: map[string]any{"type": "object"}},
+		llm.Schema{Name: "weatherOutput", Schema: map[string]any{"type": "object"}},
+		func(_ context.Context, in weatherInput) (weatherOutput, error) {
+			return weatherOutput{Temperature: 25.0}, nil
+		},
+		func(o weatherOutput) (string, bool) {
+			return "", true
+		},
+	)
+
+	args, _ := json.Marshal(weatherInput{City: "São Paulo"})
+	out, verbatimText, err := h.Invoke(s.ctx, args)
+	s.NoError(err)
+	s.Empty(verbatimText)
+	s.NotNil(out)
 }
 
 func (s *ToolSuite) TestNewTool_Invoke_SchemaValidation() {
@@ -76,11 +140,11 @@ func (s *ToolSuite) TestNewTool_Invoke_SchemaValidation() {
 		},
 	)
 
-	_, err := h.Invoke(s.ctx, []byte(`{}`))
+	_, _, err := h.Invoke(s.ctx, []byte(`{}`))
 	s.Error(err)
 	s.Contains(err.Error(), "schema validation")
 
-	out, okErr := h.Invoke(s.ctx, []byte(`{"city":"São Paulo"}`))
+	out, _, okErr := h.Invoke(s.ctx, []byte(`{"city":"São Paulo"}`))
 	s.NoError(okErr)
 	s.NotNil(out)
 }
@@ -103,7 +167,7 @@ func (s *ToolSuite) TestNewTool_Invoke_MalformedSchema_FailsExplicitly() {
 		},
 	)
 
-	_, err := h.Invoke(s.ctx, []byte(`{"city":"São Paulo"}`))
+	_, _, err := h.Invoke(s.ctx, []byte(`{"city":"São Paulo"}`))
 	s.Error(err)
 	s.Contains(err.Error(), "compile schema")
 }
@@ -128,11 +192,11 @@ func (s *ToolSuite) TestNewTool_Invoke_EnumConstraint() {
 		},
 	)
 
-	_, err := h.Invoke(s.ctx, []byte(`{"city":"Berlin"}`))
+	_, _, err := h.Invoke(s.ctx, []byte(`{"city":"Berlin"}`))
 	s.Error(err)
 	s.Contains(err.Error(), "schema validation")
 
-	out, okErr := h.Invoke(s.ctx, []byte(`{"city":"Rio"}`))
+	out, _, okErr := h.Invoke(s.ctx, []byte(`{"city":"Rio"}`))
 	s.NoError(okErr)
 	s.NotNil(out)
 }
@@ -148,7 +212,7 @@ func (s *ToolSuite) TestNewTool_Invoke_InvalidInput() {
 		},
 	)
 
-	_, err := h.Invoke(s.ctx, []byte("not-json{{{"))
+	_, _, err := h.Invoke(s.ctx, []byte("not-json{{{"))
 	s.Error(err)
 	s.Contains(err.Error(), "unmarshal input")
 }
@@ -166,7 +230,7 @@ func (s *ToolSuite) TestNewTool_Invoke_ExecError() {
 	)
 
 	args, _ := json.Marshal(weatherInput{City: "X"})
-	_, err := h.Invoke(s.ctx, args)
+	_, _, err := h.Invoke(s.ctx, args)
 	s.Error(err)
 	s.ErrorIs(err, execErr)
 }
@@ -225,7 +289,7 @@ func (s *RegistrySuite) TestResolve_RoundTrip() {
 	s.NoError(err)
 
 	args, _ := json.Marshal(weatherInput{City: "ABC"})
-	out, err := got.Invoke(s.ctx, args)
+	out, _, err := got.Invoke(s.ctx, args)
 	s.NoError(err)
 
 	var result weatherOutput

@@ -231,7 +231,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 
 	resolveOnboarding := usecases.NewResolveOnboardingOrAgent(onboardingEngine, workflowStore, workingMem, onboardingDef, deps.O11y)
 	continueDestructive := usecases.NewDestructiveConfirmContinuer(confirmEngine, confirmDef, deps.O11y)
-	continuePendingEntry := usecases.NewPendingEntryContinuer(pendingEntryEngine, pendingEntryDef, deps.O11y)
+	continuePendingEntry := usecases.NewPendingEntryContinuer(pendingEntryEngine, pendingEntryDef, threadGateway, runStore, deps.O11y)
 
 	purgeLedger := usecases.NewPurgeLedger(writeLedgerRepo, 0, 0, deps.O11y)
 	ledgerRetentionJob := jobhandlers.NewLedgerRetentionJob(purgeLedger, "")

@@ -177,13 +177,13 @@ func (s *TransactionsLedgerPendingSuite) TestLedgerError_NoSuccessResponse_G7_15
 
 	result, err := s.engine.Resume(s.ctx, def, k, s.resumeWith("sim"))
 
-	s.NoError(err)
-	s.Equal(workflow.RunStatusSucceeded, result.Status)
-	s.Equal(PendingStatusCancelled, result.State.Status)
+	s.Error(err, "RF-10: real write failure must propagate as error, not be swallowed")
+	s.Contains(err.Error(), "ledger 500", "RF-10: real error reason must be propagated, not swallowed")
+	s.Equal(workflow.RunStatusFailed, result.Status)
+	s.NotEqual(PendingStatusCompleted, result.State.Status)
 	s.NotContains(result.State.ResponseText, "registrei")
 	s.NotContains(result.State.ResponseText, "anotei")
 	s.NotContains(result.State.ResponseText, "salvo")
-	s.Contains(result.State.ResponseText, "Não consegui registrar")
 }
 
 func (s *TransactionsLedgerPendingSuite) TestLedgerNilID_NoSuccessResponse_M03() {
@@ -356,7 +356,7 @@ func (s *TransactionsLedgerPendingSuite) TestSuccessText_ContainsNoSuccessSimula
 
 	result, err := s.engine.Resume(s.ctx, def, k, s.resumeWith("sim"))
 
-	s.NoError(err)
+	s.Error(err, "RF-10: real write failure must propagate as error, not be swallowed")
 	s.NotContains(result.State.ResponseText, "registrei")
 	s.NotContains(result.State.ResponseText, "anotei")
 	s.NotContains(result.State.ResponseText, "salvo")

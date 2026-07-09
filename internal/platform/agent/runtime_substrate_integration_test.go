@@ -111,15 +111,27 @@ func (s *SubstrateIntegrationSuite) TestRF38_WriteToolFailed_RunStatusFailedInDB
 		},
 	}, "register_expense")
 
+	threadID := "thr-" + uuid.NewString()
+	messageID := "msg-" + uuid.NewString()
 	outcome, err := rt.Execute(s.ctx, agent.InboundRequest{
 		AgentID:    "agent-rf38",
 		ResourceID: resourceID,
-		ThreadID:   "thr-" + uuid.NewString(),
+		ThreadID:   threadID,
 		Message:    "registrar despesa",
-		MessageID:  "msg-" + uuid.NewString(),
+		MessageID:  messageID,
 	})
 	s.Require().NoError(err)
 	s.Equal(agent.RunStatusFailed, outcome.Status, "EP-01 corrigido: run deve ser Failed quando write tool falhou")
+
+	var runError, correlationKey string
+	err = s.db.QueryRowContext(s.ctx,
+		`SELECT error, correlation_key FROM mecontrola.platform_runs WHERE id = $1`,
+		outcome.RunID,
+	).Scan(&runError, &correlationKey)
+	s.Require().NoError(err)
+	s.NotEmpty(runError, "RF-10/RF-11: platform_runs.error deve conter o motivo real da falha, nunca vazio")
+	s.Contains(runError, "usecase error", "RF-11: erro real da tool deve ser propagado para platform_runs.error")
+	s.Equal(messageID, correlationKey, "RF-11/RF-12: correlation_key (wamid) deve estar presente no run auditável")
 }
 
 func (s *SubstrateIntegrationSuite) TestRF38_CreateRecurrenceFailed_RunStatusFailedInDB() {

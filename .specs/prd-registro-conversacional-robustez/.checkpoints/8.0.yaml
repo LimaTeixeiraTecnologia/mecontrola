@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-registro-conversacional-robustez/8.0_execution_report.md
+summary: Suite E2E real-LLM 9/9 cenarios Gherkin verde; 4 bugs de producao corrigidos (evidencia de categoria nao propagada, RF-29/30 nunca disparava, colisao de dicionario Decimo Terceiro, erro generico do kernel sem orientacao); review APPROVED_WITH_REMARKS (residual RF-21 documentado).
+timestamp: 2026-07-08T23:33:39Z

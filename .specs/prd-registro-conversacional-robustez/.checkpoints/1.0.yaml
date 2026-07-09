@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-registro-conversacional-robustez/1.0_execution_report.md
+summary: Seed idempotente da folha income Salario > Salario (slug salario-base) e 4 termos de dicionario, RF-01..RF-05 cobertos e testados.
+timestamp: 2026-07-08T20:59:19Z

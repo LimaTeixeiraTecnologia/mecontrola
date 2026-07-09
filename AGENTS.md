@@ -112,7 +112,7 @@ Regras Go que devem ficar sempre em memoria:
 - R5.8: enums com `iota + 1`; zero value reservado para nao inicializado, salvo default intencional.
 - R5.10: erros com `errors.New`, `fmt.Errorf("ctx: %w", err)` e sentinels quando o caller usa `errors.Is`; tratar erro uma unica vez.
 - R5.12: sem `panic` em producao.
-- R5.26: globais nao exportados em camelCase; sem prefixo `_`.
+- R5.26 `[HARD]`: prefixo `_` em identificador e TOTALMENTE PROIBIDO e nao e Go idiomatico. Nenhuma constante, variavel, campo, funcao, metodo ou global (exportado ou nao) pode comecar com `_` (ex.: `_maxWriteAttempts` proibido; usar `maxWriteAttempts`). Todos em camelCase/PascalCase idiomatico. Unica excecao: o identificador em branco `_` (blank identifier) para descartar valores. Revoga a tolerancia da Uber R5.26 ao prefixo `_` em globais (decisao do projeto 2026-06-04). Gate: `grep -rnE "\b_[a-zA-Z][a-zA-Z0-9]*" --include="*.go"` nao deve achar identificador prefixado com `_` fora de blank identifier.
 - R6: `context.Context` em toda fronteira de IO; DI via construtores explicitos.
 - R6.4: `var _ Interface = (*Type)(nil)` proibido.
 - R6.7: `clock.Clock` proibido em use cases e repositorios; usar `time.Now().UTC()` inline quando permitido ou passar instante por command object.

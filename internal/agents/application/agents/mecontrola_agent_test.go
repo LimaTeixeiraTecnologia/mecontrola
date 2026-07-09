@@ -164,11 +164,11 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 			},
 		},
 		{
-			name:         "deve exigir confirmacao para toda escrita financeira",
+			name:         "deve delegar confirmacao de escrita financeira exclusivamente ao sistema",
 			dependencies: dependencies{},
 			expect: func(instructions string) {
-				s.Contains(instructions, "Toda escrita financeira")
-				s.Contains(instructions, "exige confirmação humana explícita")
+				s.Contains(instructions, "responsabilidade EXCLUSIVA do sistema (gate do workflow) — NUNCA do LLM")
+				s.Contains(instructions, "Você NUNCA formula, redige ou improvisa uma pergunta de confirmação própria")
 			},
 		},
 		{
@@ -214,6 +214,29 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 				s.Contains(instructions, "Percebi mais de um lançamento na mesma mensagem")
 				s.Contains(instructions, "registro um de cada vez")
 				s.Contains(instructions, "NÃO registre nem chame nenhuma ferramenta de escrita quando detectar múltiplos")
+			},
+		},
+		{
+			name:         "deve instruir que ponto e separador de milhar e nao dispara multiplos lancamentos (RF-19/RF-20/RF-21)",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "separador de milhar")
+				s.Contains(instructions, "R$ 1.234,56")
+				s.Contains(instructions, "R$ 13.874,40")
+				s.Contains(instructions, "ignore pontos e vírgulas internos a um número monetário")
+				s.Contains(instructions, "Percebi mais de um lançamento na mesma mensagem")
+				s.Contains(instructions, "registro um de cada vez")
+			},
+		},
+		{
+			name:         "deve proibir inferencia de forma de pagamento e exigir pergunta com exemplos (RF-29/RF-30/RF-31/RF-32)",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "REGRA ABSOLUTA DE FORMA DE PAGAMENTO")
+				s.Contains(instructions, "NUNCA assuma, infira ou invente a forma de pagamento")
+				s.Contains(instructions, "dinheiro\" NÃO é padrão nem suposição válida")
+				s.Contains(instructions, "Como você pagou? Ex.: dinheiro, pix, débito, crédito, boleto, vale-refeição")
+				s.Contains(instructions, "Receita (register_income) NUNCA pergunta forma de pagamento")
 			},
 		},
 		{

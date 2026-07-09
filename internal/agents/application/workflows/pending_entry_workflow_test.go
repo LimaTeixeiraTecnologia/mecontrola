@@ -3,6 +3,8 @@ package workflows
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -14,6 +16,8 @@ import (
 
 	ifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	imocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces/mocks"
+	catusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/usecases"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
@@ -236,6 +240,302 @@ func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_Accept_Sim() {
 	s.NotContains(result.State.ResponseText, "Não consegui registrar")
 }
 
+func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_TransientFailure_RetriesOnce_RF22() {
+	state := s.newState(AwaitingSlotConfirmation)
+	k := s.key("thr-confirm-retry-transient")
+
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.Anything).
+		Return(ifaces.EntryRef{}, context.DeadlineExceeded).
+		Once()
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.Anything).
+		Return(ifaces.EntryRef{ID: uuid.New(), Kind: ifaces.EntryKindTransaction}, nil).
+		Once()
+
+	_, err := s.engine.Start(s.ctx, s.def, k, state)
+	s.Require().NoError(err)
+
+	result, err := s.engine.Resume(s.ctx, s.def, k, s.resumePayload("sim"))
+
+	s.NoError(err)
+	s.Equal(workflow.RunStatusSucceeded, result.Status)
+	s.Equal(PendingStatusCompleted, result.State.Status)
+	s.NotContains(result.State.ResponseText, "Não consegui registrar")
+	s.ledger.AssertNumberOfCalls(s.T(), "CreateTransaction", 2)
+}
+
+func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_PermanentFailure_NoRetry_RF22() {
+	state := s.newState(AwaitingSlotConfirmation)
+	k := s.key("thr-confirm-permanent")
+
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.Anything).
+		Return(ifaces.EntryRef{}, errors.New("amount_cents must be > 0")).
+		Once()
+
+	_, err := s.engine.Start(s.ctx, s.def, k, state)
+	s.Require().NoError(err)
+
+	result, err := s.engine.Resume(s.ctx, s.def, k, s.resumePayload("sim"))
+
+	s.Error(err)
+	s.Equal(workflow.RunStatusFailed, result.Status)
+	s.ledger.AssertNumberOfCalls(s.T(), "CreateTransaction", 1)
+}
+
+func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_TransientFailure_ExhaustsRetries_RF22() {
+	state := s.newState(AwaitingSlotConfirmation)
+	k := s.key("thr-confirm-exhausted")
+
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.Anything).
+		Return(ifaces.EntryRef{}, context.DeadlineExceeded).
+		Times(maxWriteAttempts)
+
+	_, err := s.engine.Start(s.ctx, s.def, k, state)
+	s.Require().NoError(err)
+
+	result, err := s.engine.Resume(s.ctx, s.def, k, s.resumePayload("sim"))
+
+	s.Error(err)
+	s.ErrorIs(err, context.DeadlineExceeded)
+	s.Equal(workflow.RunStatusFailed, result.Status)
+	s.ledger.AssertNumberOfCalls(s.T(), "CreateTransaction", maxWriteAttempts)
+}
+
+func (s *PendingEntryWorkflowSuite) TestResume_RF23_ApósExaustãoDeRetryProximaConfirmacaoReexecutaEscritaSemReclassificar() {
+	state := s.newState(AwaitingSlotConfirmation)
+	k := s.key("thr-confirm-rf23-revive")
+
+	cats := imocks.NewCategoriesReader(s.T())
+	def := BuildPendingEntryWorkflow(s.ledger, nil, cats, nil)
+
+	cats.EXPECT().
+		ResolveForWrite(mock.Anything, mock.Anything).
+		Return(ifaces.CategoryWriteDecision{
+			RootCategoryID:   state.Candidates[0].RootCategoryID,
+			SubcategoryID:    state.Candidates[0].SubcategoryID,
+			RootSlug:         state.Candidates[0].RootSlug,
+			SubcategorySlug:  state.Candidates[0].SubcategorySlug,
+			Path:             state.Candidates[0].Path,
+			EditorialVersion: state.CategoryVersion,
+		}, nil).
+		Times(2)
+
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.Anything).
+		Return(ifaces.EntryRef{}, context.DeadlineExceeded).
+		Times(maxWriteAttempts)
+
+	_, err := s.engine.Start(s.ctx, def, k, state)
+	s.Require().NoError(err)
+
+	firstResult, firstErr := s.engine.Resume(s.ctx, def, k, s.resumePayload("sim"))
+	s.Error(firstErr)
+	s.ErrorIs(firstErr, context.DeadlineExceeded)
+	s.Equal(workflow.RunStatusFailed, firstResult.Status)
+	s.ledger.AssertNumberOfCalls(s.T(), "CreateTransaction", maxWriteAttempts)
+
+	noRunResult, resumeErr := s.engine.Resume(s.ctx, def, k, s.resumePayload("sim"))
+	s.NoError(resumeErr)
+	s.Zero(noRunResult.Status)
+
+	failedState, snap, found, loadErr := s.engine.LoadLatestState(s.ctx, def, k)
+	s.Require().NoError(loadErr)
+	s.Require().True(found)
+	s.Equal(workflow.RunStatusFailed, snap.Status)
+	s.True(IsResumableAfterFailedWrite(failedState, time.Now().UTC()))
+	s.Len(failedState.Candidates, 1)
+	s.Equal(int64(1), failedState.CategoryVersion)
+
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.Anything).
+		Return(ifaces.EntryRef{ID: uuid.New(), Kind: ifaces.EntryKindTransaction}, nil).
+		Once()
+
+	seeded := SeedResumeAfterFailedWrite(failedState, PendingMessage{Text: "sim", MessageID: "wamid-002"})
+	revivedResult, revivedErr := s.engine.Start(s.ctx, def, k, seeded)
+
+	s.NoError(revivedErr)
+	s.Equal(workflow.RunStatusSucceeded, revivedResult.Status)
+	s.Equal(PendingStatusCompleted, revivedResult.State.Status)
+	s.NotContains(revivedResult.State.ResponseText, "Não consegui registrar")
+
+	s.ledger.AssertNumberOfCalls(s.T(), "CreateTransaction", maxWriteAttempts+1)
+	cats.AssertNotCalled(s.T(), "SearchDictionary", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func (s *PendingEntryWorkflowSuite) TestResume_RF23_LimiteDeRevivasEntreTurnosImpedeLoopIndefinido() {
+	state := s.newState(AwaitingSlotConfirmation)
+	k := s.key("thr-confirm-rf23-cap")
+
+	cats := imocks.NewCategoriesReader(s.T())
+	def := BuildPendingEntryWorkflow(s.ledger, nil, cats, nil)
+
+	cats.EXPECT().
+		ResolveForWrite(mock.Anything, mock.Anything).
+		Return(ifaces.CategoryWriteDecision{
+			RootCategoryID:   state.Candidates[0].RootCategoryID,
+			SubcategoryID:    state.Candidates[0].SubcategoryID,
+			RootSlug:         state.Candidates[0].RootSlug,
+			SubcategorySlug:  state.Candidates[0].SubcategorySlug,
+			Path:             state.Candidates[0].Path,
+			EditorialVersion: state.CategoryVersion,
+		}, nil).
+		Times(1 + maxFailedWriteResumes)
+
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.Anything).
+		Return(ifaces.EntryRef{}, context.DeadlineExceeded).
+		Times(maxWriteAttempts * (1 + maxFailedWriteResumes))
+
+	_, err := s.engine.Start(s.ctx, def, k, state)
+	s.Require().NoError(err)
+
+	_, firstErr := s.engine.Resume(s.ctx, def, k, s.resumePayload("sim"))
+	s.Error(firstErr)
+
+	for i := 0; i < maxFailedWriteResumes; i++ {
+		failedState, snap, found, loadErr := s.engine.LoadLatestState(s.ctx, def, k)
+		s.Require().NoError(loadErr)
+		s.Require().True(found)
+		s.Equal(workflow.RunStatusFailed, snap.Status)
+		s.Require().True(IsResumableAfterFailedWrite(failedState, time.Now().UTC()),
+			"esperava revivable na tentativa entre-turnos %d", i+1)
+
+		seeded := SeedResumeAfterFailedWrite(failedState, PendingMessage{Text: "sim", MessageID: fmt.Sprintf("wamid-cap-%d", i)})
+		revivedResult, revivedErr := s.engine.Start(s.ctx, def, k, seeded)
+		s.Error(revivedErr)
+		s.Equal(workflow.RunStatusFailed, revivedResult.Status)
+	}
+
+	finalState, snap, found, loadErr := s.engine.LoadLatestState(s.ctx, def, k)
+	s.Require().NoError(loadErr)
+	s.Require().True(found)
+	s.Equal(workflow.RunStatusFailed, snap.Status)
+	s.Equal(maxFailedWriteResumes, finalState.FailedWriteResumeCount)
+	s.False(IsResumableAfterFailedWrite(finalState, time.Now().UTC()),
+		"após esgotar maxFailedWriteResumes, a revivificação entre turnos deve parar")
+}
+
+func (s *PendingEntryWorkflowSuite) TestResume_RF23_RepromptDeConfirmacaoNaoConsomeOrcamentoDeRevivaEntreTurnos() {
+	state := s.newState(AwaitingSlotConfirmation)
+	k := s.key("thr-confirm-rf23-reprompt-isolado")
+
+	def := BuildPendingEntryWorkflow(s.ledger, nil, nil, nil)
+
+	_, err := s.engine.Start(s.ctx, def, k, state)
+	s.Require().NoError(err)
+
+	ambiguousResult, ambiguousErr := s.engine.Resume(s.ctx, def, k, s.resumePayload("talvez"))
+	s.Require().NoError(ambiguousErr)
+	s.Equal(workflow.RunStatusSuspended, ambiguousResult.Status)
+	s.Equal(1, ambiguousResult.State.ConfirmRepromptCount)
+	s.Zero(ambiguousResult.State.FailedWriteResumeCount)
+
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.Anything).
+		Return(ifaces.EntryRef{}, context.DeadlineExceeded).
+		Times(maxWriteAttempts * (1 + maxFailedWriteResumes))
+
+	_, confirmErr := s.engine.Resume(s.ctx, def, k, s.resumePayload("sim"))
+	s.Error(confirmErr)
+
+	for i := 0; i < maxFailedWriteResumes; i++ {
+		failedState, snap, found, loadErr := s.engine.LoadLatestState(s.ctx, def, k)
+		s.Require().NoError(loadErr)
+		s.Require().True(found)
+		s.Equal(workflow.RunStatusFailed, snap.Status)
+		s.Require().True(IsResumableAfterFailedWrite(failedState, time.Now().UTC()),
+			"o reprompt de confirmacao (ConfirmRepromptCount=1) nao deve reduzir o orcamento de reviva entre turnos, tentativa %d", i+1)
+
+		seeded := SeedResumeAfterFailedWrite(failedState, PendingMessage{Text: "sim", MessageID: fmt.Sprintf("wamid-isolado-%d", i)})
+		revivedResult, revivedErr := s.engine.Start(s.ctx, def, k, seeded)
+		s.Error(revivedErr)
+		s.Equal(workflow.RunStatusFailed, revivedResult.Status)
+	}
+
+	finalState, _, found, loadErr := s.engine.LoadLatestState(s.ctx, def, k)
+	s.Require().NoError(loadErr)
+	s.Require().True(found)
+	s.Equal(maxFailedWriteResumes, finalState.FailedWriteResumeCount)
+	s.Equal(1, finalState.ConfirmRepromptCount)
+}
+
+type fakeIdempotentWriter struct {
+	calls   int
+	results []struct {
+		id      uuid.UUID
+		outcome agent.ToolOutcome
+		err     error
+	}
+}
+
+func (f *fakeIdempotentWriter) Execute(
+	_ context.Context,
+	_ uuid.UUID,
+	_ string,
+	_ int,
+	_ string,
+	_ string,
+	_ IdempotentWriteFn,
+) (uuid.UUID, agent.ToolOutcome, error) {
+	r := f.results[f.calls]
+	f.calls++
+	return r.id, r.outcome, r.err
+}
+
+func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_IdempotentPath_TransientFailure_RetriesOnce_RF22() {
+	state := s.newState(AwaitingSlotConfirmation)
+	k := s.key("thr-confirm-idem-retry")
+	def := BuildPendingEntryWorkflow(s.ledger, nil, nil, &fakeIdempotentWriter{
+		results: []struct {
+			id      uuid.UUID
+			outcome agent.ToolOutcome
+			err     error
+		}{
+			{id: uuid.Nil, outcome: 0, err: context.DeadlineExceeded},
+			{id: uuid.New(), outcome: agent.ToolOutcomeRouted, err: nil},
+		},
+	})
+
+	_, err := s.engine.Start(s.ctx, def, k, state)
+	s.Require().NoError(err)
+
+	result, err := s.engine.Resume(s.ctx, def, k, s.resumePayload("sim"))
+
+	s.NoError(err)
+	s.Equal(workflow.RunStatusSucceeded, result.Status)
+	s.Equal(PendingStatusCompleted, result.State.Status)
+}
+
+func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_IdempotentPath_Replay_NoRetry_RF24() {
+	state := s.newState(AwaitingSlotConfirmation)
+	k := s.key("thr-confirm-idem-replay")
+	existingID := uuid.New()
+	writer := &fakeIdempotentWriter{
+		results: []struct {
+			id      uuid.UUID
+			outcome agent.ToolOutcome
+			err     error
+		}{
+			{id: existingID, outcome: agent.ToolOutcomeReplay, err: nil},
+		},
+	}
+	def := BuildPendingEntryWorkflow(s.ledger, nil, nil, writer)
+
+	_, err := s.engine.Start(s.ctx, def, k, state)
+	s.Require().NoError(err)
+
+	result, err := s.engine.Resume(s.ctx, def, k, s.resumePayload("sim"))
+
+	s.NoError(err)
+	s.Equal(workflow.RunStatusSucceeded, result.Status)
+	s.Equal(PendingStatusCompleted, result.State.Status)
+	s.Equal(1, writer.calls)
+}
+
 func (s *PendingEntryWorkflowSuite) newCategoryState() PendingEntryState {
 	state := s.newState(AwaitingSlotCategory)
 	state.Candidates = []PendingCategoryCandidate{
@@ -420,6 +720,25 @@ func (s *PendingEntryWorkflowSuite) TestStart_PaymentMethodSlot_Suspends() {
 	s.Equal(workflow.RunStatusSuspended, result.Status)
 	s.Equal(AwaitingSlotPaymentMethod, result.State.Awaiting)
 	s.NotEmpty(result.State.ResponseText)
+	s.Contains(result.State.ResponseText, "Como você pagou?")
+	s.Contains(result.State.ResponseText, "dinheiro, pix, débito, crédito, boleto, vale-refeição")
+}
+
+func (s *PendingEntryWorkflowSuite) TestResume_PaymentMethodSlot_UnrecognizedInput_RepromptsWithExamples() {
+	state := s.newState(AwaitingSlotPaymentMethod)
+	k := s.key("thr-resume-payment-unrecognized")
+
+	_, err := s.engine.Start(s.ctx, s.def, k, state)
+	s.Require().NoError(err)
+
+	result, err := s.engine.Resume(s.ctx, s.def, k, s.resumePayload("sei lá"))
+
+	s.NoError(err)
+	s.Equal(workflow.RunStatusSuspended, result.Status)
+	s.Equal(AwaitingSlotPaymentMethod, result.State.Awaiting)
+	s.Contains(result.State.ResponseText, "Não reconheci a forma de pagamento")
+	s.Contains(result.State.ResponseText, "Como você pagou?")
+	s.Contains(result.State.ResponseText, "dinheiro, pix, débito, crédito, boleto, vale-refeição")
 }
 
 func (s *PendingEntryWorkflowSuite) TestResume_MergePatchDelta_OnlyUpdatesResumeText() {
@@ -436,4 +755,188 @@ func (s *PendingEntryWorkflowSuite) TestResume_MergePatchDelta_OnlyUpdatesResume
 	s.NoError(err)
 	s.Equal(int64(32000), result.State.AmountCents)
 	s.Equal(PendingStatusCancelled, result.State.Status)
+}
+
+func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_KindMismatch_ReclassifiesToCompatibleCandidate_RF07() {
+	state := s.newState(AwaitingSlotConfirmation)
+	state.Kind = ifaces.CategoryKindIncome
+	state.Description = "salário"
+	k := s.key("thr-kind-reclassify")
+
+	incomeRoot := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	incomeSub := uuid.MustParse("44444444-4444-4444-4444-444444444444")
+
+	cats := imocks.NewCategoriesReader(s.T())
+	def := BuildPendingEntryWorkflow(s.ledger, nil, cats, nil)
+
+	cats.EXPECT().
+		ResolveForWrite(mock.Anything, ifaces.CategoryWriteRequest{
+			RootCategoryID:  state.Candidates[0].RootCategoryID,
+			SubcategoryID:   state.Candidates[0].SubcategoryID,
+			Kind:            ifaces.CategoryKindIncome,
+			ExpectedVersion: state.CategoryVersion,
+		}).
+		Return(ifaces.CategoryWriteDecision{}, catusecases.ErrKindMismatch).
+		Once()
+	cats.EXPECT().
+		SearchDictionary(mock.Anything, "salário", "income").
+		Return(ifaces.CategorySearchResult{
+			Outcome: ifaces.ClassifyOutcomeMatched,
+			Version: state.CategoryVersion,
+			Candidates: []ifaces.CategoryCandidate{
+				{CategoryID: incomeSub, RootCategoryID: incomeRoot, Path: "Salário > Salário", MatchedTerm: "salário"},
+			},
+		}, nil).
+		Once()
+	cats.EXPECT().
+		ResolveForWrite(mock.Anything, ifaces.CategoryWriteRequest{
+			RootCategoryID:  incomeRoot,
+			SubcategoryID:   incomeSub,
+			Kind:            ifaces.CategoryKindIncome,
+			ExpectedVersion: state.CategoryVersion,
+		}).
+		Return(ifaces.CategoryWriteDecision{
+			RootCategoryID:  incomeRoot,
+			SubcategoryID:   incomeSub,
+			RootSlug:        "salario",
+			SubcategorySlug: "salario",
+			Path:            "Salário > Salário",
+		}, nil).
+		Once()
+
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.Anything).
+		Return(ifaces.EntryRef{ID: uuid.New(), Kind: ifaces.EntryKindTransaction}, nil).
+		Once()
+
+	_, err := s.engine.Start(s.ctx, def, k, state)
+	s.Require().NoError(err)
+
+	result, err := s.engine.Resume(s.ctx, def, k, s.resumePayload("sim"))
+
+	s.NoError(err)
+	s.Equal(workflow.RunStatusSucceeded, result.Status)
+	s.Equal(PendingStatusCompleted, result.State.Status)
+}
+
+func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_KindMismatch_NoCompatibleCandidate_AsksClarifyOnce_RF08() {
+	state := s.newState(AwaitingSlotConfirmation)
+	state.Kind = ifaces.CategoryKindIncome
+	state.Description = "meta"
+	k := s.key("thr-kind-clarify")
+
+	cats := imocks.NewCategoriesReader(s.T())
+	def := BuildPendingEntryWorkflow(s.ledger, nil, cats, nil)
+
+	cats.EXPECT().
+		ResolveForWrite(mock.Anything, ifaces.CategoryWriteRequest{
+			RootCategoryID:  state.Candidates[0].RootCategoryID,
+			SubcategoryID:   state.Candidates[0].SubcategoryID,
+			Kind:            ifaces.CategoryKindIncome,
+			ExpectedVersion: state.CategoryVersion,
+		}).
+		Return(ifaces.CategoryWriteDecision{}, catusecases.ErrKindMismatch).
+		Once()
+	cats.EXPECT().
+		SearchDictionary(mock.Anything, "meta", "income").
+		Return(ifaces.CategorySearchResult{Outcome: ifaces.ClassifyOutcomeNoMatch, Version: state.CategoryVersion}, nil).
+		Once()
+
+	_, err := s.engine.Start(s.ctx, def, k, state)
+	s.Require().NoError(err)
+
+	result, err := s.engine.Resume(s.ctx, def, k, s.resumePayload("sim"))
+
+	s.NoError(err)
+	s.NotEqual(workflow.RunStatusFailed, result.Status)
+	s.Equal(workflow.RunStatusSuspended, result.Status)
+	s.Equal(PendingStatusActive, result.State.Status)
+	s.Equal(AwaitingSlotCategory, result.State.Awaiting)
+	s.NotContains(result.State.ResponseText, "cancelado")
+	s.ledger.AssertNotCalled(s.T(), "CreateTransaction", mock.Anything, mock.Anything)
+}
+
+func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_ExpenseKindMismatch_ReclassifiesToExpenseCandidate_RF06() {
+	state := s.newState(AwaitingSlotConfirmation)
+	state.Kind = ifaces.CategoryKindExpense
+	state.Description = "supermercado"
+	k := s.key("thr-kind-expense-reclassify")
+
+	expenseRoot := uuid.MustParse("55555555-5555-5555-5555-555555555555")
+	expenseSub := uuid.MustParse("66666666-6666-6666-6666-666666666666")
+
+	cats := imocks.NewCategoriesReader(s.T())
+	def := BuildPendingEntryWorkflow(s.ledger, nil, cats, nil)
+
+	cats.EXPECT().
+		ResolveForWrite(mock.Anything, ifaces.CategoryWriteRequest{
+			RootCategoryID:  state.Candidates[0].RootCategoryID,
+			SubcategoryID:   state.Candidates[0].SubcategoryID,
+			Kind:            ifaces.CategoryKindExpense,
+			ExpectedVersion: state.CategoryVersion,
+		}).
+		Return(ifaces.CategoryWriteDecision{}, catusecases.ErrKindMismatch).
+		Once()
+	cats.EXPECT().
+		SearchDictionary(mock.Anything, "supermercado", "expense").
+		Return(ifaces.CategorySearchResult{
+			Outcome: ifaces.ClassifyOutcomeMatched,
+			Version: state.CategoryVersion,
+			Candidates: []ifaces.CategoryCandidate{
+				{CategoryID: expenseSub, RootCategoryID: expenseRoot, Path: "Custo Fixo > Supermercado", MatchedTerm: "supermercado"},
+			},
+		}, nil).
+		Once()
+	cats.EXPECT().
+		ResolveForWrite(mock.Anything, ifaces.CategoryWriteRequest{
+			RootCategoryID:  expenseRoot,
+			SubcategoryID:   expenseSub,
+			Kind:            ifaces.CategoryKindExpense,
+			ExpectedVersion: state.CategoryVersion,
+		}).
+		Return(ifaces.CategoryWriteDecision{
+			RootCategoryID:  expenseRoot,
+			SubcategoryID:   expenseSub,
+			RootSlug:        "custo-fixo",
+			SubcategorySlug: "supermercado",
+			Path:            "Custo Fixo > Supermercado",
+		}, nil).
+		Once()
+
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.Anything).
+		Return(ifaces.EntryRef{ID: uuid.New(), Kind: ifaces.EntryKindTransaction}, nil).
+		Once()
+
+	_, err := s.engine.Start(s.ctx, def, k, state)
+	s.Require().NoError(err)
+
+	result, err := s.engine.Resume(s.ctx, def, k, s.resumePayload("sim"))
+
+	s.NoError(err)
+	s.Equal(workflow.RunStatusSucceeded, result.Status)
+	s.Equal(PendingStatusCompleted, result.State.Status)
+}
+
+func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_NonKindBusinessRejection_StillCancels_RF09() {
+	state := s.newState(AwaitingSlotConfirmation)
+	k := s.key("thr-kind-not-mismatch")
+
+	cats := imocks.NewCategoriesReader(s.T())
+	def := BuildPendingEntryWorkflow(s.ledger, nil, cats, nil)
+
+	cats.EXPECT().
+		ResolveForWrite(mock.Anything, mock.Anything).
+		Return(ifaces.CategoryWriteDecision{}, catusecases.ErrCategoryDeprecated).
+		Once()
+
+	_, err := s.engine.Start(s.ctx, def, k, state)
+	s.Require().NoError(err)
+
+	result, err := s.engine.Resume(s.ctx, def, k, s.resumePayload("sim"))
+
+	s.NoError(err)
+	s.Equal(workflow.RunStatusSucceeded, result.Status)
+	s.Equal(PendingStatusCancelled, result.State.Status)
+	s.ledger.AssertNotCalled(s.T(), "CreateTransaction", mock.Anything, mock.Anything)
 }

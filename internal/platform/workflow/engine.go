@@ -27,6 +27,7 @@ type RunResult[S any] struct {
 type Engine[S any] interface {
 	Start(ctx context.Context, def Definition[S], key string, initial S) (RunResult[S], error)
 	Resume(ctx context.Context, def Definition[S], key string, resume []byte) (RunResult[S], error)
+	LoadLatestState(ctx context.Context, def Definition[S], key string) (S, Snapshot, bool, error)
 }
 
 type engine[S any] struct {
@@ -150,6 +151,38 @@ func (e *engine[S]) Start(ctx context.Context, def Definition[S], key string, in
 	}
 
 	return result, nil
+}
+
+func (e *engine[S]) LoadLatestState(ctx context.Context, def Definition[S], key string) (S, Snapshot, bool, error) {
+	ctx, span := e.o11y.Tracer().Start(ctx, "workflow.engine.load_latest_state",
+		observability.WithAttributes(
+			observability.String("workflow", def.ID),
+		),
+	)
+	defer span.End()
+
+	var zero S
+
+	if !def.Durable {
+		return zero, Snapshot{}, false, nil
+	}
+
+	snap, found, err := e.store.LoadLatest(ctx, def.ID, key)
+	if err != nil {
+		span.RecordError(err)
+		return zero, Snapshot{}, false, fmt.Errorf("workflow.engine.load_latest_state: load: %w", err)
+	}
+	if !found {
+		return zero, Snapshot{}, false, nil
+	}
+
+	state, decodeErr := e.codec.Decode(snap.State)
+	if decodeErr != nil {
+		span.RecordError(decodeErr)
+		return zero, Snapshot{}, false, fmt.Errorf("workflow.engine.load_latest_state: decode: %w", decodeErr)
+	}
+
+	return state, snap, true, nil
 }
 
 func (e *engine[S]) resumeOnConflict(ctx context.Context, span observability.Span, def Definition[S], key string, insertErr error) (RunResult[S], error) {

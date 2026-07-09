@@ -18,6 +18,7 @@ import (
 	agentmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/memory"
 	memorymocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/memory/mocks"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/money"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
@@ -1255,7 +1256,7 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WithGoalValuePersistsM
 	s.NoError(err)
 	s.Equal(workflow.StepStatusCompleted, out.Status)
 	s.Contains(out.State.FinalMessage, "comprar uma casa")
-	s.Contains(out.State.FinalMessage, "meta de "+formatBRL(state.GoalValueCents))
+	s.Contains(out.State.FinalMessage, "meta de "+money.FromCents(state.GoalValueCents).BRL())
 }
 
 func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WithoutGoalValueOmitsMetadataKeyAndMarkdownUnchanged() {
@@ -1287,7 +1288,7 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WithoutGoalValueOmitsM
 
 func (s *OnboardingWorkflowSuite) TestConclusionFinalMessage_WithValueMentionsAmount() {
 	msg := conclusionFinalMessage("comprar uma casa", 40000000)
-	s.Contains(msg, fmt.Sprintf(`Seu objetivo "comprar uma casa" (meta de %s)`, formatBRL(40000000)))
+	s.Contains(msg, fmt.Sprintf(`Seu objetivo "comprar uma casa" (meta de %s)`, money.FromCents(40000000).BRL()))
 }
 
 func (s *OnboardingWorkflowSuite) TestConclusionFinalMessage_WithoutValueMatchesPreviousBehavior() {

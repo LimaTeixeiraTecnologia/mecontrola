@@ -63,7 +63,11 @@ func BuildRegisterIncomeTool(registrar entryRegistrar) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool("register_income", "Registra um lançamento de receita no ledger financeiro do usuário; a categoria é resolvida automaticamente.", in, out, buildRegisterIncomeExec(registrar))
+	return tool.NewVerbatimTool("register_income", "Registra um lançamento de receita no ledger financeiro do usuário; a categoria é resolvida automaticamente por busca textual do campo description. IMPORTANTE: description deve ser o termo literal usado pelo usuário (ex.: \"13º salário\", \"décimo terceiro\"), nunca uma paráfrase (NÃO use \"Recebimento de...\").", in, out, buildRegisterIncomeExec(registrar), extractRegisterIncomeVerbatim)
+}
+
+func extractRegisterIncomeVerbatim(o RegisterIncomeOutput) (string, bool) {
+	return o.Message, o.Outcome == agent.ToolOutcomeClarify.String() && o.Message != ""
 }
 
 func buildRegisterIncomeExec(registrar entryRegistrar) func(context.Context, RegisterIncomeInput) (RegisterIncomeOutput, error) {

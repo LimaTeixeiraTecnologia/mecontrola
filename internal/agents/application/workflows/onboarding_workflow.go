@@ -16,6 +16,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/memory"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/money"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
@@ -239,7 +240,7 @@ func DecideAllocationsBP(kind allocationInputKind, valuesBySlug map[string]float
 			sum += cents[i]
 		}
 		if sum != incomeCents {
-			return nil, fmt.Errorf("a soma dos valores (%s) precisa ser igual à sua renda (%s)", formatBRL(sum), formatBRL(incomeCents))
+			return nil, fmt.Errorf("a soma dos valores (%s) precisa ser igual à sua renda (%s)", money.FromCents(sum).BRL(), money.FromCents(incomeCents).BRL())
 		}
 		bpSlice := centsToBasisPoints(cents, incomeCents)
 		bp := make(map[string]int, len(canonicalSlugs))
@@ -297,20 +298,6 @@ func DecideCardEntry(nickname, bank string, dueDay int) error {
 	return errors.Join(errs...)
 }
 
-func formatBRL(cents int64) string {
-	negative := cents < 0
-	if negative {
-		cents = -cents
-	}
-	reais := cents / 100
-	subunit := cents % 100
-	sign := ""
-	if negative {
-		sign = "-"
-	}
-	return fmt.Sprintf("%sR$ %d,%02d", sign, reais, subunit)
-}
-
 func allocationBPList(bpBySlug map[string]int) []interfaces.AllocationBP {
 	out := make([]interfaces.AllocationBP, 0, len(canonicalSlugs))
 	for _, slug := range canonicalSlugs {
@@ -332,7 +319,7 @@ func renderAllocationLines(items []interfaces.AllocationCents) string {
 	var b strings.Builder
 	for _, slug := range canonicalSlugs {
 		it := bySlug[slug]
-		fmt.Fprintf(&b, "%s: %s (%d%%)\n", categoryLabels[slug], formatBRL(it.PlannedCents), it.BasisPoints/100)
+		fmt.Fprintf(&b, "%s: %s (%d%%)\n", categoryLabels[slug], money.FromCents(it.PlannedCents).BRL(), it.BasisPoints/100)
 	}
 	return b.String()
 }
@@ -505,7 +492,7 @@ func summaryPrompt(state OnboardingState, items []interfaces.AllocationCents) st
 	var b strings.Builder
 	b.WriteString("Vamos revisar tudo antes de ativar seu orçamento:\n\n")
 	fmt.Fprintf(&b, "🎯 Objetivo: %s\n", state.Goal)
-	fmt.Fprintf(&b, "💵 Renda mensal: %s\n", formatBRL(state.IncomeCents))
+	fmt.Fprintf(&b, "💵 Renda mensal: %s\n", money.FromCents(state.IncomeCents).BRL())
 	if state.CardNickname != "" {
 		fmt.Fprintf(&b, "💳 Cartão: %s (vencimento dia %d)\n", state.CardNickname, state.CardDueDay)
 	}
@@ -518,7 +505,7 @@ func summaryPrompt(state OnboardingState, items []interfaces.AllocationCents) st
 func conclusionFinalMessage(goal string, valueCents int64) string {
 	objetivo := fmt.Sprintf("Seu objetivo \"%s\"", goal)
 	if valueCents > 0 {
-		objetivo = fmt.Sprintf("Seu objetivo \"%s\" (meta de %s)", goal, formatBRL(valueCents))
+		objetivo = fmt.Sprintf("Seu objetivo \"%s\" (meta de %s)", goal, money.FromCents(valueCents).BRL())
 	}
 	return fmt.Sprintf(
 		"Tudo pronto! 🚀 %s está registrado.\n\n"+

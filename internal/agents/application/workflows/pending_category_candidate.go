@@ -13,4 +13,5 @@ type PendingCategoryCandidate struct {
 	Confidence      string    `json:"confidence"`
 	MatchQuality    string    `json:"matchQuality"`
 	MatchReason     string    `json:"matchReason"`
+	SignalType      string    `json:"signalType"`
 }

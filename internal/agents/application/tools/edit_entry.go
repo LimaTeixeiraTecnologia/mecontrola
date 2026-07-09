@@ -57,7 +57,11 @@ func BuildEditEntryTool(editor entryEditor) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool("edit_entry", "Solicita a edição de um lançamento financeiro; a persistência só ocorre após confirmação explícita do usuário.", in, out, buildEditEntryExec(editor))
+	return tool.NewVerbatimTool("edit_entry", "Solicita a edição de um lançamento financeiro; a persistência só ocorre após confirmação explícita do usuário.", in, out, buildEditEntryExec(editor), extractEditEntryVerbatim)
+}
+
+func extractEditEntryVerbatim(o EditEntryOutput) (string, bool) {
+	return o.ImpactNote, o.NeedsConfirmation && o.ImpactNote != ""
 }
 
 func buildEditEntryExec(editor entryEditor) func(context.Context, EditEntryInput) (EditEntryOutput, error) {
