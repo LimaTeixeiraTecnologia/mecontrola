@@ -157,7 +157,7 @@ func newHFakeIdempotentWriter() *hFakeIdempotentWriter {
 	return &hFakeIdempotentWriter{written: make(map[string]uuid.UUID)}
 }
 
-func (f *hFakeIdempotentWriter) Execute(ctx context.Context, _ uuid.UUID, wamid string, itemSeq int, operation, _ string, write IdempotentWriteFn) (uuid.UUID, agent.ToolOutcome, error) {
+func (f *hFakeIdempotentWriter) Execute(ctx context.Context, _ uuid.UUID, wamid string, itemSeq int, operation, _ string, write IdempotentWriteFn, _ DomainErrorClassifier) (uuid.UUID, agent.ToolOutcome, error) {
 	key := fmt.Sprintf("%s:%d:%s", wamid, itemSeq, operation)
 	f.mu.Lock()
 	if rid, ok := f.written[key]; ok {
@@ -306,6 +306,10 @@ func (f *hFakeCardMgr) UpdateCard(_ context.Context, _ ifaces.CardUpdate) (iface
 func (f *hFakeCardMgr) SoftDeleteCard(_ context.Context, _, _ uuid.UUID) error { return nil }
 
 func (f *hFakeCardMgr) HasOpenInstallments(_ context.Context, _, _ uuid.UUID) (bool, error) {
+	return false, nil
+}
+
+func (f *hFakeCardMgr) BankRecognized(_ context.Context, _ string) (bool, error) {
 	return false, nil
 }
 

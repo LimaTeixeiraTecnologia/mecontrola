@@ -7,10 +7,12 @@ import (
 )
 
 type CreateCard struct {
-	UserID   uuid.UUID
-	Nickname string
-	Bank     string
-	DueDay   int
+	UserID             uuid.UUID
+	Nickname           string
+	Bank               string
+	DueDay             int
+	ClosingDay         int
+	ClosingDayProvided bool
 }
 
 func (i *CreateCard) Validate() error {
@@ -23,6 +25,9 @@ func (i *CreateCard) Validate() error {
 	}
 	if i.DueDay < 1 || i.DueDay > 31 {
 		errs = append(errs, ErrCardDueDayInvalid)
+	}
+	if i.ClosingDayProvided && (i.ClosingDay < 1 || i.ClosingDay > 31) {
+		errs = append(errs, ErrCardClosingDayInvalid)
 	}
 	return errors.Join(errs...)
 }

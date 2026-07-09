@@ -142,8 +142,9 @@ func (a gherkinIdemAdapter) Execute(
 	operation string,
 	resourceKind string,
 	write workflows.IdempotentWriteFn,
+	isDomainErr workflows.DomainErrorClassifier,
 ) (uuid.UUID, agent.ToolOutcome, error) {
-	res, err := a.uc.Execute(ctx, userID, wamid, itemSeq, operation, resourceKind, agentusecases.WriteFn(write))
+	res, err := a.uc.Execute(ctx, userID, wamid, itemSeq, operation, resourceKind, agentusecases.WriteFn(write), isDomainErr)
 	return res.ResourceID, res.Outcome, err
 }
 

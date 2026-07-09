@@ -20,10 +20,10 @@ Criar o workflow durável dedicado `card-create-confirm` em `internal/agents/app
 
 ## Subtarefas
 
-- [ ] 4.1 Constantes: `CardCreateConfirmWorkflowID = "card-create-confirm"`, `cardCreateConfirmTTL = 15 * time.Minute`, `cardCreateMaxReprompts = 1`, e `CardCreateKey(resourceID string) string` = `resourceID + ":card-create"`.
-- [ ] 4.2 `BuildCardCreateConfirmWorkflow` + step eval (suspend antes de perguntar; resume por `DecideCardCreateConfirmation`; run sempre concluído).
-- [ ] 4.3 `executeCreateCard` via `idem.Execute(..., "create_card", "card", writeFn)`; mapear conflito de apelido/validação → outcome de domínio + mensagem acionável; infra → retry transiente e `RunStatusFailed` com erro.
-- [ ] 4.4 Testes unitários table-tests (testify/suite) do workflow.
+- [x] 4.1 Constantes: `CardCreateConfirmWorkflowID = "card-create-confirm"`, `cardCreateConfirmTTL = 15 * time.Minute`, `cardCreateMaxReprompts = 1`, e `CardCreateKey(resourceID string) string` = `resourceID + ":card-create"`. (`cardCreateConfirmTTL`/`cardCreateMaxReprompts` já existiam em `card_create_decisions.go` da task 3.0; adicionados `CardCreateConfirmWorkflowID` e `CardCreateKey` no novo arquivo.)
+- [x] 4.2 `BuildCardCreateConfirmWorkflow` + step eval (suspend antes de perguntar; resume por `DecideCardCreateConfirmation`; run sempre concluído).
+- [x] 4.3 `executeCreateCard` via `idem.Execute(..., "create_card", "card", writeFn)`; mapear conflito de apelido/validação → outcome de domínio + mensagem acionável; infra → retry transiente e `RunStatusFailed` com erro.
+- [x] 4.4 Testes unitários table-tests (testify/suite) do workflow.
 
 ## Detalhes de Implementação
 
@@ -50,7 +50,7 @@ Ver techspec.md §Design de Implementação (assinaturas `CardCreateConfirmWorkf
 
 ## Testes da Tarefa
 
-- [ ] Testes unitários
+- [x] Testes unitários
 - [ ] Testes de integração
 
 Cobertura mínima (table-tests testify/suite, whitebox `package workflows`, `fake.NewProvider()`, mocks do `.mockery.yml`):

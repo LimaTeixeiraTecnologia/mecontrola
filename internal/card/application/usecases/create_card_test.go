@@ -231,6 +231,155 @@ func (s *CreateCardSuite) TestExecute_RepositoryError() {
 	s.Contains(err.Error(), "db error")
 }
 
+func (s *CreateCardSuite) TestExecute_ClosingDayProvided_UsesDirectCycle() {
+	type dependencies struct {
+		factory *ifacemocks.RepositoryFactory
+		repo    *ifacemocks.CardRepository
+		idem    *idemocks.Storage
+	}
+
+	scenarios := []struct {
+		name         string
+		args         input.CreateCard
+		dependencies dependencies
+		expect       func(err error)
+	}{
+		{
+			name: "banco nao reconhecido com closing day informado usa cycle direto sem consultar bank reader",
+			args: input.CreateCard{
+				UserID:             uuid.New(),
+				Nickname:           "XP",
+				Bank:               "banco XP",
+				DueDay:             1,
+				ClosingDay:         20,
+				ClosingDayProvided: true,
+			},
+			dependencies: dependencies{
+				factory: func() *ifacemocks.RepositoryFactory {
+					s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
+					return s.factoryMock
+				}(),
+				repo: func() *ifacemocks.CardRepository {
+					s.repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).Return(nil).Once()
+					return s.repoMock
+				}(),
+				idem: s.idemMock,
+			},
+			expect: func(err error) {
+				s.Require().NoError(err)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			sut := NewCreateCard(s.uowMock, scenario.dependencies.factory, scenario.dependencies.idem, s.obs)
+			_, err := sut.Execute(s.ctx, scenario.args)
+			scenario.expect(err)
+			s.bankReaderMock.AssertNotCalled(s.T(), "DaysBeforeDue", mock.Anything, mock.Anything)
+		})
+	}
+}
+
+func (s *CreateCardSuite) TestExecute_ClosingDayNotProvided_DerivesAsBefore() {
+	s.factoryMock.EXPECT().BankDaysReader(mock.Anything).Return(s.bankReaderMock).Once()
+	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
+	s.bankReaderMock.EXPECT().DaysBeforeDue(mock.Anything, mock.Anything).Return(7, nil).Once()
+	s.repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).Return(nil).Once()
+
+	in := s.makeInput()
+	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
+	_, err := sut.Execute(s.ctx, in)
+
+	s.Require().NoError(err)
+}
+
+func (s *CreateCardSuite) TestExecute_RecognizedBank_IgnoresProvidedClosingDay() {
+	s.factoryMock.EXPECT().BankDaysReader(mock.Anything).Return(s.bankReaderMock).Once()
+	s.factoryMock.EXPECT().CardRepository(mock.Anything).Return(s.repoMock).Once()
+	s.bankReaderMock.EXPECT().DaysBeforeDue(mock.Anything, mock.Anything).Return(7, nil).Once()
+	s.repoMock.EXPECT().Insert(mock.Anything, mock.AnythingOfType("entities.Card")).Return(nil).Once()
+
+	in := s.makeInput()
+	in.ClosingDayProvided = false
+	in.ClosingDay = 20
+
+	sut := NewCreateCard(s.uowMock, s.factoryMock, s.idemMock, s.obs)
+	_, err := sut.Execute(s.ctx, in)
+
+	s.Require().NoError(err)
+	s.bankReaderMock.AssertCalled(s.T(), "DaysBeforeDue", mock.Anything, mock.Anything)
+}
+
+func (s *CreateCardSuite) TestExecute_ClosingDayInvalid_ReturnsNamedValidationError() {
+	type dependencies struct {
+		factory *ifacemocks.RepositoryFactory
+		idem    *idemocks.Storage
+	}
+
+	scenarios := []struct {
+		name         string
+		args         input.CreateCard
+		dependencies dependencies
+		expect       func(err error)
+	}{
+		{
+			name: "closing_day 0 com provided=true retorna erro nomeado",
+			args: input.CreateCard{
+				UserID:             uuid.New(),
+				Nickname:           "XP",
+				Bank:               "banco XP",
+				DueDay:             1,
+				ClosingDay:         0,
+				ClosingDayProvided: true,
+			},
+			dependencies: dependencies{factory: s.factoryMock, idem: s.idemMock},
+			expect: func(err error) {
+				s.Require().Error(err)
+				s.Require().ErrorIs(err, input.ErrCardClosingDayInvalid)
+			},
+		},
+		{
+			name: "closing_day 32 com provided=true retorna erro nomeado",
+			args: input.CreateCard{
+				UserID:             uuid.New(),
+				Nickname:           "XP",
+				Bank:               "banco XP",
+				DueDay:             1,
+				ClosingDay:         32,
+				ClosingDayProvided: true,
+			},
+			dependencies: dependencies{factory: s.factoryMock, idem: s.idemMock},
+			expect: func(err error) {
+				s.Require().Error(err)
+				s.Require().ErrorIs(err, input.ErrCardClosingDayInvalid)
+			},
+		},
+		{
+			name: "closing_day 32 com provided=false nao gera erro de closing day",
+			args: input.CreateCard{
+				UserID:             uuid.New(),
+				Nickname:           "XP",
+				Bank:               "banco XP",
+				DueDay:             1,
+				ClosingDay:         32,
+				ClosingDayProvided: false,
+			},
+			dependencies: dependencies{factory: s.factoryMock, idem: s.idemMock},
+			expect: func(err error) {
+				s.Require().NoError(err)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			err := scenario.args.Validate()
+			scenario.expect(err)
+		})
+	}
+}
+
 func (s *CreateCardSuite) TestExecute_IdempotencyPutErrorCausesRollback() {
 	in := s.makeInput()
 	ic := idempotency.IdempotencyContext{

@@ -39,72 +39,6 @@ func (_m *TransactionsLedger) EXPECT() *TransactionsLedger_Expecter {
 	return &TransactionsLedger_Expecter{mock: &_m.Mock}
 }
 
-// CreateTransaction provides a mock function for the type TransactionsLedger
-func (_mock *TransactionsLedger) CreateTransaction(ctx context.Context, in interfaces.RawTransaction) (interfaces.EntryRef, error) {
-	ret := _mock.Called(ctx, in)
-
-	if len(ret) == 0 {
-		panic("no return value specified for CreateTransaction")
-	}
-
-	var r0 interfaces.EntryRef
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, interfaces.RawTransaction) (interfaces.EntryRef, error)); ok {
-		return returnFunc(ctx, in)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, interfaces.RawTransaction) interfaces.EntryRef); ok {
-		r0 = returnFunc(ctx, in)
-	} else {
-		r0 = ret.Get(0).(interfaces.EntryRef)
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, interfaces.RawTransaction) error); ok {
-		r1 = returnFunc(ctx, in)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// TransactionsLedger_CreateTransaction_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateTransaction'
-type TransactionsLedger_CreateTransaction_Call struct {
-	*mock.Call
-}
-
-// CreateTransaction is a helper method to define mock.On call
-//   - ctx context.Context
-//   - in interfaces.RawTransaction
-func (_e *TransactionsLedger_Expecter) CreateTransaction(ctx any, in any) *TransactionsLedger_CreateTransaction_Call {
-	return &TransactionsLedger_CreateTransaction_Call{Call: _e.mock.On("CreateTransaction", ctx, in)}
-}
-
-func (_c *TransactionsLedger_CreateTransaction_Call) Run(run func(ctx context.Context, in interfaces.RawTransaction)) *TransactionsLedger_CreateTransaction_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 interfaces.RawTransaction
-		if args[1] != nil {
-			arg1 = args[1].(interfaces.RawTransaction)
-		}
-		run(
-			arg0,
-			arg1,
-		)
-	})
-	return _c
-}
-
-func (_c *TransactionsLedger_CreateTransaction_Call) Return(entryRef interfaces.EntryRef, err error) *TransactionsLedger_CreateTransaction_Call {
-	_c.Call.Return(entryRef, err)
-	return _c
-}
-
-func (_c *TransactionsLedger_CreateTransaction_Call) RunAndReturn(run func(ctx context.Context, in interfaces.RawTransaction) (interfaces.EntryRef, error)) *TransactionsLedger_CreateTransaction_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // CreateRecurringTemplate provides a mock function for the type TransactionsLedger
 func (_mock *TransactionsLedger) CreateRecurringTemplate(ctx context.Context, in interfaces.RawRecurringTemplate) (interfaces.EntryRef, error) {
 	ret := _mock.Called(ctx, in)
@@ -167,6 +101,72 @@ func (_c *TransactionsLedger_CreateRecurringTemplate_Call) Return(entryRef inter
 }
 
 func (_c *TransactionsLedger_CreateRecurringTemplate_Call) RunAndReturn(run func(ctx context.Context, in interfaces.RawRecurringTemplate) (interfaces.EntryRef, error)) *TransactionsLedger_CreateRecurringTemplate_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// CreateTransaction provides a mock function for the type TransactionsLedger
+func (_mock *TransactionsLedger) CreateTransaction(ctx context.Context, in interfaces.RawTransaction) (interfaces.EntryRef, error) {
+	ret := _mock.Called(ctx, in)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreateTransaction")
+	}
+
+	var r0 interfaces.EntryRef
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, interfaces.RawTransaction) (interfaces.EntryRef, error)); ok {
+		return returnFunc(ctx, in)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, interfaces.RawTransaction) interfaces.EntryRef); ok {
+		r0 = returnFunc(ctx, in)
+	} else {
+		r0 = ret.Get(0).(interfaces.EntryRef)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, interfaces.RawTransaction) error); ok {
+		r1 = returnFunc(ctx, in)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// TransactionsLedger_CreateTransaction_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateTransaction'
+type TransactionsLedger_CreateTransaction_Call struct {
+	*mock.Call
+}
+
+// CreateTransaction is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in interfaces.RawTransaction
+func (_e *TransactionsLedger_Expecter) CreateTransaction(ctx any, in any) *TransactionsLedger_CreateTransaction_Call {
+	return &TransactionsLedger_CreateTransaction_Call{Call: _e.mock.On("CreateTransaction", ctx, in)}
+}
+
+func (_c *TransactionsLedger_CreateTransaction_Call) Run(run func(ctx context.Context, in interfaces.RawTransaction)) *TransactionsLedger_CreateTransaction_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 interfaces.RawTransaction
+		if args[1] != nil {
+			arg1 = args[1].(interfaces.RawTransaction)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *TransactionsLedger_CreateTransaction_Call) Return(entryRef interfaces.EntryRef, err error) *TransactionsLedger_CreateTransaction_Call {
+	_c.Call.Return(entryRef, err)
+	return _c
+}
+
+func (_c *TransactionsLedger_CreateTransaction_Call) RunAndReturn(run func(ctx context.Context, in interfaces.RawTransaction) (interfaces.EntryRef, error)) *TransactionsLedger_CreateTransaction_Call {
 	_c.Call.Return(run)
 	return _c
 }

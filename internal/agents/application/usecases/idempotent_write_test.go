@@ -12,6 +12,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 )
 
@@ -71,6 +72,7 @@ func (s *IdempotentWriteSuite) TestExecute() {
 		operation    string
 		resourceKind string
 		write        WriteFn
+		isDomainErr  workflows.DomainErrorClassifier
 	}
 	type dependencies struct {
 		ledger *fakeLedger
@@ -237,6 +239,7 @@ func (s *IdempotentWriteSuite) TestExecute() {
 				scenario.args.operation,
 				scenario.args.resourceKind,
 				scenario.args.write,
+				scenario.args.isDomainErr,
 			)
 			scenario.expect(result, err, scenario.dependencies.ledger)
 		})
@@ -251,6 +254,7 @@ func (s *IdempotentWriteSuite) TestReprocessAfterLedgerInsertFailure_ReconciledN
 	_, err := uc.Execute(
 		s.ctx, s.userID, s.wamid, 0, "create_transaction", "transaction",
 		func(_ context.Context) (uuid.UUID, bool, error) { return resourceID, false, nil },
+		nil,
 	)
 	s.Error(err)
 	s.Empty(ledger.inserted)
@@ -259,6 +263,7 @@ func (s *IdempotentWriteSuite) TestReprocessAfterLedgerInsertFailure_ReconciledN
 	result, err2 := uc.Execute(
 		s.ctx, s.userID, s.wamid, 0, "create_transaction", "transaction",
 		func(_ context.Context) (uuid.UUID, bool, error) { return resourceID, true, nil },
+		nil,
 	)
 
 	s.NoError(err2)
@@ -280,10 +285,85 @@ func (s *IdempotentWriteSuite) TestNoAdvisoryLockRequired() {
 		"create_transaction",
 		"transaction",
 		func(_ context.Context) (uuid.UUID, bool, error) { return newResourceID, false, nil },
+		nil,
 	)
 
 	s.NoError(err)
 	s.Equal(newResourceID, result.ResourceID)
 	s.Equal(agent.ToolOutcomeRouted, result.Outcome)
 	s.Len(ledger.inserted, 1)
+}
+
+func (s *IdempotentWriteSuite) writeOutcomeLabel() string {
+	metrics, ok := s.obs.Metrics().(*fake.FakeMetrics)
+	s.Require().True(ok, "provider fake deve expor FakeMetrics")
+	counter := metrics.GetCounter("agents_write_total")
+	s.Require().NotNil(counter, "counter agents_write_total deve ter sido emitido")
+	values := counter.GetValues()
+	s.Require().Len(values, 1)
+	for _, f := range values[0].Fields {
+		if f.Key == "outcome" {
+			return f.StringValue()
+		}
+	}
+	s.Fail("label outcome ausente na métrica")
+	return ""
+}
+
+func (s *IdempotentWriteSuite) TestDomainError_EmitsDomainRejectedOutcome() {
+	domainErr := errors.New("nickname conflict")
+	classifierCalls := 0
+	classifier := func(err error) bool {
+		classifierCalls++
+		return errors.Is(err, domainErr)
+	}
+	ledger := &fakeLedger{found: false}
+	uc := NewIdempotentWrite(ledger, s.obs)
+
+	result, err := uc.Execute(
+		s.ctx, s.userID, s.wamid, 0, "create_card", "card",
+		func(_ context.Context) (uuid.UUID, bool, error) { return uuid.Nil, false, domainErr },
+		classifier,
+	)
+
+	s.Error(err)
+	s.ErrorIs(err, domainErr)
+	s.Equal(IdempotentWriteResult{}, result)
+	s.Empty(ledger.inserted)
+	s.Equal(1, classifierCalls)
+	s.Equal("domain_rejected", s.writeOutcomeLabel())
+}
+
+func (s *IdempotentWriteSuite) TestInfraError_EmitsUsecaseErrorOutcome() {
+	infraErr := errors.New("db timeout")
+	classifier := func(error) bool { return false }
+	ledger := &fakeLedger{found: false}
+	uc := NewIdempotentWrite(ledger, s.obs)
+
+	result, err := uc.Execute(
+		s.ctx, s.userID, s.wamid, 0, "create_card", "card",
+		func(_ context.Context) (uuid.UUID, bool, error) { return uuid.Nil, false, infraErr },
+		classifier,
+	)
+
+	s.Error(err)
+	s.ErrorIs(err, infraErr)
+	s.Equal(IdempotentWriteResult{}, result)
+	s.Empty(ledger.inserted)
+	s.Equal("usecase_error", s.writeOutcomeLabel())
+}
+
+func (s *IdempotentWriteSuite) TestInfraError_NilClassifier_EmitsUsecaseErrorOutcome() {
+	infraErr := errors.New("db timeout")
+	ledger := &fakeLedger{found: false}
+	uc := NewIdempotentWrite(ledger, s.obs)
+
+	_, err := uc.Execute(
+		s.ctx, s.userID, s.wamid, 0, "create_transaction", "transaction",
+		func(_ context.Context) (uuid.UUID, bool, error) { return uuid.Nil, false, infraErr },
+		nil,
+	)
+
+	s.Error(err)
+	s.Equal("usecase_error", s.writeOutcomeLabel())
 }

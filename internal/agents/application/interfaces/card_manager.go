@@ -13,6 +13,7 @@ type CardManager interface {
 	ResolveCardByNickname(ctx context.Context, userID uuid.UUID, nickname string) (Card, error)
 	CountCards(ctx context.Context, userID uuid.UUID) (int64, error)
 	BestPurchaseDay(ctx context.Context, bank string, dueDay int) (BestPurchaseDay, error)
+	BankRecognized(ctx context.Context, bank string) (bool, error)
 	UpdateCard(ctx context.Context, in CardUpdate) (Card, error)
 	SoftDeleteCard(ctx context.Context, cardID, userID uuid.UUID) error
 	HasOpenInstallments(ctx context.Context, cardID, userID uuid.UUID) (bool, error)

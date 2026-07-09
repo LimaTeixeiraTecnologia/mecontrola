@@ -157,6 +157,7 @@ func (s *CA09ReconciledIntegrationSuite) TestCA09_ConcurrentSameOriginReturnsRec
 					}
 					return ref.ID, ref.Reconciled, nil
 				},
+				nil,
 			)
 			outcomes[idx] = res.Outcome
 			errs[idx] = writeErr
@@ -217,6 +218,7 @@ func (s *CA09ReconciledIntegrationSuite) TestCA09_ReconciledOutcomeMapsCorrectly
 				}
 				return ref.ID, ref.Reconciled, nil
 			},
+			nil,
 		)
 	}
 

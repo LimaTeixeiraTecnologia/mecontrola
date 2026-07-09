@@ -48,6 +48,7 @@ type CardModule struct {
 	SoftDeleteCardUC        *usecases.SoftDeleteCard
 	InvoiceForUC            *usecases.InvoiceFor
 	BestPurchaseDayUC       *usecases.BestPurchaseDay
+	IsBankRecognizedUC      *usecases.IsBankRecognized
 	InvoiceDueAlertsJob     worker.Job
 	EventHandlers           []EventHandlerRegistration
 }
@@ -84,6 +85,7 @@ func NewCardModule(
 	invoiceFor := usecases.NewInvoiceFor(cardRepo, loc, o11y)
 	getCardForUser := usecases.NewGetCardForUser(cardRepo, o11y)
 	bestPurchaseDay := usecases.NewBestPurchaseDay(factory, db, o11y)
+	isBankRecognized := usecases.NewIsBankRecognized(factory, db, o11y)
 
 	createHandler := handlers.NewCreateCardHandler(createCard, o11y)
 	listHandler := handlers.NewListCardsHandler(listCards, o11y)
@@ -128,6 +130,7 @@ func NewCardModule(
 		SoftDeleteCardUC:        softDelete,
 		InvoiceForUC:            invoiceFor,
 		BestPurchaseDayUC:       bestPurchaseDay,
+		IsBankRecognizedUC:      isBankRecognized,
 		InvoiceDueAlertsJob:     invoiceDueAlertsJob,
 		EventHandlers:           eventHandlers,
 	}, nil

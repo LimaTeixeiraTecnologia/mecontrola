@@ -79,3 +79,47 @@ func (s *BankRepositorySuite) TestDaysBeforeDue() {
 		})
 	}
 }
+
+func (s *BankRepositorySuite) TestIsBankRecognized() {
+	type args struct {
+		raw string
+	}
+	type expects struct {
+		recognized bool
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect expects
+	}{
+		{
+			name:   "Nubank deve ser reconhecido",
+			args:   args{raw: "Nubank"},
+			expect: expects{recognized: true},
+		},
+		{
+			name:   "Itaú com acento deve ser reconhecido",
+			args:   args{raw: "Itaú"},
+			expect: expects{recognized: true},
+		},
+		{
+			name:   "banco XP nao deve ser reconhecido",
+			args:   args{raw: "banco XP"},
+			expect: expects{recognized: false},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			bank, err := valueobjects.NewBankCode(scenario.args.raw)
+			s.Require().NoError(err)
+
+			reader := s.newReader()
+			recognized, err := reader.IsBankRecognized(context.Background(), bank)
+
+			s.NoError(err)
+			s.Equal(scenario.expect.recognized, recognized)
+		})
+	}
+}

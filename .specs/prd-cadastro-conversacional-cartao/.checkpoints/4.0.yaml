@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-cadastro-conversacional-cartao/4.0_execution_report.md
+summary: Workflow card-create-confirm criado com escrita idempotente via IdempotentWriter, testes 11/11 verdes, sem regressao.
+timestamp: 2026-07-09T10:07:15Z

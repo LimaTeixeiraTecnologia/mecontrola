@@ -19,11 +19,11 @@ Banco e Dia de Fechamento) e `adr-002-closing-day-optional-modeling.md`.
 
 ## Subtarefas
 
-- [ ] 2.1 Estender `internal/agents/application/interfaces/types.go` `NewCard` (linha ~122) com `ClosingDay int` e `ClosingDayProvided bool`.
-- [ ] 2.2 Adicionar `BankRecognized(ctx context.Context, bank string) (bool, error)` à interface `CardManager` em `internal/agents/application/interfaces/card_manager.go`.
-- [ ] 2.3 Atualizar `internal/agents/infrastructure/binding/card_manager_adapter.go` `CreateCard` (linha ~58): mapear `ClosingDay`/`ClosingDayProvided` para `cardinput.CreateCard`.
-- [ ] 2.4 Implementar `BankRecognized` no `card_manager_adapter` delegando à leitura `IsBankRecognized` (task 1.0) do módulo card.
-- [ ] 2.5 Atualizar `.mockery.yml` se a nova interface/método exigir mock e rodar `task mocks` para regenerar `internal/agents/application/interfaces/mocks/card_manager.go`.
+- [x] 2.1 Estender `internal/agents/application/interfaces/types.go` `NewCard` (linha ~122) com `ClosingDay int` e `ClosingDayProvided bool`.
+- [x] 2.2 Adicionar `BankRecognized(ctx context.Context, bank string) (bool, error)` à interface `CardManager` em `internal/agents/application/interfaces/card_manager.go`.
+- [x] 2.3 Atualizar `internal/agents/infrastructure/binding/card_manager_adapter.go` `CreateCard` (linha ~58): mapear `ClosingDay`/`ClosingDayProvided` para `cardinput.CreateCard`.
+- [x] 2.4 Implementar `BankRecognized` no `card_manager_adapter` delegando à leitura `IsBankRecognized` (task 1.0) do módulo card (via novo usecase fino `internal/card/application/usecases/is_bank_recognized.go`).
+- [x] 2.5 `.mockery.yml` já declarava `CardManager: {}`; rodado `task mocks` e regenerado `internal/agents/application/interfaces/mocks/card_manager.go`.
 
 ## Detalhes de Implementação
 

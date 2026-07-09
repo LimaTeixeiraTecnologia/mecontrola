@@ -8,4 +8,5 @@ import (
 
 type BankDaysReader interface {
 	DaysBeforeDue(ctx context.Context, bank valueobjects.BankCode) (int, error)
+	IsBankRecognized(ctx context.Context, bank valueobjects.BankCode) (bool, error)
 }

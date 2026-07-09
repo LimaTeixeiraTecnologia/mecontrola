@@ -3,9 +3,10 @@ package input
 import "errors"
 
 var (
-	ErrCardUserIDRequired   = errors.New("user_id: obrigatório")
-	ErrCardIDRequired       = errors.New("id: obrigatório")
-	ErrCardBankRequired     = errors.New("bank: obrigatório")
-	ErrCardDueDayInvalid    = errors.New("due_day: deve estar entre 1 e 31")
-	ErrCardNicknameRequired = errors.New("nickname: obrigatório")
+	ErrCardUserIDRequired    = errors.New("user_id: obrigatório")
+	ErrCardIDRequired        = errors.New("id: obrigatório")
+	ErrCardBankRequired      = errors.New("bank: obrigatório")
+	ErrCardDueDayInvalid     = errors.New("due_day: deve estar entre 1 e 31")
+	ErrCardNicknameRequired  = errors.New("nickname: obrigatório")
+	ErrCardClosingDayInvalid = errors.New("closing_day: deve estar entre 1 e 31")
 )

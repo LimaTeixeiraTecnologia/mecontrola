@@ -12,14 +12,14 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Card (aditivo): closing-day opcional e reconhecimento de banco | pending | — | Com 3.0 | domain-modeling-production, postgresql-production-standards, design-patterns-mandatory |
-| 2.0 | Interfaces e binding agents: NewCard closing + CardManager.BankRecognized | pending | 1.0 | Não | mastra, design-patterns-mandatory |
-| 3.0 | Estado de espera fechado + decisão pura da confirmação | pending | — | Com 1.0 | domain-modeling-production, design-patterns-mandatory, mastra |
-| 4.0 | Workflow card-create-confirm + escrita idempotente | pending | 2.0, 3.0 | Não | mastra, design-patterns-mandatory |
-| 5.0 | Continuer auditável + reaper de runs suspensos | pending | 4.0 | Com 6.0 | mastra, design-patterns-mandatory |
-| 6.0 | Tool create_card (adapter fino, slot-filling, guardrail) | pending | 2.0, 4.0 | Com 5.0 | mastra, design-patterns-mandatory |
-| 7.0 | Wiring, resume chain e instruções do agente | pending | 5.0, 6.0 | Não | mastra |
-| 8.0 | Testes de integração, harness real-LLM e regressão do incidente | pending | 7.0 | Não | mastra |
+| 1.0 | Card (aditivo): closing-day opcional e reconhecimento de banco | done | — | Com 3.0 | domain-modeling-production, postgresql-production-standards, design-patterns-mandatory |
+| 2.0 | Interfaces e binding agents: NewCard closing + CardManager.BankRecognized | done | 1.0 | Não | mastra, design-patterns-mandatory |
+| 3.0 | Estado de espera fechado + decisão pura da confirmação | done | — | Com 1.0 | domain-modeling-production, design-patterns-mandatory, mastra |
+| 4.0 | Workflow card-create-confirm + escrita idempotente | done | 2.0, 3.0 | Não | mastra, design-patterns-mandatory |
+| 5.0 | Continuer auditável + reaper de runs suspensos | done | 4.0 | Com 6.0 | mastra, design-patterns-mandatory |
+| 6.0 | Tool create_card (adapter fino, slot-filling, guardrail) | done | 2.0, 4.0 | Com 5.0 | mastra, design-patterns-mandatory |
+| 7.0 | Wiring, resume chain e instruções do agente | done | 5.0, 6.0 | Não | mastra |
+| 8.0 | Testes de integração, harness real-LLM e regressão do incidente | done | 7.0 | Não | mastra |
 
 ## Dependências Críticas
 - **1.0 → 2.0:** o binding dos agents (`CardManager.BankRecognized`, mapeamento de `ClosingDay`) depende

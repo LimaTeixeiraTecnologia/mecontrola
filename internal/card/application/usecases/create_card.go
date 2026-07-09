@@ -85,19 +85,29 @@ func (u *CreateCard) Execute(ctx context.Context, in input.CreateCard) (output.C
 
 	var card entities.Card
 	err = u.uow.Do(ctx, func(ctx context.Context, tx database.DBTX) error {
-		bankReader := u.factory.BankDaysReader(tx)
 		repo := u.factory.CardRepository(tx)
 
-		days, readErr := bankReader.DaysBeforeDue(ctx, bank)
-		if readErr != nil {
-			return fmt.Errorf("card/create: bank_days: %w", readErr)
-		}
+		var cycle valueobjects.BillingCycle
+		if in.ClosingDayProvided {
+			providedCycle, cycleErr := valueobjects.NewBillingCycle(in.ClosingDay, in.DueDay)
+			if cycleErr != nil {
+				return fmt.Errorf("card/create: cycle: %w", cycleErr)
+			}
+			cycle = providedCycle
+		} else {
+			bankReader := u.factory.BankDaysReader(tx)
+			days, readErr := bankReader.DaysBeforeDue(ctx, bank)
+			if readErr != nil {
+				return fmt.Errorf("card/create: bank_days: %w", readErr)
+			}
 
-		pd := u.svc.Decide(in.DueDay, days, now, tz)
+			pd := u.svc.Decide(in.DueDay, days, now, tz)
 
-		cycle, cycleErr := valueobjects.NewBillingCycle(pd.ClosingDay, in.DueDay)
-		if cycleErr != nil {
-			return fmt.Errorf("card/create: cycle: %w", cycleErr)
+			derivedCycle, cycleErr := valueobjects.NewBillingCycle(pd.ClosingDay, in.DueDay)
+			if cycleErr != nil {
+				return fmt.Errorf("card/create: cycle: %w", cycleErr)
+			}
+			cycle = derivedCycle
 		}
 
 		cmd := services.CreateCardCommand{

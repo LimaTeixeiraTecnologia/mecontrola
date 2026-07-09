@@ -19,6 +19,8 @@ import (
 
 type IdempotentWriteFn func(ctx context.Context) (resourceID uuid.UUID, reconciled bool, err error)
 
+type DomainErrorClassifier func(error) bool
+
 type IdempotentWriter interface {
 	Execute(
 		ctx context.Context,
@@ -28,6 +30,7 @@ type IdempotentWriter interface {
 		operation string,
 		resourceKind string,
 		write IdempotentWriteFn,
+		isDomainErr DomainErrorClassifier,
 	) (resourceID uuid.UUID, outcome agent.ToolOutcome, err error)
 }
 
@@ -534,7 +537,7 @@ func executeWithIdempotency(ctx context.Context, state PendingEntryState, ledger
 		idemErr    error
 	)
 	for attempt := 1; attempt <= maxWriteAttempts; attempt++ {
-		resourceID, outcome, idemErr = idem.Execute(ctx, state.UserID, state.MessageID, state.ItemSeq, state.OperationKind.String(), resourceKindForState(state), writeFn)
+		resourceID, outcome, idemErr = idem.Execute(ctx, state.UserID, state.MessageID, state.ItemSeq, state.OperationKind.String(), resourceKindForState(state), writeFn, nil)
 		if idemErr == nil || !IsTransient(idemErr) || attempt == maxWriteAttempts {
 			break
 		}

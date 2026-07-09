@@ -480,6 +480,7 @@ func (f *fakeIdempotentWriter) Execute(
 	_ string,
 	_ string,
 	_ IdempotentWriteFn,
+	_ DomainErrorClassifier,
 ) (uuid.UUID, agent.ToolOutcome, error) {
 	r := f.results[f.calls]
 	f.calls++

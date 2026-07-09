@@ -120,10 +120,12 @@ type Alert struct {
 }
 
 type NewCard struct {
-	UserID   uuid.UUID
-	Nickname string
-	Bank     string
-	DueDay   int
+	UserID             uuid.UUID
+	Nickname           string
+	Bank               string
+	DueDay             int
+	ClosingDay         int
+	ClosingDayProvided bool
 }
 
 type CardRef struct {

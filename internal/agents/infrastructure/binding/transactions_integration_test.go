@@ -237,6 +237,7 @@ func (s *TransactionsIntegrationSuite) TestCenario2_IdempotenciaMesmoWamidNaoDup
 			firstID = ref.ID
 			return ref.ID, ref.Reconciled, nil
 		},
+		nil,
 	)
 	s.Require().NoError(err)
 	s.Equal(agent.ToolOutcomeRouted, result1.Outcome)
@@ -258,6 +259,7 @@ func (s *TransactionsIntegrationSuite) TestCenario2_IdempotenciaMesmoWamidNaoDup
 			}
 			return ref.ID, ref.Reconciled, nil
 		},
+		nil,
 	)
 	s.Require().NoError(err)
 	s.Equal(agent.ToolOutcomeReplay, result2.Outcome, "segunda chamada com mesmo wamid deve ser replay")

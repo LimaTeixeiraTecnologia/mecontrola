@@ -9,6 +9,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 )
 
@@ -47,11 +48,12 @@ func (uc *IdempotentWrite) Execute(
 	operation string,
 	resourceKind string,
 	write WriteFn,
+	isDomainErr workflows.DomainErrorClassifier,
 ) (IdempotentWriteResult, error) {
 	ctx, span := uc.o11y.Tracer().Start(ctx, "agents.usecase.idempotent_write")
 	defer span.End()
 
-	return uc.executeLocked(ctx, span, userID, wamid, itemSeq, operation, resourceKind, write)
+	return uc.executeLocked(ctx, span, userID, wamid, itemSeq, operation, resourceKind, write, isDomainErr)
 }
 
 func (uc *IdempotentWrite) executeLocked(
@@ -63,6 +65,7 @@ func (uc *IdempotentWrite) executeLocked(
 	operation string,
 	resourceKind string,
 	write WriteFn,
+	isDomainErr workflows.DomainErrorClassifier,
 ) (IdempotentWriteResult, error) {
 	existing, err := uc.ledger.FindByKey(ctx, wamid, itemSeq, operation)
 	if err != nil && !errors.Is(err, ErrLedgerEntryNotFound) {
@@ -84,9 +87,13 @@ func (uc *IdempotentWrite) executeLocked(
 	resourceID, reconciled, writeErr := write(ctx)
 	if writeErr != nil {
 		span.RecordError(writeErr)
+		writeOutcome := "usecase_error"
+		if isDomainErr != nil && isDomainErr(writeErr) {
+			writeOutcome = "domain_rejected"
+		}
 		uc.total.Add(ctx, 1,
 			observability.String("operation", operation),
-			observability.String("outcome", "usecase_error"),
+			observability.String("outcome", writeOutcome),
 		)
 		return IdempotentWriteResult{}, fmt.Errorf("agents.usecase.idempotent_write: write: %w", writeErr)
 	}

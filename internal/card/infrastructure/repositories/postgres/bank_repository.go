@@ -41,3 +41,18 @@ func (r *bankRepository) DaysBeforeDue(ctx context.Context, bank valueobjects.Ba
 	}
 	return days, nil
 }
+
+func (r *bankRepository) IsBankRecognized(ctx context.Context, bank valueobjects.BankCode) (bool, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "card.repository.pg.bank.is_recognized")
+	defer span.End()
+
+	const query = `SELECT EXISTS(SELECT 1 FROM mecontrola.banks WHERE code = $1)`
+
+	var recognized bool
+	err := r.db.QueryRowContext(ctx, query, bank.LookupKey()).Scan(&recognized)
+	if err != nil {
+		span.RecordError(err)
+		return false, fmt.Errorf("card.repository.pg: bank.is_recognized: %w", err)
+	}
+	return recognized, nil
+}

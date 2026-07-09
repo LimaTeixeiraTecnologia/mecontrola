@@ -26,6 +26,7 @@ type cardManagerAdapter struct {
 	updateCard          *cardusecases.UpdateCard
 	softDeleteCard      *cardusecases.SoftDeleteCard
 	hasOpenInstallments *txusecases.HasOpenInstallments
+	isBankRecognized    *cardusecases.IsBankRecognized
 	o11y                observability.Observability
 }
 
@@ -39,6 +40,7 @@ func NewCardManagerAdapter(
 	updateCard *cardusecases.UpdateCard,
 	softDeleteCard *cardusecases.SoftDeleteCard,
 	hasOpenInstallments *txusecases.HasOpenInstallments,
+	isBankRecognized *cardusecases.IsBankRecognized,
 	o11y observability.Observability,
 ) agentsifaces.CardManager {
 	return &cardManagerAdapter{
@@ -51,6 +53,7 @@ func NewCardManagerAdapter(
 		updateCard:          updateCard,
 		softDeleteCard:      softDeleteCard,
 		hasOpenInstallments: hasOpenInstallments,
+		isBankRecognized:    isBankRecognized,
 		o11y:                o11y,
 	}
 }
@@ -60,10 +63,12 @@ func (a *cardManagerAdapter) CreateCard(ctx context.Context, in agentsifaces.New
 	defer span.End()
 
 	out, err := a.createCard.Execute(ctx, cardinput.CreateCard{
-		UserID:   in.UserID,
-		Nickname: in.Nickname,
-		Bank:     in.Bank,
-		DueDay:   in.DueDay,
+		UserID:             in.UserID,
+		Nickname:           in.Nickname,
+		Bank:               in.Bank,
+		DueDay:             in.DueDay,
+		ClosingDay:         in.ClosingDay,
+		ClosingDayProvided: in.ClosingDayProvided,
 	})
 	if err != nil {
 		span.RecordError(err)
@@ -200,6 +205,18 @@ func mapCardOutput(c cardoutput.Card) agentsifaces.Card {
 		CreatedAt:       c.CreatedAt,
 		UpdatedAt:       c.UpdatedAt,
 	}
+}
+
+func (a *cardManagerAdapter) BankRecognized(ctx context.Context, bank string) (bool, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.card_manager.bank_recognized")
+	defer span.End()
+
+	out, err := a.isBankRecognized.Execute(ctx, cardinput.IsBankRecognized{Bank: bank})
+	if err != nil {
+		span.RecordError(err)
+		return false, fmt.Errorf("agents/binding/card_manager: verificar reconhecimento de banco: %w", err)
+	}
+	return out.Recognized, nil
 }
 
 func (a *cardManagerAdapter) HasOpenInstallments(ctx context.Context, cardID, userID uuid.UUID) (bool, error) {

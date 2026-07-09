@@ -103,3 +103,69 @@ func (_c *BankDaysReader_DaysBeforeDue_Call) RunAndReturn(run func(ctx context.C
 	_c.Call.Return(run)
 	return _c
 }
+
+// IsBankRecognized provides a mock function for the type BankDaysReader
+func (_mock *BankDaysReader) IsBankRecognized(ctx context.Context, bank valueobjects.BankCode) (bool, error) {
+	ret := _mock.Called(ctx, bank)
+
+	if len(ret) == 0 {
+		panic("no return value specified for IsBankRecognized")
+	}
+
+	var r0 bool
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, valueobjects.BankCode) (bool, error)); ok {
+		return returnFunc(ctx, bank)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, valueobjects.BankCode) bool); ok {
+		r0 = returnFunc(ctx, bank)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, valueobjects.BankCode) error); ok {
+		r1 = returnFunc(ctx, bank)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// BankDaysReader_IsBankRecognized_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'IsBankRecognized'
+type BankDaysReader_IsBankRecognized_Call struct {
+	*mock.Call
+}
+
+// IsBankRecognized is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bank valueobjects.BankCode
+func (_e *BankDaysReader_Expecter) IsBankRecognized(ctx any, bank any) *BankDaysReader_IsBankRecognized_Call {
+	return &BankDaysReader_IsBankRecognized_Call{Call: _e.mock.On("IsBankRecognized", ctx, bank)}
+}
+
+func (_c *BankDaysReader_IsBankRecognized_Call) Run(run func(ctx context.Context, bank valueobjects.BankCode)) *BankDaysReader_IsBankRecognized_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 valueobjects.BankCode
+		if args[1] != nil {
+			arg1 = args[1].(valueobjects.BankCode)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *BankDaysReader_IsBankRecognized_Call) Return(b bool, err error) *BankDaysReader_IsBankRecognized_Call {
+	_c.Call.Return(b, err)
+	return _c
+}
+
+func (_c *BankDaysReader_IsBankRecognized_Call) RunAndReturn(run func(ctx context.Context, bank valueobjects.BankCode) (bool, error)) *BankDaysReader_IsBankRecognized_Call {
+	_c.Call.Return(run)
+	return _c
+}

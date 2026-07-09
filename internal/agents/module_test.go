@@ -39,9 +39,18 @@ func (f *fakeDB) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result,
 	return nil, nil
 }
 
-func TestBuildFinancialTools_ReturnsExactly23Tools(t *testing.T) {
-	tools := buildFinancialTools(nil, nil, nil, nil, nil, nil, workflow.Definition[workflows.ConfirmState]{}, nil)
-	assert.Len(t, tools, 23)
+func TestBuildFinancialTools_ReturnsExactly24Tools(t *testing.T) {
+	tools := buildFinancialTools(nil, nil, nil, nil, nil, nil, workflow.Definition[workflows.ConfirmState]{}, nil, nil, workflow.Definition[workflows.CardCreateState]{})
+	assert.Len(t, tools, 24)
+}
+
+func TestBuildFinancialTools_RegistersCreateCardTool(t *testing.T) {
+	tools := buildFinancialTools(nil, nil, nil, nil, nil, nil, workflow.Definition[workflows.ConfirmState]{}, nil, nil, workflow.Definition[workflows.CardCreateState]{})
+	ids := make([]string, 0, len(tools))
+	for _, tl := range tools {
+		ids = append(ids, tl.ID())
+	}
+	assert.Contains(t, ids, "create_card")
 }
 
 func TestNewModule_RequiredDepsValidation(t *testing.T) {
@@ -281,7 +290,7 @@ func (s *IdempotentWriterAdapterSuite) TestExecute_NewWrite_ReturnsRoutedOutcome
 		return resourceID, false, nil
 	})
 
-	gotID, outcome, err := adapter.Execute(s.ctx, s.userID, s.wamid, 1, "create_transaction", "transaction", writeFn)
+	gotID, outcome, err := adapter.Execute(s.ctx, s.userID, s.wamid, 1, "create_transaction", "transaction", writeFn, nil)
 
 	s.NoError(err)
 	s.Equal(resourceID, gotID)
@@ -306,7 +315,7 @@ func (s *IdempotentWriterAdapterSuite) TestExecute_ReplayExisting_ReturnsReplayO
 		return uuid.New(), false, nil
 	})
 
-	gotID, outcome, err := adapter.Execute(s.ctx, s.userID, s.wamid, 1, "create_transaction", "transaction", writeFn)
+	gotID, outcome, err := adapter.Execute(s.ctx, s.userID, s.wamid, 1, "create_transaction", "transaction", writeFn, nil)
 
 	s.NoError(err)
 	s.Equal(existingID, gotID)
@@ -323,7 +332,7 @@ func (s *IdempotentWriterAdapterSuite) TestExecute_WriteFnError_ReturnsError() {
 		return uuid.Nil, false, writeErr
 	})
 
-	_, _, err := adapter.Execute(s.ctx, s.userID, s.wamid, 1, "create_transaction", "transaction", writeFn)
+	_, _, err := adapter.Execute(s.ctx, s.userID, s.wamid, 1, "create_transaction", "transaction", writeFn, nil)
 
 	s.Error(err)
 }
@@ -338,7 +347,7 @@ func (s *IdempotentWriterAdapterSuite) TestExecute_ReconciledWrite_ReturnsReconc
 		return resourceID, true, nil
 	})
 
-	gotID, outcome, err := adapter.Execute(s.ctx, s.userID, s.wamid, 1, "create_transaction", "transaction", writeFn)
+	gotID, outcome, err := adapter.Execute(s.ctx, s.userID, s.wamid, 1, "create_transaction", "transaction", writeFn, nil)
 
 	s.NoError(err)
 	s.Equal(resourceID, gotID)

@@ -156,6 +156,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		deps.CardModule.UpdateCardUC,
 		deps.CardModule.SoftDeleteCardUC,
 		deps.TransactionsModule.HasOpenInstallmentsUC,
+		deps.CardModule.IsBankRecognizedUC,
 		deps.O11y,
 	)
 	budgetPlanner := binding.NewBudgetPlannerAdapter(
@@ -192,6 +193,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	onboardingEngine := workflow.NewEngine[workflows.OnboardingState](workflowStore, deps.O11y)
 	confirmEngine := workflow.NewEngine[workflows.ConfirmState](workflowStore, deps.O11y)
 	pendingEntryEngine := workflow.NewEngine[workflows.PendingEntryState](workflowStore, deps.O11y)
+	cardCreateEngine := workflow.NewEngine[workflows.CardCreateState](workflowStore, deps.O11y)
 	pendingEntryDef := workflows.BuildPendingEntryWorkflow(txLedger, cardManager, categoriesReader, idemAdapter)
 	registerAttempt := usecases.NewRegisterAttempt(categoriesReader, txLedger, pendingEntryEngine, pendingEntryDef, deps.O11y)
 
@@ -202,8 +204,9 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 
 	onboardingAgent := agentapplication.BuildMeControlaAgent(provider, nil, scoringHooks, deps.O11y)
 	confirmDef := workflows.BuildDestructiveConfirmWorkflow(txLedger, cardManager, categoriesReader, recurrenceManager)
+	cardCreateDef := workflows.BuildCardCreateConfirmWorkflow(idemAdapter, cardManager)
 
-	financialTools := buildFinancialTools(txLedger, cardManager, budgetPlanner, categoriesReader, recurrenceManager, confirmEngine, confirmDef, registerAttempt)
+	financialTools := buildFinancialTools(txLedger, cardManager, budgetPlanner, categoriesReader, recurrenceManager, confirmEngine, confirmDef, registerAttempt, cardCreateEngine, cardCreateDef)
 	meControlaAgent := agentapplication.BuildMeControlaAgent(provider, financialTools, scoringHooks, deps.O11y)
 
 	registry := agent.NewAgentRegistry()
@@ -225,13 +228,14 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 
 	runStore := agentpostgres.NewRunStore(deps.DB)
 	runtime := agent.NewAgentRuntime(registry, threadGateway, messageStore, workingMem, runStore, deps.O11y,
-		agent.WithWriteToolSet("register_expense", "register_income", "create_recurrence"),
+		agent.WithWriteToolSet("register_expense", "register_income", "create_recurrence", "create_card"),
 	)
 	handleInbound := usecases.NewHandleInbound(runtime, deps.O11y)
 
 	resolveOnboarding := usecases.NewResolveOnboardingOrAgent(onboardingEngine, workflowStore, workingMem, onboardingDef, deps.O11y)
 	continueDestructive := usecases.NewDestructiveConfirmContinuer(confirmEngine, confirmDef, deps.O11y)
 	continuePendingEntry := usecases.NewPendingEntryContinuer(pendingEntryEngine, pendingEntryDef, threadGateway, runStore, deps.O11y)
+	continueCardCreate := usecases.NewCardCreateConfirmContinuer(cardCreateEngine, cardCreateDef, threadGateway, runStore, deps.O11y)
 
 	purgeLedger := usecases.NewPurgeLedger(writeLedgerRepo, 0, 0, deps.O11y)
 	ledgerRetentionJob := jobhandlers.NewLedgerRetentionJob(purgeLedger, "")
@@ -240,6 +244,8 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	confirmReaperJob := jobhandlers.NewConfirmReaperJob("agents-confirm-reaper", confirmReaper, "")
 	pendingEntryReaper := workflows.BuildPendingEntryReaper(workflowStore, deps.O11y)
 	pendingEntryReaperJob := jobhandlers.NewConfirmReaperJob("agents-pending-entry-reaper", pendingEntryReaper, "")
+	cardCreateReaper := workflow.NewStaleSuspendedReaper(workflowStore, workflows.CardCreateConfirmWorkflowID, 15*time.Minute, 100, deps.O11y)
+	cardCreateReaperJob := jobhandlers.NewCardCreateReaperJob("agents-card-create-reaper", cardCreateReaper, "")
 
 	var whatsAppRoute func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome
 	if deps.OutboxPublisher != nil && deps.WhatsAppGateway != nil {
@@ -247,6 +253,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 			consumers.WithPendingEntryContinuer(continuePendingEntry),
 			consumers.WithOnboardingResolver(resolveOnboarding),
 			consumers.WithDestructiveConfirmResolver(continueDestructive),
+			consumers.WithCardCreateResolver(continueCardCreate),
 		}
 		if deps.InboundTimeout > 0 {
 			consumerOpts = append(consumerOpts, consumers.WithInboundTimeout(deps.InboundTimeout))
@@ -281,7 +288,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		HandleInbound:      handleInbound,
 		WhatsAppAgentRoute: whatsAppRoute,
 		EventHandlers:      eventHandlers,
-		Jobs:               []worker.Job{ledgerRetentionJob, confirmReaperJob, pendingEntryReaperJob},
+		Jobs:               []worker.Job{ledgerRetentionJob, confirmReaperJob, pendingEntryReaperJob, cardCreateReaperJob},
 		scorerRunner:       scorerRunner,
 	}, nil
 }
@@ -295,6 +302,8 @@ func buildFinancialTools(
 	confirmEngine workflow.Engine[workflows.ConfirmState],
 	confirmDef workflow.Definition[workflows.ConfirmState],
 	registerAttempt *usecases.RegisterAttempt,
+	cardCreateEngine workflow.Engine[workflows.CardCreateState],
+	cardCreateDef workflow.Definition[workflows.CardCreateState],
 ) []tool.ToolHandle {
 	return []tool.ToolHandle{
 		agenttools.BuildRegisterExpenseTool(registerAttempt),
@@ -320,6 +329,7 @@ func buildFinancialTools(
 		agenttools.BuildCreateRecurrenceTool(registerAttempt),
 		agenttools.BuildSuggestAllocationTool(planner),
 		agenttools.BuildListCategoriesTool(reader),
+		agenttools.BuildCreateCardTool(cardCreateEngine, cardCreateDef, cards),
 	}
 }
 
@@ -414,7 +424,8 @@ func (a idempotentWriterAdapter) Execute(
 	operation string,
 	resourceKind string,
 	write workflows.IdempotentWriteFn,
+	isDomainErr workflows.DomainErrorClassifier,
 ) (uuid.UUID, agent.ToolOutcome, error) {
-	res, err := a.uc.Execute(ctx, userID, wamid, itemSeq, operation, resourceKind, usecases.WriteFn(write))
+	res, err := a.uc.Execute(ctx, userID, wamid, itemSeq, operation, resourceKind, usecases.WriteFn(write), isDomainErr)
 	return res.ResourceID, res.Outcome, err
 }

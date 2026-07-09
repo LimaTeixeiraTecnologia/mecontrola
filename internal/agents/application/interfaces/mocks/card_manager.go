@@ -39,6 +39,72 @@ func (_m *CardManager) EXPECT() *CardManager_Expecter {
 	return &CardManager_Expecter{mock: &_m.Mock}
 }
 
+// BankRecognized provides a mock function for the type CardManager
+func (_mock *CardManager) BankRecognized(ctx context.Context, bank string) (bool, error) {
+	ret := _mock.Called(ctx, bank)
+
+	if len(ret) == 0 {
+		panic("no return value specified for BankRecognized")
+	}
+
+	var r0 bool
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (bool, error)); ok {
+		return returnFunc(ctx, bank)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) bool); ok {
+		r0 = returnFunc(ctx, bank)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, bank)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CardManager_BankRecognized_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'BankRecognized'
+type CardManager_BankRecognized_Call struct {
+	*mock.Call
+}
+
+// BankRecognized is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bank string
+func (_e *CardManager_Expecter) BankRecognized(ctx any, bank any) *CardManager_BankRecognized_Call {
+	return &CardManager_BankRecognized_Call{Call: _e.mock.On("BankRecognized", ctx, bank)}
+}
+
+func (_c *CardManager_BankRecognized_Call) Run(run func(ctx context.Context, bank string)) *CardManager_BankRecognized_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *CardManager_BankRecognized_Call) Return(b bool, err error) *CardManager_BankRecognized_Call {
+	_c.Call.Return(b, err)
+	return _c
+}
+
+func (_c *CardManager_BankRecognized_Call) RunAndReturn(run func(ctx context.Context, bank string) (bool, error)) *CardManager_BankRecognized_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // BestPurchaseDay provides a mock function for the type CardManager
 func (_mock *CardManager) BestPurchaseDay(ctx context.Context, bank string, dueDay int) (interfaces.BestPurchaseDay, error) {
 	ret := _mock.Called(ctx, bank, dueDay)

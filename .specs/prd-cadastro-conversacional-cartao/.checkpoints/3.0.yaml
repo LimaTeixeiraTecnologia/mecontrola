@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-cadastro-conversacional-cartao/3.0_execution_report.md
+summary: Estado fechado CardCreateState/CardCreateStatus + decisão pura DecideCardCreateConfirmation criados com testes de tabela sem mock; build/vet/test-race/lint verdes; review APPROVED.
+timestamp: 2026-07-09T09:48:11Z
