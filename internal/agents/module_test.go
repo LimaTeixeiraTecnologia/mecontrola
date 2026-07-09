@@ -39,18 +39,27 @@ func (f *fakeDB) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result,
 	return nil, nil
 }
 
-func TestBuildFinancialTools_ReturnsExactly24Tools(t *testing.T) {
-	tools := buildFinancialTools(nil, nil, nil, nil, nil, nil, workflow.Definition[workflows.ConfirmState]{}, nil, nil, workflow.Definition[workflows.CardCreateState]{})
-	assert.Len(t, tools, 24)
+func TestBuildFinancialTools_ReturnsExactly25Tools(t *testing.T) {
+	tools := buildFinancialTools(nil, nil, nil, nil, nil, nil, workflow.Definition[workflows.ConfirmState]{}, nil, nil, workflow.Definition[workflows.CardCreateState]{}, nil, workflow.Definition[workflows.BudgetCreationState]{})
+	assert.Len(t, tools, 25)
 }
 
 func TestBuildFinancialTools_RegistersCreateCardTool(t *testing.T) {
-	tools := buildFinancialTools(nil, nil, nil, nil, nil, nil, workflow.Definition[workflows.ConfirmState]{}, nil, nil, workflow.Definition[workflows.CardCreateState]{})
+	tools := buildFinancialTools(nil, nil, nil, nil, nil, nil, workflow.Definition[workflows.ConfirmState]{}, nil, nil, workflow.Definition[workflows.CardCreateState]{}, nil, workflow.Definition[workflows.BudgetCreationState]{})
 	ids := make([]string, 0, len(tools))
 	for _, tl := range tools {
 		ids = append(ids, tl.ID())
 	}
 	assert.Contains(t, ids, "create_card")
+}
+
+func TestBuildFinancialTools_RegistersCreateBudgetTool(t *testing.T) {
+	tools := buildFinancialTools(nil, nil, nil, nil, nil, nil, workflow.Definition[workflows.ConfirmState]{}, nil, nil, workflow.Definition[workflows.CardCreateState]{}, nil, workflow.Definition[workflows.BudgetCreationState]{})
+	ids := make([]string, 0, len(tools))
+	for _, tl := range tools {
+		ids = append(ids, tl.ID())
+	}
+	assert.Contains(t, ids, "create_budget")
 }
 
 func TestNewModule_RequiredDepsValidation(t *testing.T) {

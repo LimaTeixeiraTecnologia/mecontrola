@@ -260,7 +260,7 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 			expect: func(instructions string) {
 				s.Contains(instructions, "C1")
 				s.Contains(instructions, "query_month E query_plan")
-				s.Contains(instructions, "America/Sao_Paulo")
+				s.Contains(instructions, "monthRefKind=current")
 			},
 		},
 		{

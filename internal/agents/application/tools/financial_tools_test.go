@@ -304,13 +304,16 @@ func TestBuildQueryMonthToolSuccess(t *testing.T) {
 	assert.Equal(t, "query_month", handle.ID())
 
 	argsJSON, _ := json.Marshal(QueryMonthInput{
-		RefMonth: "2026-06",
+		MonthRefKind: "explicit",
+		Year:         2026,
+		Month:        6,
 	})
 	out, _, err := handle.Invoke(identityCtx("msg-q", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result QueryMonthOutput
 	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "ok", result.Outcome)
 	assert.Equal(t, "2026-06", result.RefMonth)
 	assert.Equal(t, int64(100000), result.IncomeCents)
 	assert.Equal(t, int64(60000), result.OutcomeCents)
@@ -324,7 +327,7 @@ func TestBuildQueryMonthToolSummaryError(t *testing.T) {
 		Return(interfaces.MonthlySummary{}, errors.New("db error")).Once()
 
 	handle := BuildQueryMonthTool(ledger)
-	argsJSON, _ := json.Marshal(QueryMonthInput{RefMonth: "2026-06"})
+	argsJSON, _ := json.Marshal(QueryMonthInput{MonthRefKind: "explicit", Year: 2026, Month: 6})
 	_, _, err := handle.Invoke(identityCtx("msg-q", 0), argsJSON)
 	require.Error(t, err)
 }
@@ -349,16 +352,199 @@ func TestBuildQueryPlanToolSuccess(t *testing.T) {
 	handle := BuildQueryPlanTool(planner)
 	assert.Equal(t, "query_plan", handle.ID())
 
-	argsJSON, _ := json.Marshal(QueryPlanInput{Competence: "2026-06"})
+	argsJSON, _ := json.Marshal(QueryPlanInput{MonthRefKind: "explicit", Year: 2026, Month: 6})
 	out, _, err := handle.Invoke(identityCtx("msg-q", 0), argsJSON)
 	require.NoError(t, err)
 
 	var result QueryPlanOutput
 	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "ok", result.Outcome)
 	assert.Equal(t, "2026-06", result.Competence)
 	assert.Equal(t, "active", result.State)
 	assert.Len(t, result.Allocations, 1)
 	assert.Len(t, result.Alerts, 0)
+}
+
+func TestBuildQueryMonthToolCurrentFallback(t *testing.T) {
+	ledger := imocks.NewTransactionsLedger(t)
+	loc, err := time.LoadLocation("America/Sao_Paulo")
+	require.NoError(t, err)
+	expected := time.Now().In(loc).Format("2006-01")
+
+	ledger.EXPECT().GetMonthlySummary(mock.Anything, testUserID, expected).
+		Return(interfaces.MonthlySummary{RefMonth: expected}, nil).Once()
+	ledger.EXPECT().ListMonthlyEntries(mock.Anything, testUserID, expected, "", 50).
+		Return([]interfaces.MonthlyEntry{}, nil).Once()
+
+	handle := BuildQueryMonthTool(ledger)
+	argsJSON, _ := json.Marshal(QueryMonthInput{})
+	out, _, invokeErr := handle.Invoke(identityCtx("msg-q-fallback", 0), argsJSON)
+	require.NoError(t, invokeErr)
+
+	var result QueryMonthOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "ok", result.Outcome)
+	assert.Equal(t, expected, result.RefMonth)
+}
+
+func TestBuildQueryMonthToolPreviousResolvesToPriorMonth(t *testing.T) {
+	ledger := imocks.NewTransactionsLedger(t)
+	loc, err := time.LoadLocation("America/Sao_Paulo")
+	require.NoError(t, err)
+	now := time.Now().In(loc)
+	prev := now.AddDate(0, -1, 0).Format("2006-01")
+
+	ledger.EXPECT().GetMonthlySummary(mock.Anything, testUserID, prev).
+		Return(interfaces.MonthlySummary{RefMonth: prev}, nil).Once()
+	ledger.EXPECT().ListMonthlyEntries(mock.Anything, testUserID, prev, "", 50).
+		Return([]interfaces.MonthlyEntry{}, nil).Once()
+
+	handle := BuildQueryMonthTool(ledger)
+	argsJSON, _ := json.Marshal(QueryMonthInput{MonthRefKind: "previous"})
+	out, _, invokeErr := handle.Invoke(identityCtx("msg-q-prev", 0), argsJSON)
+	require.NoError(t, invokeErr)
+
+	var result QueryMonthOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "ok", result.Outcome)
+	assert.Equal(t, prev, result.RefMonth)
+}
+
+func TestBuildQueryMonthToolNextResolvesToNextMonth(t *testing.T) {
+	ledger := imocks.NewTransactionsLedger(t)
+	loc, err := time.LoadLocation("America/Sao_Paulo")
+	require.NoError(t, err)
+	now := time.Now().In(loc)
+	next := now.AddDate(0, 1, 0).Format("2006-01")
+
+	ledger.EXPECT().GetMonthlySummary(mock.Anything, testUserID, next).
+		Return(interfaces.MonthlySummary{RefMonth: next}, nil).Once()
+	ledger.EXPECT().ListMonthlyEntries(mock.Anything, testUserID, next, "", 50).
+		Return([]interfaces.MonthlyEntry{}, nil).Once()
+
+	handle := BuildQueryMonthTool(ledger)
+	argsJSON, _ := json.Marshal(QueryMonthInput{MonthRefKind: "next"})
+	out, _, invokeErr := handle.Invoke(identityCtx("msg-q-next", 0), argsJSON)
+	require.NoError(t, invokeErr)
+
+	var result QueryMonthOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "ok", result.Outcome)
+	assert.Equal(t, next, result.RefMonth)
+}
+
+func TestBuildQueryMonthToolNamedWithoutYearReturnsClarify(t *testing.T) {
+	ledger := imocks.NewTransactionsLedger(t)
+
+	handle := BuildQueryMonthTool(ledger)
+	argsJSON, _ := json.Marshal(QueryMonthInput{MonthRefKind: "named_without_year"})
+	out, _, err := handle.Invoke(identityCtx("msg-q-clarify-year", 0), argsJSON)
+	require.NoError(t, err)
+
+	var result QueryMonthOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "clarify", result.Outcome)
+	assert.NotEmpty(t, result.ClarifyPrompt)
+}
+
+func TestBuildQueryMonthToolUnknownReturnsClarify(t *testing.T) {
+	ledger := imocks.NewTransactionsLedger(t)
+
+	handle := BuildQueryMonthTool(ledger)
+	argsJSON, _ := json.Marshal(QueryMonthInput{MonthRefKind: "unknown"})
+	out, _, err := handle.Invoke(identityCtx("msg-q-clarify-unknown", 0), argsJSON)
+	require.NoError(t, err)
+
+	var result QueryMonthOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "clarify", result.Outcome)
+	assert.NotEmpty(t, result.ClarifyPrompt)
+}
+
+func TestBuildQueryMonthToolInvalidMonthRefKindErrors(t *testing.T) {
+	ledger := imocks.NewTransactionsLedger(t)
+
+	handle := BuildQueryMonthTool(ledger)
+	argsJSON, _ := json.Marshal(QueryMonthInput{MonthRefKind: "nao-existe"})
+	_, _, err := handle.Invoke(identityCtx("msg-q-invalid", 0), argsJSON)
+	require.Error(t, err)
+}
+
+func TestBuildQueryPlanToolCurrentFallback(t *testing.T) {
+	planner := imocks.NewBudgetPlanner(t)
+	loc, err := time.LoadLocation("America/Sao_Paulo")
+	require.NoError(t, err)
+	expected := time.Now().In(loc).Format("2006-01")
+
+	planner.EXPECT().GetMonthlySummary(mock.Anything, testUserID, expected).
+		Return(interfaces.BudgetSummary{Competence: expected, State: "active"}, nil).Once()
+	planner.EXPECT().ListAlerts(mock.Anything, testUserID).
+		Return([]interfaces.Alert{}, nil).Once()
+
+	handle := BuildQueryPlanTool(planner)
+	argsJSON, _ := json.Marshal(QueryPlanInput{})
+	out, _, invokeErr := handle.Invoke(identityCtx("msg-p-fallback", 0), argsJSON)
+	require.NoError(t, invokeErr)
+
+	var result QueryPlanOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "ok", result.Outcome)
+	assert.Equal(t, expected, result.Competence)
+}
+
+func TestBuildQueryPlanToolNotFoundReturnsCleanOutcome(t *testing.T) {
+	planner := imocks.NewBudgetPlanner(t)
+
+	planner.EXPECT().GetMonthlySummary(mock.Anything, testUserID, "2026-06").
+		Return(interfaces.BudgetSummary{}, interfaces.ErrBudgetNotFound).Once()
+
+	handle := BuildQueryPlanTool(planner)
+	argsJSON, _ := json.Marshal(QueryPlanInput{MonthRefKind: "explicit", Year: 2026, Month: 6})
+	out, _, err := handle.Invoke(identityCtx("msg-p-notfound", 0), argsJSON)
+	require.NoError(t, err)
+
+	var result QueryPlanOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "not_found", result.Outcome)
+	assert.Equal(t, "2026-06", result.Competence)
+	assert.Empty(t, result.Allocations)
+}
+
+func TestBuildQueryPlanToolNamedWithoutYearReturnsClarify(t *testing.T) {
+	planner := imocks.NewBudgetPlanner(t)
+
+	handle := BuildQueryPlanTool(planner)
+	argsJSON, _ := json.Marshal(QueryPlanInput{MonthRefKind: "named_without_year"})
+	out, _, err := handle.Invoke(identityCtx("msg-p-clarify-year", 0), argsJSON)
+	require.NoError(t, err)
+
+	var result QueryPlanOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "clarify", result.Outcome)
+	assert.NotEmpty(t, result.ClarifyPrompt)
+}
+
+func TestBuildQueryPlanToolUnknownReturnsClarify(t *testing.T) {
+	planner := imocks.NewBudgetPlanner(t)
+
+	handle := BuildQueryPlanTool(planner)
+	argsJSON, _ := json.Marshal(QueryPlanInput{MonthRefKind: "unknown"})
+	out, _, err := handle.Invoke(identityCtx("msg-p-clarify-unknown", 0), argsJSON)
+	require.NoError(t, err)
+
+	var result QueryPlanOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "clarify", result.Outcome)
+	assert.NotEmpty(t, result.ClarifyPrompt)
+}
+
+func TestBuildQueryPlanToolInvalidMonthRefKindErrors(t *testing.T) {
+	planner := imocks.NewBudgetPlanner(t)
+
+	handle := BuildQueryPlanTool(planner)
+	argsJSON, _ := json.Marshal(QueryPlanInput{MonthRefKind: "nao-existe"})
+	_, _, err := handle.Invoke(identityCtx("msg-p-invalid", 0), argsJSON)
+	require.Error(t, err)
 }
 
 func TestBuildAdjustAllocationToolSuccess(t *testing.T) {

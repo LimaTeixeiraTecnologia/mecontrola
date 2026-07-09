@@ -9,5 +9,6 @@ var (
 	ErrCategoriesReaderUnavailable   = errors.New("agents: categories reader indisponível")
 	ErrBudgetNotFound                = errors.New("agents: orçamento não encontrado")
 	ErrBudgetAlreadyActive           = errors.New("agents: orçamento já está ativo")
+	ErrBudgetConflict                = errors.New("agents: orçamento já existe para a competência")
 	ErrCardNotFound                  = errors.New("agents: cartão não encontrado")
 )

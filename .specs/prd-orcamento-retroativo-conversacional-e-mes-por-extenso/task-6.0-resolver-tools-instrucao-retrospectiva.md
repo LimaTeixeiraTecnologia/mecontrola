@@ -18,11 +18,11 @@ Aplicar o resolvedor determinístico de mês (`DecideCompetence`) às tools de c
 
 ## Subtarefas
 
-- [ ] 6.1 `query_month.go`/`query_plan.go`: aceitar `MonthReference` estruturado e resolver via `DecideCompetence(ref, time.Now().In(loc))`; manter fallback para mês corrente quando `ref` ausente.
-- [ ] 6.2 Instrução (`mecontrola_agent.go`): remover/substituir a "REGRA ABSOLUTA DE DATA" (linha ~60) que rejeita mês relativo; instruir classificação em `MonthReference` (inclui relativo futuro).
-- [ ] 6.3 Instrução: citar competência por extenso (via `FormatCompetencePtBR` na saída); mensagem de orçamento não encontrado por extenso; oferta de criação apenas via `create_budget`.
-- [ ] 6.4 Instrução: composição da retrospectiva (com orçamento → query_plan; sem orçamento com lançamentos → query_month + oferta; sem nada → oferta), por exemplo (instrução-por-exemplo).
-- [ ] 6.5 Testes das tools (whitebox) para resolução e fallback.
+- [x] 6.1 `query_month.go`/`query_plan.go`: aceitar `MonthReference` estruturado e resolver via `DecideCompetence(ref, time.Now().In(loc))`; manter fallback para mês corrente quando `ref` ausente.
+- [x] 6.2 Instrução (`mecontrola_agent.go`): remover/substituir a "REGRA ABSOLUTA DE DATA" (linha ~60) que rejeita mês relativo; instruir classificação em `MonthReference` (inclui relativo futuro).
+- [x] 6.3 Instrução: citar competência por extenso (via `FormatCompetencePtBR` na saída); mensagem de orçamento não encontrado por extenso; oferta de criação apenas via `create_budget`.
+- [x] 6.4 Instrução: composição da retrospectiva (com orçamento → query_plan; sem orçamento com lançamentos → query_month + oferta; sem nada → oferta), por exemplo (instrução-por-exemplo).
+- [x] 6.5 Testes das tools (whitebox) para resolução e fallback.
 
 ## Detalhes de Implementação
 

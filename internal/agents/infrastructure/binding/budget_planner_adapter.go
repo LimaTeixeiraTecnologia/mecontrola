@@ -70,6 +70,9 @@ func (a *budgetPlannerAdapter) CreateBudget(ctx context.Context, in agentsifaces
 	})
 	if err != nil {
 		span.RecordError(err)
+		if errors.Is(err, budgetsifaces.ErrBudgetConflict) {
+			return agentsifaces.BudgetRef{}, agentsifaces.ErrBudgetConflict
+		}
 		return agentsifaces.BudgetRef{}, fmt.Errorf("agents/binding/budget_planner: criar orçamento: %w", err)
 	}
 	return agentsifaces.BudgetRef{

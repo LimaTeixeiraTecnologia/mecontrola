@@ -8,15 +8,23 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	budgetsvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
 
+const (
+	queryMonthOutcomeOK      = "ok"
+	queryMonthOutcomeClarify = "clarify"
+)
+
 type QueryMonthInput struct {
-	RefMonth string `json:"refMonth,omitempty"`
-	Cursor   string `json:"cursor,omitempty"`
-	Limit    int    `json:"limit,omitempty"`
+	MonthRefKind string `json:"monthRefKind,omitempty"`
+	Year         int    `json:"year,omitempty"`
+	Month        int    `json:"month,omitempty"`
+	Cursor       string `json:"cursor,omitempty"`
+	Limit        int    `json:"limit,omitempty"`
 }
 
 type QueryMonthEntryOutput struct {
@@ -30,11 +38,13 @@ type QueryMonthEntryOutput struct {
 }
 
 type QueryMonthOutput struct {
-	RefMonth     string                  `json:"refMonth"`
-	IncomeCents  int64                   `json:"incomeCents"`
-	OutcomeCents int64                   `json:"outcomeCents"`
-	TotalCents   int64                   `json:"totalCents"`
-	Entries      []QueryMonthEntryOutput `json:"entries"`
+	Outcome       string                  `json:"outcome"`
+	RefMonth      string                  `json:"refMonth"`
+	IncomeCents   int64                   `json:"incomeCents"`
+	OutcomeCents  int64                   `json:"outcomeCents"`
+	TotalCents    int64                   `json:"totalCents"`
+	Entries       []QueryMonthEntryOutput `json:"entries"`
+	ClarifyPrompt string                  `json:"clarifyPrompt,omitempty"`
 }
 
 func BuildQueryMonthTool(ledger interfaces.TransactionsLedger) tool.ToolHandle {
@@ -44,9 +54,15 @@ func BuildQueryMonthTool(ledger interfaces.TransactionsLedger) tool.ToolHandle {
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"refMonth": map[string]any{"type": "string"},
-				"cursor":   map[string]any{"type": "string"},
-				"limit":    map[string]any{"type": "integer"},
+				"monthRefKind": map[string]any{
+					"type":        "string",
+					"enum":        []string{"current", "previous", "next", "explicit", "named_without_year", "unknown"},
+					"description": "Classificação da referência de mês citada pelo usuário. Use named_without_year sempre que um nome de mês (ex.: junho, março) for citado SEM um ano junto — mesmo que esse mês já tenha passado no ano corrente. Use explicit sempre que o usuário citar mês E ano juntos. NUNCA use current quando um nome de mês foi citado, mesmo sem ano.",
+				},
+				"year":   map[string]any{"type": "integer", "description": "Ano numérico, apenas quando o usuário citou explicitamente o ano junto ao mês (monthRefKind=explicit). Omitir para named_without_year."},
+				"month":  map[string]any{"type": "integer", "minimum": 1, "maximum": 12, "description": "Mês numérico (1-12), quando monthRefKind=explicit ou named_without_year."},
+				"cursor": map[string]any{"type": "string"},
+				"limit":  map[string]any{"type": "integer"},
 			},
 			"required":             []string{},
 			"additionalProperties": false,
@@ -58,13 +74,15 @@ func BuildQueryMonthTool(ledger interfaces.TransactionsLedger) tool.ToolHandle {
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"refMonth":     map[string]any{"type": "string"},
-				"incomeCents":  map[string]any{"type": "integer"},
-				"outcomeCents": map[string]any{"type": "integer"},
-				"totalCents":   map[string]any{"type": "integer"},
-				"entries":      map[string]any{"type": "array"},
+				"outcome":       map[string]any{"type": "string"},
+				"refMonth":      map[string]any{"type": "string"},
+				"incomeCents":   map[string]any{"type": "integer"},
+				"outcomeCents":  map[string]any{"type": "integer"},
+				"totalCents":    map[string]any{"type": "integer"},
+				"entries":       map[string]any{"type": "array"},
+				"clarifyPrompt": map[string]any{"type": "string"},
 			},
-			"required":             []string{"refMonth", "incomeCents", "outcomeCents", "totalCents", "entries"},
+			"required":             []string{"outcome", "refMonth", "incomeCents", "outcomeCents", "totalCents", "entries"},
 			"additionalProperties": false,
 		},
 	}
@@ -81,14 +99,22 @@ func buildQueryMonthExec(ledger interfaces.TransactionsLedger) func(context.Cont
 		if err != nil {
 			return QueryMonthOutput{}, fmt.Errorf("query_month: userId inválido: %w", err)
 		}
-		refMonth := in.RefMonth
-		if refMonth == "" {
-			loc, locErr := time.LoadLocation("America/Sao_Paulo")
-			if locErr != nil {
-				loc = time.UTC
-			}
-			refMonth = time.Now().In(loc).Format("2006-01")
+
+		competence, clarifyReason, err := resolveCompetenceReference(in.MonthRefKind, in.Year, in.Month)
+		if err != nil {
+			return QueryMonthOutput{}, fmt.Errorf("query_month: resolver competência: %w", err)
 		}
+		if clarifyReason != budgetsvo.ClarifyNone {
+			return QueryMonthOutput{
+				Outcome:       queryMonthOutcomeClarify,
+				ClarifyPrompt: competenceReferenceClarifyPrompt(clarifyReason),
+			}, nil
+		}
+		refMonth := competence.String()
+		if refMonth == "" {
+			refMonth = currentCompetenceFallback()
+		}
+
 		limit := in.Limit
 		if limit <= 0 {
 			limit = 50
@@ -114,6 +140,7 @@ func buildQueryMonthExec(ledger interfaces.TransactionsLedger) func(context.Cont
 			}
 		}
 		return QueryMonthOutput{
+			Outcome:      queryMonthOutcomeOK,
 			RefMonth:     summary.RefMonth,
 			IncomeCents:  summary.IncomeCents,
 			OutcomeCents: summary.OutcomeCents,

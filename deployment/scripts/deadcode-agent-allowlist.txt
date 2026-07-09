@@ -11,8 +11,11 @@ internal/agents/application/workflows/onboarding_workflow.go:ParseOnboardingPhas
 internal/agents/application/workflows/pending_entry_state.go:ParsePendingStatus
 internal/agents/application/workflows/pending_entry_state.go:ParseAwaitingSlot
 internal/agents/application/workflows/pending_entry_state.go:ParsePendingOperationKind
+internal/agents/application/workflows/budget_creation_state.go:ParseBudgetAwaitingSlot
+internal/agents/application/workflows/budget_creation_state.go:ParseBudgetCreationStatus
 # Decide* functions: regras de negocio puras (DMMF) mantidas por simetria de API.
 internal/agents/application/workflows/pending_entry_decisions.go:DecideNewOperationReplacement
+internal/agents/application/workflows/budget_creation_decisions.go:DecideBudgetPendingResume
 # Helpers de resolucao de categoria usados por testes e disponiveis para registry futuro.
 internal/agents/application/workflows/category_resolution.go:BuildCandidateListText
 internal/agents/application/workflows/category_resolution.go:formatCandidatePath

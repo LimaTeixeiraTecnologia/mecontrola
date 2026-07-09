@@ -69,3 +69,36 @@ func (c Competence) Next() Competence {
 	next := t.AddDate(0, 1, 0)
 	return Competence{value: fmt.Sprintf("%04d-%02d", next.Year(), int(next.Month()))}
 }
+
+func (c Competence) Prev() Competence {
+	t, _ := time.Parse("2006-01", c.value)
+	prev := t.AddDate(0, -1, 0)
+	return Competence{value: fmt.Sprintf("%04d-%02d", prev.Year(), int(prev.Month()))}
+}
+
+var monthNamesPtBR = [13]string{
+	"",
+	"janeiro",
+	"fevereiro",
+	"março",
+	"abril",
+	"maio",
+	"junho",
+	"julho",
+	"agosto",
+	"setembro",
+	"outubro",
+	"novembro",
+	"dezembro",
+}
+
+func FormatCompetencePtBR(c Competence) string {
+	if c.IsZero() {
+		return ""
+	}
+	t, err := time.Parse("2006-01", c.value)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%s de %d", monthNamesPtBR[int(t.Month())], t.Year())
+}

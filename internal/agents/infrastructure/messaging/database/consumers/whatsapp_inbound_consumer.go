@@ -43,6 +43,10 @@ type cardCreateResolver interface {
 	Continue(ctx context.Context, resourceID, peer, message, messageID string) (bool, string, error)
 }
 
+type budgetCreationResolver interface {
+	Continue(ctx context.Context, resourceID, text, messageID string) (bool, string, error)
+}
+
 type whatsAppTextSender interface {
 	SendTextMessage(ctx context.Context, toE164, text string) error
 }
@@ -80,6 +84,12 @@ func WithCardCreateResolver(r cardCreateResolver) ConsumerOption {
 	}
 }
 
+func WithBudgetCreationResolver(r budgetCreationResolver) ConsumerOption {
+	return func(c *WhatsAppInboundConsumer) {
+		c.continueBudgetCreation = r
+	}
+}
+
 const defaultInboundTimeout = 60 * time.Second
 
 func WithInboundTimeout(d time.Duration) ConsumerOption {
@@ -89,17 +99,18 @@ func WithInboundTimeout(d time.Duration) ConsumerOption {
 }
 
 type WhatsAppInboundConsumer struct {
-	handleInbound        handleInboundUseCase
-	gateway              whatsAppTextSender
-	o11y                 observability.Observability
-	continuePendingEntry pendingEntryContinuerResolver
-	resolveOnboarding    onboardingResolver
-	continueDestructive  destructiveConfirmResolver
-	continueCardCreate   cardCreateResolver
-	inboundTimeout       time.Duration
-	inboundTotal         observability.Counter
-	decodeFails          observability.Counter
-	timeoutTotal         observability.Counter
+	handleInbound          handleInboundUseCase
+	gateway                whatsAppTextSender
+	o11y                   observability.Observability
+	continuePendingEntry   pendingEntryContinuerResolver
+	resolveOnboarding      onboardingResolver
+	continueDestructive    destructiveConfirmResolver
+	continueCardCreate     cardCreateResolver
+	continueBudgetCreation budgetCreationResolver
+	inboundTimeout         time.Duration
+	inboundTotal           observability.Counter
+	decodeFails            observability.Counter
+	timeoutTotal           observability.Counter
 }
 
 func NewWhatsAppInboundConsumer(
@@ -181,6 +192,7 @@ func (c *WhatsAppInboundConsumer) tryResumeChain(ctx context.Context, span obser
 		c.tryContinuePendingEntry,
 		c.tryContinueDestructive,
 		c.tryContinueCardCreate,
+		c.tryContinueBudgetCreation,
 		c.tryResolveOnboarding,
 	}
 	for _, resume := range resumers {
@@ -244,6 +256,26 @@ func (c *WhatsAppInboundConsumer) tryContinueCardCreate(ctx context.Context, spa
 		)
 		span.RecordError(err)
 		return false, fmt.Errorf("agents.consumer.whatsapp_inbound: confirmacao de cadastro de cartao: %w", err)
+	}
+	if handled {
+		return true, c.sendReply(ctx, p.Peer, reply, "success")
+	}
+	return false, nil
+}
+
+func (c *WhatsAppInboundConsumer) tryContinueBudgetCreation(ctx context.Context, span observability.Span, p whatsAppInboundPayload) (bool, error) {
+	if c.continueBudgetCreation == nil {
+		return false, nil
+	}
+	handled, reply, err := c.continueBudgetCreation.Continue(ctx, p.UserID, p.Text, p.MessageID)
+	if err != nil {
+		c.recordInboundTimeout(ctx, err)
+		c.inboundTotal.Add(ctx, 1,
+			observability.String("channel", "whatsapp"),
+			observability.String("outcome", "budget_creation_error"),
+		)
+		span.RecordError(err)
+		return false, fmt.Errorf("agents.consumer.whatsapp_inbound: criacao de orcamento: %w", err)
 	}
 	if handled {
 		return true, c.sendReply(ctx, p.Peer, reply, "success")

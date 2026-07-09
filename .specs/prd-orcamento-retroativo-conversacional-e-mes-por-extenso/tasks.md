@@ -12,13 +12,13 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Domínio de mês: MonthReference + DecideCompetence + Prev + FormatCompetencePtBR | pending | — | Com 2.0 | domain-modeling-production, design-patterns-mandatory |
-| 2.0 | Estado e decisões do workflow budget-creation (tipos fechados + Decide* puros) | pending | — | Com 1.0 | domain-modeling-production, mastra |
-| 3.0 | Workflow budget-creation + Continuer + Reaper (coleta espelha onboarding) | pending | 2.0 | — | mastra, design-patterns-mandatory |
-| 4.0 | Tool fina create_budget (inicia workflow) + DTO Validate + mapeamento MonthReference | pending | 1.0, 3.0 | — | mastra |
-| 5.0 | Wiring module.go + tryBudgetCreation + mensagem específica + observabilidade | pending | 4.0 | Com 6.0 | mastra |
-| 6.0 | Resolver nas tools de leitura + instrução do agente + composição da retrospectiva | pending | 1.0, 4.0 | Com 5.0 | mastra |
-| 7.0 | Testes de integração (Postgres) + E2E real-LLM gate estatístico ≥0.90 | pending | 5.0, 6.0 | — | mastra |
+| 1.0 | Domínio de mês: MonthReference + DecideCompetence + Prev + FormatCompetencePtBR | done | — | Com 2.0 | domain-modeling-production, design-patterns-mandatory |
+| 2.0 | Estado e decisões do workflow budget-creation (tipos fechados + Decide* puros) | done | — | Com 1.0 | domain-modeling-production, mastra |
+| 3.0 | Workflow budget-creation + Continuer + Reaper (coleta espelha onboarding) | done | 2.0 | — | mastra, design-patterns-mandatory |
+| 4.0 | Tool fina create_budget (inicia workflow) + DTO Validate + mapeamento MonthReference | done | 1.0, 3.0 | — | mastra |
+| 5.0 | Wiring module.go + tryBudgetCreation + mensagem específica + observabilidade | done | 4.0 | Com 6.0 | mastra |
+| 6.0 | Resolver nas tools de leitura + instrução do agente + composição da retrospectiva | done | 1.0, 4.0 | Com 5.0 | mastra |
+| 7.0 | Testes de integração (Postgres) + E2E real-LLM gate estatístico ≥0.90 | done | 5.0, 6.0 | — | mastra |
 
 ## Dependências Críticas
 - 3.0 depende de 2.0 (estado/decisões do workflow).

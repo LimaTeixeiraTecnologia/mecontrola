@@ -2,19 +2,28 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	budgetsvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
 
+const (
+	queryPlanOutcomeOK       = "ok"
+	queryPlanOutcomeClarify  = "clarify"
+	queryPlanOutcomeNotFound = "not_found"
+)
+
 type QueryPlanInput struct {
-	Competence string `json:"competence,omitempty"`
+	MonthRefKind string `json:"monthRefKind,omitempty"`
+	Year         int    `json:"year,omitempty"`
+	Month        int    `json:"month,omitempty"`
 }
 
 type QueryPlanAlertOutput struct {
@@ -35,6 +44,7 @@ type QueryPlanAllocationOutput struct {
 }
 
 type QueryPlanOutput struct {
+	Outcome           string                      `json:"outcome"`
 	Competence        string                      `json:"competence"`
 	TotalCents        *int64                      `json:"totalCents,omitempty"`
 	State             string                      `json:"state"`
@@ -43,6 +53,8 @@ type QueryPlanOutput struct {
 	TotalPlannedCents *int64                      `json:"totalPlannedCents,omitempty"`
 	Allocations       []QueryPlanAllocationOutput `json:"allocations"`
 	Alerts            []QueryPlanAlertOutput      `json:"alerts"`
+	ClarifyPrompt     string                      `json:"clarifyPrompt,omitempty"`
+	OfferCreatePrompt string                      `json:"offerCreatePrompt,omitempty"`
 }
 
 func BuildQueryPlanTool(planner interfaces.BudgetPlanner) tool.ToolHandle {
@@ -52,7 +64,13 @@ func BuildQueryPlanTool(planner interfaces.BudgetPlanner) tool.ToolHandle {
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"competence": map[string]any{"type": "string"},
+				"monthRefKind": map[string]any{
+					"type":        "string",
+					"enum":        []string{"current", "previous", "next", "explicit", "named_without_year", "unknown"},
+					"description": "Classificação da referência de mês citada pelo usuário. Use named_without_year sempre que um nome de mês (ex.: junho, março) for citado SEM um ano junto — mesmo que esse mês já tenha passado no ano corrente. Use explicit sempre que o usuário citar mês E ano juntos (numérico ou nomeado), incluindo em retrospectivas de mês específico ('como foi meu mês de maio de 2026?' → explicit, year=2026, month=5) — NUNCA use current quando um nome de mês foi citado, mesmo sem ano, e NUNCA use current para um mês específico já citado explicitamente na conversa.",
+				},
+				"year":  map[string]any{"type": "integer", "description": "Ano numérico, apenas quando o usuário citou explicitamente o ano junto ao mês (monthRefKind=explicit). Omitir para named_without_year."},
+				"month": map[string]any{"type": "integer", "minimum": 1, "maximum": 12, "description": "Mês numérico (1-12), quando monthRefKind=explicit ou named_without_year."},
 			},
 			"required":             []string{},
 			"additionalProperties": false,
@@ -64,6 +82,7 @@ func BuildQueryPlanTool(planner interfaces.BudgetPlanner) tool.ToolHandle {
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
+				"outcome":           map[string]any{"type": "string"},
 				"competence":        map[string]any{"type": "string"},
 				"totalCents":        map[string]any{"type": "integer"},
 				"state":             map[string]any{"type": "string"},
@@ -72,8 +91,10 @@ func BuildQueryPlanTool(planner interfaces.BudgetPlanner) tool.ToolHandle {
 				"totalPlannedCents": map[string]any{"type": "integer"},
 				"allocations":       map[string]any{"type": "array"},
 				"alerts":            map[string]any{"type": "array"},
+				"clarifyPrompt":     map[string]any{"type": "string"},
+				"offerCreatePrompt": map[string]any{"type": "string"},
 			},
-			"required":             []string{"competence", "state", "autoDraft", "totalSpentCents", "allocations", "alerts"},
+			"required":             []string{"outcome", "competence", "state", "autoDraft", "totalSpentCents", "allocations", "alerts"},
 			"additionalProperties": false,
 		},
 	}
@@ -90,16 +111,31 @@ func buildQueryPlanExec(planner interfaces.BudgetPlanner) func(context.Context, 
 		if err != nil {
 			return QueryPlanOutput{}, fmt.Errorf("query_plan: userId inválido: %w", err)
 		}
-		competence := in.Competence
-		if competence == "" {
-			loc, locErr := time.LoadLocation("America/Sao_Paulo")
-			if locErr != nil {
-				loc = time.UTC
-			}
-			competence = time.Now().In(loc).Format("2006-01")
-		}
-		summary, err := planner.GetMonthlySummary(ctx, userID, competence)
+
+		competence, clarifyReason, err := resolveCompetenceReference(in.MonthRefKind, in.Year, in.Month)
 		if err != nil {
+			return QueryPlanOutput{}, fmt.Errorf("query_plan: resolver competência: %w", err)
+		}
+		if clarifyReason != budgetsvo.ClarifyNone {
+			return QueryPlanOutput{
+				Outcome:       queryPlanOutcomeClarify,
+				ClarifyPrompt: competenceReferenceClarifyPrompt(clarifyReason),
+			}, nil
+		}
+		competenceStr := competence.String()
+		if competenceStr == "" {
+			competenceStr = currentCompetenceFallback()
+		}
+
+		summary, err := planner.GetMonthlySummary(ctx, userID, competenceStr)
+		if err != nil {
+			if errors.Is(err, interfaces.ErrBudgetNotFound) {
+				return QueryPlanOutput{
+					Outcome:           queryPlanOutcomeNotFound,
+					Competence:        competenceStr,
+					OfferCreatePrompt: budgetNotFoundOfferPrompt(competenceStr),
+				}, nil
+			}
 			return QueryPlanOutput{}, fmt.Errorf("query_plan: resumo orçamentário: %w", err)
 		}
 		alerts, err := planner.ListAlerts(ctx, userID)
@@ -128,6 +164,7 @@ func buildQueryPlanExec(planner interfaces.BudgetPlanner) func(context.Context, 
 			}
 		}
 		return QueryPlanOutput{
+			Outcome:           queryPlanOutcomeOK,
 			Competence:        summary.Competence,
 			TotalCents:        summary.TotalCents,
 			State:             summary.State,

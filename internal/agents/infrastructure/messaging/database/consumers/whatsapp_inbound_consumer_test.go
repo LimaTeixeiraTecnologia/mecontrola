@@ -77,6 +77,15 @@ func (m *mockCardCreateResolver) Continue(ctx context.Context, resourceID, peer,
 	return args.Bool(0), args.String(1), args.Error(2)
 }
 
+type mockBudgetCreationResolver struct {
+	mock.Mock
+}
+
+func (m *mockBudgetCreationResolver) Continue(ctx context.Context, resourceID, text, messageID string) (bool, string, error) {
+	args := m.Called(ctx, resourceID, text, messageID)
+	return args.Bool(0), args.String(1), args.Error(2)
+}
+
 type mockEvent struct {
 	eventType string
 	payload   any
@@ -1100,6 +1109,300 @@ func (s *WhatsAppInboundConsumerSuite) TestCardCreateOrdering() {
 			}
 			if scenario.dependencies.cardCreateMock != nil {
 				opts = append(opts, WithCardCreateResolver(scenario.dependencies.cardCreateMock))
+			}
+			if scenario.dependencies.onboardingMock != nil {
+				opts = append(opts, WithOnboardingResolver(scenario.dependencies.onboardingMock))
+			}
+			consumer := NewWhatsAppInboundConsumer(
+				scenario.dependencies.inboundMock,
+				scenario.dependencies.senderMock,
+				s.obs,
+				opts...,
+			)
+			err := consumer.Handle(s.ctx, scenario.args.event)
+			scenario.expect(err)
+		})
+	}
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestBudgetCreationOrdering() {
+	type args struct {
+		event *mockEvent
+	}
+	type dependencies struct {
+		inboundMock        *mockHandleInbound
+		senderMock         *mockWhatsAppSender
+		pendingMock        *mockPendingEntryContinuerResolver
+		destructiveMock    *mockDestructiveConfirmResolver
+		cardCreateMock     *mockCardCreateResolver
+		budgetCreationMock *mockBudgetCreationResolver
+		onboardingMock     *mockOnboardingResolver
+	}
+
+	validPayload := buildEnvelope(whatsAppInboundPayload{
+		UserID:    "user-budget-001",
+		Peer:      "+5511977777777",
+		Text:      "sim",
+		MessageID: "wamid-budget-001",
+	})
+
+	scenarios := []struct {
+		name         string
+		args         args
+		dependencies dependencies
+		expect       func(err error)
+	}{
+		{
+			name: "budget-creation handled=true responde e nao chama onboarding nem agente",
+			args: args{
+				event: &mockEvent{
+					eventType: "agents.whatsapp.inbound.v1",
+					payload:   validPayload,
+				},
+			},
+			dependencies: dependencies{
+				inboundMock: &mockHandleInbound{},
+				senderMock: func() *mockWhatsAppSender {
+					m := &mockWhatsAppSender{}
+					m.On("SendTextMessage", mock.Anything, "+5511977777777", "🎉 Orçamento de junho de 2026 criado e ativado com sucesso!").
+						Return(nil).Once()
+					return m
+				}(),
+				pendingMock: func() *mockPendingEntryContinuerResolver {
+					m := &mockPendingEntryContinuerResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "+5511977777777", "sim", "wamid-budget-001").
+						Return(workflows.PendingEntryResult{Handled: false}, nil).Once()
+					return m
+				}(),
+				destructiveMock: func() *mockDestructiveConfirmResolver {
+					m := &mockDestructiveConfirmResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "sim").
+						Return(false, "", nil).Once()
+					return m
+				}(),
+				cardCreateMock: func() *mockCardCreateResolver {
+					m := &mockCardCreateResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "+5511977777777", "sim", "wamid-budget-001").
+						Return(false, "", nil).Once()
+					return m
+				}(),
+				budgetCreationMock: func() *mockBudgetCreationResolver {
+					m := &mockBudgetCreationResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "sim", "wamid-budget-001").
+						Return(true, "🎉 Orçamento de junho de 2026 criado e ativado com sucesso!", nil).Once()
+					return m
+				}(),
+				onboardingMock: &mockOnboardingResolver{},
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "card-create suspenso consome mensagem e nao chama budget-creation (exclusao mutua)",
+			args: args{
+				event: &mockEvent{
+					eventType: "agents.whatsapp.inbound.v1",
+					payload:   validPayload,
+				},
+			},
+			dependencies: dependencies{
+				inboundMock: &mockHandleInbound{},
+				senderMock: func() *mockWhatsAppSender {
+					m := &mockWhatsAppSender{}
+					m.On("SendTextMessage", mock.Anything, "+5511977777777", "✅ Cartão cadastrado.").
+						Return(nil).Once()
+					return m
+				}(),
+				pendingMock: func() *mockPendingEntryContinuerResolver {
+					m := &mockPendingEntryContinuerResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "+5511977777777", "sim", "wamid-budget-001").
+						Return(workflows.PendingEntryResult{Handled: false}, nil).Once()
+					return m
+				}(),
+				destructiveMock: func() *mockDestructiveConfirmResolver {
+					m := &mockDestructiveConfirmResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "sim").
+						Return(false, "", nil).Once()
+					return m
+				}(),
+				cardCreateMock: func() *mockCardCreateResolver {
+					m := &mockCardCreateResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "+5511977777777", "sim", "wamid-budget-001").
+						Return(true, "✅ Cartão cadastrado.", nil).Once()
+					return m
+				}(),
+				budgetCreationMock: &mockBudgetCreationResolver{},
+				onboardingMock:     &mockOnboardingResolver{},
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "falha de persistencia devolve mensagem especifica distinta do fallback generico",
+			args: args{
+				event: &mockEvent{
+					eventType: "agents.whatsapp.inbound.v1",
+					payload:   validPayload,
+				},
+			},
+			dependencies: dependencies{
+				inboundMock: &mockHandleInbound{},
+				senderMock: func() *mockWhatsAppSender {
+					m := &mockWhatsAppSender{}
+					m.On("SendTextMessage", mock.Anything, "+5511977777777", "Não consegui criar o orçamento. Tente novamente em breve.").
+						Return(nil).Once()
+					return m
+				}(),
+				pendingMock: func() *mockPendingEntryContinuerResolver {
+					m := &mockPendingEntryContinuerResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "+5511977777777", "sim", "wamid-budget-001").
+						Return(workflows.PendingEntryResult{Handled: false}, nil).Once()
+					return m
+				}(),
+				destructiveMock: func() *mockDestructiveConfirmResolver {
+					m := &mockDestructiveConfirmResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "sim").
+						Return(false, "", nil).Once()
+					return m
+				}(),
+				cardCreateMock: func() *mockCardCreateResolver {
+					m := &mockCardCreateResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "+5511977777777", "sim", "wamid-budget-001").
+						Return(false, "", nil).Once()
+					return m
+				}(),
+				budgetCreationMock: func() *mockBudgetCreationResolver {
+					m := &mockBudgetCreationResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "sim", "wamid-budget-001").
+						Return(true, "Não consegui criar o orçamento. Tente novamente em breve.", nil).Once()
+					return m
+				}(),
+				onboardingMock: &mockOnboardingResolver{},
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "sem pendencias ativas passa para onboarding e agente",
+			args: args{
+				event: &mockEvent{
+					eventType: "agents.whatsapp.inbound.v1",
+					payload:   validPayload,
+				},
+			},
+			dependencies: dependencies{
+				inboundMock: func() *mockHandleInbound {
+					m := &mockHandleInbound{}
+					m.On("Execute", mock.Anything, mock.Anything).
+						Return(agent.Outcome{
+							RunID:   uuid.New(),
+							Content: "Ok!",
+							Status:  agent.RunStatusSucceeded,
+						}, nil).Once()
+					return m
+				}(),
+				senderMock: func() *mockWhatsAppSender {
+					m := &mockWhatsAppSender{}
+					m.On("SendTextMessage", mock.Anything, "+5511977777777", "Ok!").
+						Return(nil).Once()
+					return m
+				}(),
+				pendingMock: func() *mockPendingEntryContinuerResolver {
+					m := &mockPendingEntryContinuerResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "+5511977777777", "sim", "wamid-budget-001").
+						Return(workflows.PendingEntryResult{Handled: false}, nil).Once()
+					return m
+				}(),
+				destructiveMock: func() *mockDestructiveConfirmResolver {
+					m := &mockDestructiveConfirmResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "sim").
+						Return(false, "", nil).Once()
+					return m
+				}(),
+				cardCreateMock: func() *mockCardCreateResolver {
+					m := &mockCardCreateResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "+5511977777777", "sim", "wamid-budget-001").
+						Return(false, "", nil).Once()
+					return m
+				}(),
+				budgetCreationMock: func() *mockBudgetCreationResolver {
+					m := &mockBudgetCreationResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "sim", "wamid-budget-001").
+						Return(false, "", nil).Once()
+					return m
+				}(),
+				onboardingMock: func() *mockOnboardingResolver {
+					m := &mockOnboardingResolver{}
+					m.On("Execute", mock.Anything, "user-budget-001", "+5511977777777", "sim").
+						Return(usecases.OnboardingResult{Handled: false}, nil).Once()
+					return m
+				}(),
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "erro no continuer de budget-creation retorna erro sem chamar onboarding",
+			args: args{
+				event: &mockEvent{
+					eventType: "agents.whatsapp.inbound.v1",
+					payload:   validPayload,
+				},
+			},
+			dependencies: dependencies{
+				inboundMock: &mockHandleInbound{},
+				senderMock:  &mockWhatsAppSender{},
+				pendingMock: func() *mockPendingEntryContinuerResolver {
+					m := &mockPendingEntryContinuerResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "+5511977777777", "sim", "wamid-budget-001").
+						Return(workflows.PendingEntryResult{Handled: false}, nil).Once()
+					return m
+				}(),
+				destructiveMock: func() *mockDestructiveConfirmResolver {
+					m := &mockDestructiveConfirmResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "sim").
+						Return(false, "", nil).Once()
+					return m
+				}(),
+				cardCreateMock: func() *mockCardCreateResolver {
+					m := &mockCardCreateResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "+5511977777777", "sim", "wamid-budget-001").
+						Return(false, "", nil).Once()
+					return m
+				}(),
+				budgetCreationMock: func() *mockBudgetCreationResolver {
+					m := &mockBudgetCreationResolver{}
+					m.On("Continue", mock.Anything, "user-budget-001", "sim", "wamid-budget-001").
+						Return(false, "", errors.New("infra indisponivel")).Once()
+					return m
+				}(),
+				onboardingMock: &mockOnboardingResolver{},
+			},
+			expect: func(err error) {
+				s.Error(err)
+				s.Contains(err.Error(), "criacao de orcamento")
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			opts := []ConsumerOption{}
+			if scenario.dependencies.pendingMock != nil {
+				opts = append(opts, WithPendingEntryContinuer(scenario.dependencies.pendingMock))
+			}
+			if scenario.dependencies.destructiveMock != nil {
+				opts = append(opts, WithDestructiveConfirmResolver(scenario.dependencies.destructiveMock))
+			}
+			if scenario.dependencies.cardCreateMock != nil {
+				opts = append(opts, WithCardCreateResolver(scenario.dependencies.cardCreateMock))
+			}
+			if scenario.dependencies.budgetCreationMock != nil {
+				opts = append(opts, WithBudgetCreationResolver(scenario.dependencies.budgetCreationMock))
 			}
 			if scenario.dependencies.onboardingMock != nil {
 				opts = append(opts, WithOnboardingResolver(scenario.dependencies.onboardingMock))

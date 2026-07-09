@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-orcamento-retroativo-conversacional-e-mes-por-extenso/6.0_execution_report.md
+summary: Resolver de competencia aplicado a query_month/query_plan e instrucao do agente atualizada para MonthReference, mes por extenso e retrospectiva por composicao
+timestamp: 2026-07-09T14:18:45Z
