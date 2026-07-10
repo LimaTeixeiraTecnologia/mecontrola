@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-jornada-whatsapp-financeira-sem-falso-sucesso/4.0_execution_report.md
+summary: Scorer write_persistence_accuracy per-run (falha-segura por outcome) + no_hallucination endurecido + RF-18 via aggregate_reader; gates verdes, review APPROVED.
+timestamp: 2026-07-10T13:45:28Z

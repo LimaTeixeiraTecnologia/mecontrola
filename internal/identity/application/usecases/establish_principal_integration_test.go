@@ -4,6 +4,7 @@ package usecases_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -84,6 +85,33 @@ func (s *EstablishPrincipalIntegrationSuite) countOutboxByType(eventType string)
 	return total
 }
 
+func (s *EstablishPrincipalIntegrationSuite) countActiveIdentitiesByExternalID(externalID string) int {
+	var total int
+	err := s.db.QueryRowContext(
+		s.ctx,
+		`SELECT COUNT(*) FROM mecontrola.user_identities WHERE channel = $1 AND external_id = $2 AND unlinked_at IS NULL`,
+		"whatsapp",
+		externalID,
+	).Scan(&total)
+	s.Require().NoError(err)
+	return total
+}
+
+func (s *EstablishPrincipalIntegrationSuite) latestResolvePathForAggregate(aggregateUserID string) *string {
+	var payload []byte
+	err := s.db.QueryRowContext(
+		s.ctx,
+		`SELECT payload FROM outbox_events WHERE aggregate_user_id = $1 AND event_type = 'auth.principal_established' ORDER BY created_at DESC LIMIT 1`,
+		aggregateUserID,
+	).Scan(&payload)
+	s.Require().NoError(err)
+	var decoded struct {
+		ResolvePath *string `json:"resolve_path"`
+	}
+	s.Require().NoError(json.Unmarshal(payload, &decoded))
+	return decoded.ResolvePath
+}
+
 func (s *EstablishPrincipalIntegrationSuite) newSUT() *usecases.EstablishPrincipal {
 	factory := repositories.NewRepositoryFactory(s.o11y)
 	u := uow.NewUnitOfWork(s.db)
@@ -147,4 +175,66 @@ func (s *EstablishPrincipalIntegrationSuite) TestEstablishPrincipal() {
 			scenario.expect(p, err)
 		})
 	}
+}
+
+func (s *EstablishPrincipalIntegrationSuite) TestLegacyResolutionCreatesCanonicalLink() {
+	const wa = "+5511900001001"
+	user := s.seedActiveUser(wa)
+	s.Require().Equal(0, s.countActiveIdentitiesByExternalID(wa))
+
+	sut := s.newSUT()
+	p, err := sut.Execute(s.ctx, input.EstablishPrincipalInput{WhatsAppNumber: wa})
+	s.Require().NoError(err)
+	s.False(p.IsZero())
+
+	s.Equal(1, s.countActiveIdentitiesByExternalID(wa))
+
+	resolvePath := s.latestResolvePathForAggregate(user.ID())
+	s.Require().NotNil(resolvePath)
+	s.Equal("legacy", *resolvePath)
+}
+
+func (s *EstablishPrincipalIntegrationSuite) TestSecondResolutionUsesIdentityWithoutDuplicateLink() {
+	const wa = "+5511900001002"
+	user := s.seedActiveUser(wa)
+
+	sut := s.newSUT()
+
+	_, firstErr := sut.Execute(s.ctx, input.EstablishPrincipalInput{WhatsAppNumber: wa})
+	s.Require().NoError(firstErr)
+	s.Equal(1, s.countActiveIdentitiesByExternalID(wa))
+	firstPath := s.latestResolvePathForAggregate(user.ID())
+	s.Require().NotNil(firstPath)
+	s.Equal("legacy", *firstPath)
+
+	_, secondErr := sut.Execute(s.ctx, input.EstablishPrincipalInput{WhatsAppNumber: wa})
+	s.Require().NoError(secondErr)
+	s.Equal(1, s.countActiveIdentitiesByExternalID(wa))
+	secondPath := s.latestResolvePathForAggregate(user.ID())
+	s.Require().NotNil(secondPath)
+	s.Equal("identity", *secondPath)
+}
+
+func (s *EstablishPrincipalIntegrationSuite) TestConcurrentResolutionCreatesSingleLink() {
+	const wa = "+5511900001003"
+	s.seedActiveUser(wa)
+
+	const workers = 4
+	errs := make(chan error, workers)
+	start := make(chan struct{})
+	for range workers {
+		go func() {
+			<-start
+			sut := s.newSUT()
+			_, execErr := sut.Execute(s.ctx, input.EstablishPrincipalInput{WhatsAppNumber: wa})
+			errs <- execErr
+		}()
+	}
+	close(start)
+
+	for range workers {
+		s.Require().NoError(<-errs)
+	}
+
+	s.Equal(1, s.countActiveIdentitiesByExternalID(wa))
 }

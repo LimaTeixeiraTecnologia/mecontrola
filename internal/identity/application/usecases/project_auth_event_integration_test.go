@@ -66,6 +66,20 @@ func (s *ProjectAuthEventIntegrationSuite) buildPayload(eventID, userID, kind, s
 	return raw
 }
 
+func (s *ProjectAuthEventIntegrationSuite) buildPayloadWithResolvePath(eventID, userID, resolvePath string) []byte {
+	m := map[string]interface{}{
+		"event_id":     eventID,
+		"kind":         "principal_established",
+		"source":       "whatsapp",
+		"occurred_at":  time.Now().UTC().Format(time.RFC3339),
+		"user_id":      userID,
+		"resolve_path": resolvePath,
+	}
+	raw, err := json.Marshal(m)
+	s.Require().NoError(err)
+	return raw
+}
+
 func (s *ProjectAuthEventIntegrationSuite) countAuthEventByID(eventID string) int {
 	var total int
 	err := s.db.QueryRowContext(
@@ -133,6 +147,52 @@ func (s *ProjectAuthEventIntegrationSuite) TestProjectAuthEventUnknownUserNullUs
 	).Scan(&userIDRaw)
 	s.Require().NoError(queryErr)
 	s.Nil(userIDRaw)
+}
+
+func (s *ProjectAuthEventIntegrationSuite) TestProjectAuthEventPersistsResolvePath() {
+	eventID := uuid.New().String()
+	userID := uuid.New().String()
+	payload := s.buildPayloadWithResolvePath(eventID, userID, "legacy")
+
+	sut := s.newSUT()
+	err := sut.Execute(s.ctx, input.ProjectAuthEvent{
+		EventType: "auth.principal_established",
+		Payload:   payload,
+	})
+	s.Require().NoError(err)
+	s.Equal(1, s.countAuthEventByID(eventID))
+
+	var resolvePath *string
+	queryErr := s.db.QueryRowContext(
+		s.ctx,
+		`SELECT resolve_path FROM auth_events WHERE id = $1`,
+		eventID,
+	).Scan(&resolvePath)
+	s.Require().NoError(queryErr)
+	s.Require().NotNil(resolvePath)
+	s.Equal("legacy", *resolvePath)
+}
+
+func (s *ProjectAuthEventIntegrationSuite) TestProjectAuthEventNullResolvePath() {
+	eventID := uuid.New().String()
+	userID := uuid.New().String()
+	payload := s.buildPayload(eventID, userID, "principal_established", "whatsapp", "")
+
+	sut := s.newSUT()
+	err := sut.Execute(s.ctx, input.ProjectAuthEvent{
+		EventType: "auth.principal_established",
+		Payload:   payload,
+	})
+	s.Require().NoError(err)
+
+	var resolvePath *string
+	queryErr := s.db.QueryRowContext(
+		s.ctx,
+		`SELECT resolve_path FROM auth_events WHERE id = $1`,
+		eventID,
+	).Scan(&resolvePath)
+	s.Require().NoError(queryErr)
+	s.Nil(resolvePath)
 }
 
 func (s *ProjectAuthEventIntegrationSuite) TestProjectAuthEventFailedWithReason() {

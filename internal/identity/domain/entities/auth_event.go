@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain"
 )
 
 type AuthEventKind string
@@ -44,14 +46,15 @@ var (
 )
 
 type AuthEvent struct {
-	id         uuid.UUID
-	occurredAt time.Time
-	userID     *uuid.UUID
-	kind       AuthEventKind
-	source     AuthEventSource
-	reason     *AuthEventReason
-	requestID  string
-	clientIP   string
+	id          uuid.UUID
+	occurredAt  time.Time
+	userID      *uuid.UUID
+	kind        AuthEventKind
+	source      AuthEventSource
+	reason      *AuthEventReason
+	resolvePath *domain.AuthResolvePath
+	requestID   string
+	clientIP    string
 }
 
 func NewPrincipalEstablished(userID uuid.UUID, source AuthEventSource, requestID, clientIP string) (AuthEvent, error) {
@@ -111,27 +114,29 @@ func NewAuthFailed(reason AuthEventReason, source AuthEventSource, userID *uuid.
 	}, nil
 }
 
-func HydrateAuthEvent(id uuid.UUID, occurredAt time.Time, userID *uuid.UUID, kind AuthEventKind, source AuthEventSource, reason *AuthEventReason, requestID, clientIP string) AuthEvent {
+func HydrateAuthEvent(id uuid.UUID, occurredAt time.Time, userID *uuid.UUID, kind AuthEventKind, source AuthEventSource, reason *AuthEventReason, resolvePath *domain.AuthResolvePath, requestID, clientIP string) AuthEvent {
 	return AuthEvent{
-		id:         id,
-		occurredAt: occurredAt,
-		userID:     userID,
-		kind:       kind,
-		source:     source,
-		reason:     reason,
-		requestID:  requestID,
-		clientIP:   clientIP,
+		id:          id,
+		occurredAt:  occurredAt,
+		userID:      userID,
+		kind:        kind,
+		source:      source,
+		reason:      reason,
+		resolvePath: resolvePath,
+		requestID:   requestID,
+		clientIP:    clientIP,
 	}
 }
 
-func (e AuthEvent) ID() uuid.UUID            { return e.id }
-func (e AuthEvent) OccurredAt() time.Time    { return e.occurredAt }
-func (e AuthEvent) UserID() *uuid.UUID       { return e.userID }
-func (e AuthEvent) Kind() AuthEventKind      { return e.kind }
-func (e AuthEvent) Source() AuthEventSource  { return e.source }
-func (e AuthEvent) Reason() *AuthEventReason { return e.reason }
-func (e AuthEvent) RequestID() string        { return e.requestID }
-func (e AuthEvent) ClientIP() string         { return e.clientIP }
+func (e AuthEvent) ID() uuid.UUID                        { return e.id }
+func (e AuthEvent) OccurredAt() time.Time                { return e.occurredAt }
+func (e AuthEvent) UserID() *uuid.UUID                   { return e.userID }
+func (e AuthEvent) Kind() AuthEventKind                  { return e.kind }
+func (e AuthEvent) Source() AuthEventSource              { return e.source }
+func (e AuthEvent) Reason() *AuthEventReason             { return e.reason }
+func (e AuthEvent) ResolvePath() *domain.AuthResolvePath { return e.resolvePath }
+func (e AuthEvent) RequestID() string                    { return e.requestID }
+func (e AuthEvent) ClientIP() string                     { return e.clientIP }
 
 func isGatewayReason(reason AuthEventReason) bool {
 	switch reason {

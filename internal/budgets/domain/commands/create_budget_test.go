@@ -67,6 +67,41 @@ func (s *CreateBudgetCommandSuite) TestNewCreateBudgetCommand() {
 			},
 			wantErrs: []error{commands.ErrCommandInvalidAllocation},
 		},
+		{
+			name:       "invalid_allocation_sum_11000",
+			userID:     validUserID,
+			competence: "2026-06",
+			totalCents: 10000,
+			allocations: []commands.AllocationCommandInput{
+				{RootSlug: "expense.custo_fixo", BasisPoints: 6000},
+				{RootSlug: "expense.prazeres", BasisPoints: 5000},
+			},
+			wantErrs: []error{commands.ErrCommandInvalidAllocation},
+		},
+		{
+			name:       "invalid_allocation_sum_9000_partial",
+			userID:     validUserID,
+			competence: "2026-06",
+			totalCents: 10000,
+			allocations: []commands.AllocationCommandInput{
+				{RootSlug: "expense.custo_fixo", BasisPoints: 5000},
+				{RootSlug: "expense.prazeres", BasisPoints: 4000},
+			},
+			wantErrs: []error{commands.ErrCommandInvalidAllocation},
+		},
+		{
+			name:       "valid_personalizacao_caso_real_5000_1000_4000",
+			userID:     validUserID,
+			competence: "2026-06",
+			totalCents: 500000,
+			allocations: []commands.AllocationCommandInput{
+				{RootSlug: "expense.custo_fixo", BasisPoints: 5000},
+				{RootSlug: "expense.conhecimento", BasisPoints: 0},
+				{RootSlug: "expense.prazeres", BasisPoints: 1000},
+				{RootSlug: "expense.metas", BasisPoints: 0},
+				{RootSlug: "expense.liberdade_financeira", BasisPoints: 4000},
+			},
+		},
 	}
 
 	for _, tc := range cases {

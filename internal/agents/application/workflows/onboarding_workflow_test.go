@@ -334,7 +334,7 @@ func (s *OnboardingWorkflowSuite) TestDecideAllocationsBP() {
 		expect func(bp map[string]int, err error)
 	}{
 		{
-			name: "confirm deve retornar a distribuicao oficial",
+			name: "confirm sem valores deve retornar a distribuicao oficial",
 			args: args{kind: allocationInputConfirm, values: nil, incomeCents: 1350000},
 			expect: func(bp map[string]int, err error) {
 				s.NoError(err)
@@ -343,6 +343,34 @@ func (s *OnboardingWorkflowSuite) TestDecideAllocationsBP() {
 				s.Equal(1000, bp["expense.prazeres"])
 				s.Equal(1000, bp["expense.metas"])
 				s.Equal(3000, bp["expense.liberdade_financeira"])
+				s.NoError(DecideDistribution(bp))
+			},
+		},
+		{
+			name: "confirm com valores nao-nulos nao aplica default e pede reprompt",
+			args: args{kind: allocationInputConfirm, values: map[string]float64{
+				"expense.custo_fixo": 2500, "expense.conhecimento": 0, "expense.prazeres": 500,
+				"expense.metas": 0, "expense.liberdade_financeira": 2000,
+			}, incomeCents: 500000},
+			expect: func(bp map[string]int, err error) {
+				s.Error(err)
+				s.Nil(bp)
+				s.ErrorIs(err, errAllocationConfirmWithValues)
+			},
+		},
+		{
+			name: "reais caso real preserva 5000/0/1000/0/4000 sobre renda 500000",
+			args: args{kind: allocationInputReais, values: map[string]float64{
+				"expense.custo_fixo": 2500, "expense.conhecimento": 0, "expense.prazeres": 500,
+				"expense.metas": 0, "expense.liberdade_financeira": 2000,
+			}, incomeCents: 500000},
+			expect: func(bp map[string]int, err error) {
+				s.NoError(err)
+				s.Equal(5000, bp["expense.custo_fixo"])
+				s.Equal(0, bp["expense.conhecimento"])
+				s.Equal(1000, bp["expense.prazeres"])
+				s.Equal(0, bp["expense.metas"])
+				s.Equal(4000, bp["expense.liberdade_financeira"])
 				s.NoError(DecideDistribution(bp))
 			},
 		},
@@ -401,6 +429,66 @@ func (s *OnboardingWorkflowSuite) TestDecideAllocationsBP() {
 		s.Run(scenario.name, func() {
 			bp, err := DecideAllocationsBP(scenario.args.kind, scenario.args.values, scenario.args.incomeCents)
 			scenario.expect(bp, err)
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestDecideAllocationKind() {
+	type args struct {
+		kind        allocationInputKind
+		values      map[string]float64
+		incomeCents int64
+	}
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(kind allocationInputKind)
+	}{
+		{
+			name: "soma zero reclassifica para confirm",
+			args: args{kind: allocationInputReais, values: map[string]float64{
+				"expense.custo_fixo": 0, "expense.conhecimento": 0, "expense.prazeres": 0,
+				"expense.metas": 0, "expense.liberdade_financeira": 0,
+			}, incomeCents: 500000},
+			expect: func(kind allocationInputKind) { s.Equal(allocationInputConfirm, kind) },
+		},
+		{
+			name: "soma aproxima renda reclassifica confirm para reais (caso real)",
+			args: args{kind: allocationInputConfirm, values: map[string]float64{
+				"expense.custo_fixo": 2500, "expense.conhecimento": 0, "expense.prazeres": 500,
+				"expense.metas": 0, "expense.liberdade_financeira": 2000,
+			}, incomeCents: 500000},
+			expect: func(kind allocationInputKind) { s.Equal(allocationInputReais, kind) },
+		},
+		{
+			name: "soma aproxima 100 reclassifica para percent",
+			args: args{kind: allocationInputConfirm, values: map[string]float64{
+				"expense.custo_fixo": 40, "expense.conhecimento": 10, "expense.prazeres": 10,
+				"expense.metas": 10, "expense.liberdade_financeira": 30,
+			}, incomeCents: 500000},
+			expect: func(kind allocationInputKind) { s.Equal(allocationInputPercent, kind) },
+		},
+		{
+			name: "sem invariante numerica preserva classificacao do llm",
+			args: args{kind: allocationInputReais, values: map[string]float64{
+				"expense.custo_fixo": 300, "expense.conhecimento": 0, "expense.prazeres": 0,
+				"expense.metas": 0, "expense.liberdade_financeira": 0,
+			}, incomeCents: 500000},
+			expect: func(kind allocationInputKind) { s.Equal(allocationInputReais, kind) },
+		},
+		{
+			name: "reais legitimo permanece reais",
+			args: args{kind: allocationInputReais, values: map[string]float64{
+				"expense.custo_fixo": 5400, "expense.conhecimento": 1350, "expense.prazeres": 1350,
+				"expense.metas": 1350, "expense.liberdade_financeira": 4050,
+			}, incomeCents: 1350000},
+			expect: func(kind allocationInputKind) { s.Equal(allocationInputReais, kind) },
+		},
+	}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			kind := DecideAllocationKind(scenario.args.kind, scenario.args.values, scenario.args.incomeCents)
+			scenario.expect(kind)
 		})
 	}
 }

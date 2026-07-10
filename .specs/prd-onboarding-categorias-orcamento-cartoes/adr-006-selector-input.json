@@ -1,0 +1,6 @@
+{
+  "problem": "Refatorar sequencia e linguagem de um workflow duravel de onboarding ja existente sobre o kernel internal/platform/workflow (que ja implementa a maquina de estados duravel). Nenhum novo pattern GoF; solucao direta sobre steps existentes.",
+  "signals": ["prefer_direct_solution", "single_variant_only", "low_change_frequency"],
+  "constraints": ["minimize_indirection", "minimize_class_count", "preserve_public_contract", "team_needs_low_cognitive_load"],
+  "force_reject": []
+}

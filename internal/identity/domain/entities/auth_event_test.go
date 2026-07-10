@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 )
 
@@ -137,6 +138,7 @@ func TestHydrateAuthEvent(t *testing.T) {
 			entities.AuthEventKindFailed,
 			entities.AuthEventSourceWhatsApp,
 			&reason,
+			nil,
 			"req-hydrate",
 			"172.16.0.1",
 		)
@@ -146,6 +148,7 @@ func TestHydrateAuthEvent(t *testing.T) {
 		require.Equal(t, entities.AuthEventSourceWhatsApp, ev.Source())
 		require.NotNil(t, ev.Reason())
 		require.Equal(t, reason, *ev.Reason())
+		require.Nil(t, ev.ResolvePath())
 		require.Equal(t, "req-hydrate", ev.RequestID())
 		require.Equal(t, "172.16.0.1", ev.ClientIP())
 	})
@@ -160,12 +163,34 @@ func TestHydrateAuthEvent(t *testing.T) {
 			entities.AuthEventKindUnknownUser,
 			entities.AuthEventSourceWhatsApp,
 			nil,
+			nil,
 			"",
 			"",
 		)
 		require.Equal(t, "", ev.RequestID())
 		require.Equal(t, "", ev.ClientIP())
 		require.Nil(t, ev.Reason())
+		require.Nil(t, ev.ResolvePath())
+	})
+
+	t.Run("deve hidratar evento com resolve_path legacy", func(t *testing.T) {
+		t.Parallel()
+		id := uuid.New()
+		userID := uuid.New()
+		path := domain.AuthResolvePathLegacy
+		ev := entities.HydrateAuthEvent(
+			id,
+			time.Now().UTC(),
+			&userID,
+			entities.AuthEventKindPrincipalEstablished,
+			entities.AuthEventSourceWhatsApp,
+			nil,
+			&path,
+			"",
+			"",
+		)
+		require.NotNil(t, ev.ResolvePath())
+		require.Equal(t, domain.AuthResolvePathLegacy, *ev.ResolvePath())
 	})
 }
 

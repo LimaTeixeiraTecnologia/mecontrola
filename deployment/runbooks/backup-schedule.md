@@ -43,12 +43,13 @@ cat /usr/local/bin/pgbackrest-run.sh
 
 ```bash
 # Info completo dos stanzas
-docker exec $(docker ps --filter "name=mecontrola_postgres" --format "{{.Names}}" | head -1) \
-  pgbackrest --stanza=mecontrola info
+PG_CONTAINER=$(docker ps --filter "name=mecontrola_postgres\\." --format "{{.Names}}" | head -1)
+
+# Info completo dos stanzas
+docker exec "$PG_CONTAINER" pgbackrest --stanza=mecontrola info
 
 # Checagem de archive (retorna não-zero se archive-push tiver falha)
-docker exec $(docker ps --filter "name=mecontrola_postgres" --format "{{.Names}}" | head -1) \
-  pgbackrest --stanza=mecontrola check
+docker exec "$PG_CONTAINER" pgbackrest --stanza=mecontrola check
 ```
 
 Saída esperada de `pgbackrest info`:
@@ -121,6 +122,6 @@ docker build -t mecontrola-postgres:${IMAGE_TAG} deployment/postgres/
 |---------|---------------|------|
 | Timer inativo (`systemctl list-timers` vazio) | `pgbackrest-schedule.sh` não rodado | Rodar o script como root |
 | `pgbackrest check` falha | Conectividade S3 perdida ou `archive_mode=off` | Verificar `PGBACKREST_S3_KEY`, reconectar S3 |
-| `pgbackrest_backup_age_seconds` = 999999 | Exporter sem backup registrado | Verificar se o container tem backup existente com `pgbackrest info` |
+| `pgbackrest_backup_age_seconds` = 999999 | Script selecionou o container `postgres-exporter` em vez do `postgres`, ou `pgbackrest info` falhou | Verificar filtro do container (`mecontrola_postgres\\.`) e rodar `pgbackrest info` manualmente no container correto |
 | Deploy falha com "POSTGRES_IMAGE" | `prod.env` com imagem default | Atualizar `POSTGRES_IMAGE` no `prod.env` com tag atual da imagem custom |
 | Textfile vazio após 30 min | Container postgres parado | Verificar `docker ps`, reiniciar serviço se necessário |

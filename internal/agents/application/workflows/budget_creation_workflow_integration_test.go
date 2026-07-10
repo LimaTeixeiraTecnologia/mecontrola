@@ -108,6 +108,80 @@ func (s *BudgetCreationWorkflowIntegrationSuite) budgetState(userID uuid.UUID, c
 	return state
 }
 
+func (s *BudgetCreationWorkflowIntegrationSuite) allocationsBySlug(userID uuid.UUID, competence string) map[string]int {
+	rows, err := s.db.QueryContext(s.ctx, `
+		SELECT a.root_slug, a.basis_points
+		FROM mecontrola.budgets_allocations a
+		JOIN mecontrola.budgets b ON b.id = a.budget_id
+		WHERE b.user_id = $1 AND b.competence = $2`,
+		userID, competence,
+	)
+	s.Require().NoError(err)
+	defer func() { _ = rows.Close() }()
+	out := make(map[string]int)
+	for rows.Next() {
+		var slug string
+		var bp int
+		s.Require().NoError(rows.Scan(&slug, &bp))
+		out[slug] = bp
+	}
+	s.Require().NoError(rows.Err())
+	return out
+}
+
+func (s *BudgetCreationWorkflowIntegrationSuite) TestInteg_PersonalizacaoCasoReal_PersisteExatamenteEnviada() {
+	userID := s.newUser()
+	competence := "2026-12"
+
+	_, createErr := s.planner.CreateBudget(s.ctx, agentsifaces.DraftBudget{
+		UserID:     userID,
+		Competence: competence,
+		TotalCents: 500000,
+		Allocations: []agentsifaces.AllocationDraft{
+			{RootSlug: "expense.custo_fixo", BasisPoints: 5000},
+			{RootSlug: "expense.conhecimento", BasisPoints: 0},
+			{RootSlug: "expense.prazeres", BasisPoints: 1000},
+			{RootSlug: "expense.metas", BasisPoints: 0},
+			{RootSlug: "expense.liberdade_financeira", BasisPoints: 4000},
+		},
+	})
+	s.Require().NoError(createErr, "RF-01: distribuição personalizada que fecha 100% deve ser criada")
+
+	got := s.allocationsBySlug(userID, competence)
+	s.Equal(5000, got["expense.custo_fixo"], "RF-01: personalização preservada")
+	s.Equal(0, got["expense.conhecimento"])
+	s.Equal(1000, got["expense.prazeres"])
+	s.Equal(0, got["expense.metas"])
+	s.Equal(4000, got["expense.liberdade_financeira"])
+
+	isDefault := got["expense.custo_fixo"] == 4000 &&
+		got["expense.conhecimento"] == 1000 &&
+		got["expense.prazeres"] == 1000 &&
+		got["expense.metas"] == 1000 &&
+		got["expense.liberdade_financeira"] == 3000
+	s.False(isDefault, "RF-01: distribuição padrão nunca pode sobrescrever a personalização válida")
+}
+
+func (s *BudgetCreationWorkflowIntegrationSuite) TestInteg_DistribuicaoParcial_NaoAtivaOrcamento() {
+	userID := s.newUser()
+	competence := "2027-01"
+
+	_, createErr := s.planner.CreateBudget(s.ctx, agentsifaces.DraftBudget{
+		UserID:     userID,
+		Competence: competence,
+		TotalCents: 500000,
+		Allocations: []agentsifaces.AllocationDraft{
+			{RootSlug: "expense.custo_fixo", BasisPoints: 5000},
+			{RootSlug: "expense.conhecimento", BasisPoints: 0},
+			{RootSlug: "expense.prazeres", BasisPoints: 1000},
+			{RootSlug: "expense.metas", BasisPoints: 0},
+			{RootSlug: "expense.liberdade_financeira", BasisPoints: 3000},
+		},
+	})
+	s.Require().Error(createErr, "RF-02/RF-03: soma parcial (9000) não pode gravar orçamento em nenhuma camada")
+	s.Equal(0, s.countBudgets(userID, competence), "RF-02: nenhum orçamento pendente ou ativo com soma != 10000")
+}
+
 func (s *BudgetCreationWorkflowIntegrationSuite) buildEngineAndContinuer() (
 	workflow.Engine[workflows.BudgetCreationState],
 	workflow.Definition[workflows.BudgetCreationState],

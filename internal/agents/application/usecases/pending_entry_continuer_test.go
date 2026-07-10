@@ -267,6 +267,34 @@ func (s *PendingEntryContinuerSuite) TestContinue_AbreEFechaRunAuditavel() {
 	s.Empty(s.runs.updated[0].Error)
 }
 
+func (s *PendingEntryContinuerSuite) TestContinue_FalhaAoFecharRunObservaSemQuebrarNegocio() {
+	s.runs.updateErr = errors.New("update falhou no fechamento")
+	s.engineMock.On("Resume", mock.Anything, mock.Anything, "user-close:+5511999999999:pending-entry", mock.Anything).
+		Return(workflow.RunResult[workflows.PendingEntryState]{
+			Status: workflow.RunStatusSucceeded,
+			State: workflows.PendingEntryState{
+				Status:       workflows.PendingStatusCompleted,
+				ResponseText: "Despesa registrada",
+			},
+		}, nil).Once()
+
+	uc := NewPendingEntryContinuer(s.engineMock, s.emptyDef, s.threads, s.runs, s.obs)
+	result, err := uc.Continue(s.ctx, "user-close", "+5511999999999", "sim", "wamid-close")
+
+	s.NoError(err)
+	s.True(result.Handled)
+	s.Equal("Despesa registrada", result.Message)
+
+	counter := s.obs.Metrics().(*fake.FakeMetrics).GetCounter("agents_run_update_errors_total")
+	s.Require().NotNil(counter)
+	values := counter.GetValues()
+	s.Require().Len(values, 1)
+	assertRunUpdateErrorLabels(s.T(), values[0].Fields, workflows.PendingEntryWorkflowID, "close", "succeeded")
+
+	entries := s.obs.Logger().(*fake.FakeLogger).GetEntries()
+	s.True(hasRunUpdateErrorLog(entries), "deve emitir log estruturado de falha de fechamento")
+}
+
 func (s *PendingEntryContinuerSuite) TestContinue_EscritaFalhaGravaErroRealNoRun() {
 	writeErr := errors.New("db unavailable")
 	s.engineMock.On("Resume", mock.Anything, mock.Anything, "user-8:+5511999999999:pending-entry", mock.Anything).
@@ -342,7 +370,7 @@ func (s *PendingEntryContinuerSuite) TestContinue_RF23_NaoRevivaQuandoRunFalhoNa
 	s.False(result.Handled)
 }
 
-func (s *PendingEntryContinuerSuite) TestContinue_RF23_NaoRevivaQuandoRunFalhoExpirado() {
+func (s *PendingEntryContinuerSuite) TestContinue_TTLExpirado_RunFalhoTransitaExplicitamenteParaExpired() {
 	key := "user-11:+5511999999999:pending-entry"
 	candidates := []workflows.PendingCategoryCandidate{
 		{RootCategoryID: uuid.New(), SubcategoryID: uuid.New(), Path: "Alimentação > Mercado"},
@@ -359,10 +387,23 @@ func (s *PendingEntryContinuerSuite) TestContinue_RF23_NaoRevivaQuandoRunFalhoEx
 		Return(workflow.RunResult[workflows.PendingEntryState]{}, nil).Once()
 	s.engineMock.On("LoadLatestState", mock.Anything, mock.Anything, key).
 		Return(failedState, workflow.Snapshot{Status: workflow.RunStatusFailed}, true, nil).Once()
+	s.engineMock.On("Start", mock.Anything, mock.Anything, key, mock.MatchedBy(func(seeded workflows.PendingEntryState) bool {
+		return seeded.ResumeText == "sim" &&
+			seeded.IncomingMessageID == "wamid-011" &&
+			seeded.FailedWriteResumeCount == 0
+	})).Return(workflow.RunResult[workflows.PendingEntryState]{
+		Status: workflow.RunStatusSucceeded,
+		State: workflows.PendingEntryState{
+			Status:       workflows.PendingStatusExpired,
+			ResponseText: "O registro expirou. Para registrar, envie a informação completa novamente.",
+		},
+	}, nil).Once()
 
 	uc := NewPendingEntryContinuer(s.engineMock, s.emptyDef, s.threads, s.runs, s.obs)
 	result, err := uc.Continue(s.ctx, "user-11", "+5511999999999", "sim", "wamid-011")
 
 	s.NoError(err)
-	s.False(result.Handled)
+	s.True(result.Handled)
+	s.Equal(workflows.PendingEntryModeExpired, result.Mode)
+	s.Contains(result.Message, "expirou")
 }

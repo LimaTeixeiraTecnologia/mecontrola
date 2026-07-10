@@ -15,5 +15,6 @@ type UserIdentityRepository interface {
 	FindByUserAndChannel(ctx context.Context, userID uuid.UUID, channel valueobjects.Channel) (entities.UserIdentity, bool, error)
 	ListByUser(ctx context.Context, userID uuid.UUID) ([]entities.UserIdentity, error)
 	Insert(ctx context.Context, identity entities.UserIdentity) error
+	InsertIfAbsent(ctx context.Context, identity entities.UserIdentity) (bool, error)
 	Unlink(ctx context.Context, id uuid.UUID, now time.Time) error
 }

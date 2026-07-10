@@ -84,6 +84,9 @@ func (i *InboundRequest) Validate() error {
 	if i.Message == "" {
 		errs = append(errs, fmt.Errorf("message: %w", ErrEmptyMessage))
 	}
+	if i.MessageID == "" {
+		errs = append(errs, fmt.Errorf("message_id: %w", ErrEmptyMessageID))
+	}
 	return errors.Join(errs...)
 }
 

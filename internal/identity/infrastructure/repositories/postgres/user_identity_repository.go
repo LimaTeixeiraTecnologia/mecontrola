@@ -202,6 +202,63 @@ func (r *userIdentityRepository) Insert(ctx context.Context, identity entities.U
 	return nil
 }
 
+func (r *userIdentityRepository) InsertIfAbsent(ctx context.Context, identity entities.UserIdentity) (bool, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "identity.repository.user_identity.insert_if_absent")
+	defer span.End()
+
+	const savepoint = "identity_link_savepoint"
+
+	if _, err := r.db.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {
+		span.RecordError(err)
+		return false, fmt.Errorf("%s savepoint: %w", prefixUserIdentityRepository, err)
+	}
+
+	const query = `
+		INSERT INTO mecontrola.user_identities (id, user_id, channel, external_id, verified_at, created_at, unlinked_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`
+
+	_, err := r.db.ExecContext(ctx, query,
+		identity.ID(),
+		identity.UserID(),
+		identity.Channel().String(),
+		identity.ExternalID().String(),
+		identity.VerifiedAt(),
+		identity.CreatedAt(),
+		sqlnull.Time(identity.UnlinkedAt()),
+	)
+	if err == nil {
+		if _, releaseErr := r.db.ExecContext(ctx, "RELEASE SAVEPOINT "+savepoint); releaseErr != nil {
+			span.RecordError(releaseErr)
+			return false, fmt.Errorf("%s release savepoint: %w", prefixUserIdentityRepository, releaseErr)
+		}
+		return true, nil
+	}
+
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+		if _, rollbackErr := r.db.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
+			span.RecordError(rollbackErr)
+			return false, fmt.Errorf("%s rollback savepoint: %w", prefixUserIdentityRepository, rollbackErr)
+		}
+		return false, nil
+	}
+
+	if _, rollbackErr := r.db.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
+		span.RecordError(rollbackErr)
+		return false, fmt.Errorf("%s rollback savepoint: %w", prefixUserIdentityRepository, rollbackErr)
+	}
+	span.RecordError(err)
+	r.o11y.Logger().Error(ctx, "identity.repository.user_identity.insert_if_absent.failed",
+		observability.String("layer", "repository"),
+		observability.String("operation", "insert_if_absent"),
+		observability.String("identity_id", identity.ID().String()),
+		observability.String("channel", identity.Channel().String()),
+		observability.Error(err),
+	)
+	return false, fmt.Errorf("%s insert_if_absent: %w", prefixUserIdentityRepository, err)
+}
+
 func (r *userIdentityRepository) Unlink(ctx context.Context, id uuid.UUID, now time.Time) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "identity.repository.user_identity.unlink")
 	defer span.End()

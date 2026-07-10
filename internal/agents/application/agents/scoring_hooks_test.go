@@ -85,7 +85,7 @@ func (s *ScoringHooksSuite) TestObserve() {
 			dependencies: dependencies{runner: s.runner},
 		},
 		{
-			name: "deve pular tool call em erro mas observar run",
+			name: "deve registrar tool call em erro com marcador de outcome de erro",
 			args: args{withRunID: true, userMsg: "hi", toolCalled: true, toolErr: errors.New("tool failed"), output: "ok"},
 			dependencies: dependencies{
 				runner: func() *scorermocks.ScorerRunner {
@@ -93,7 +93,8 @@ func (s *ScoringHooksSuite) TestObserve() {
 						Observe(mock.Anything, mock.Anything, mock.Anything).
 						Run(func(_ context.Context, gotRunID uuid.UUID, sample scorer.RunSample) {
 							s.Equal(runID, gotRunID)
-							s.Empty(sample.ToolCalls)
+							s.Require().Len(sample.ToolCalls, 1)
+							s.Equal(agent.ToolOutcomeUsecaseError.String(), sample.ToolCalls[0].Outcome)
 						}).
 						Return().
 						Once()
@@ -191,6 +192,92 @@ func (s *ScoringHooksSuite) TestAfterTool_CapturesArgs() {
 			}})
 
 			hooks.AfterTool(ctx, "mecontrola-agent", "register_expense", scenario.args.argsJSON, []byte(`{}`), nil)
+			hooks.AfterExecute(ctx, "mecontrola-agent", agent.Result{Content: "ok"}, nil)
+		})
+	}
+}
+
+func (s *ScoringHooksSuite) TestExtractOutcome() {
+	scenarios := []struct {
+		name        string
+		resultBytes []byte
+		expect      string
+	}{
+		{name: "deve extrair outcome do JSON de write-tool", resultBytes: []byte(`{"outcome":"replay","resource":""}`), expect: "replay"},
+		{name: "deve retornar vazio para read-tool sem outcome", resultBytes: []byte(`{"transactions":[]}`), expect: ""},
+		{name: "deve retornar vazio para JSON invalido", resultBytes: []byte(`not-json`), expect: ""},
+		{name: "deve retornar vazio para bytes vazios", resultBytes: nil, expect: ""},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			s.Equal(scenario.expect, extractOutcome(scenario.resultBytes))
+		})
+	}
+}
+
+func (s *ScoringHooksSuite) TestAfterTool_PropagatesOutcome() {
+	type args struct {
+		resultBytes []byte
+		err         error
+	}
+	type dependencies struct {
+		runner *scorermocks.ScorerRunner
+	}
+
+	runID := uuid.New()
+
+	scenarios := []struct {
+		name         string
+		args         args
+		dependencies dependencies
+	}{
+		{
+			name: "deve gravar outcome replay no ToolCallRecord",
+			args: args{resultBytes: []byte(`{"outcome":"replay"}`)},
+			dependencies: dependencies{
+				runner: func() *scorermocks.ScorerRunner {
+					s.runner.EXPECT().
+						Observe(mock.Anything, mock.Anything, mock.Anything).
+						Run(func(_ context.Context, _ uuid.UUID, sample scorer.RunSample) {
+							s.Require().Len(sample.ToolCalls, 1)
+							s.Equal("replay", sample.ToolCalls[0].Outcome)
+						}).
+						Return().
+						Once()
+					return s.runner
+				}(),
+			},
+		},
+		{
+			name: "deve gravar outcome de erro quando exec falha",
+			args: args{resultBytes: []byte(`{}`), err: errors.New("boom")},
+			dependencies: dependencies{
+				runner: func() *scorermocks.ScorerRunner {
+					s.runner.EXPECT().
+						Observe(mock.Anything, mock.Anything, mock.Anything).
+						Run(func(_ context.Context, _ uuid.UUID, sample scorer.RunSample) {
+							s.Require().Len(sample.ToolCalls, 1)
+							s.Equal(agent.ToolOutcomeUsecaseError.String(), sample.ToolCalls[0].Outcome)
+						}).
+						Return().
+						Once()
+					return s.runner
+				}(),
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			hooks := NewScoringHooks(scenario.dependencies.runner, s.obs)
+
+			ctx := agent.WithRunID(s.ctx, runID)
+			ctx = hooks.BeforeExecute(ctx, "mecontrola-agent", agent.Request{Messages: []llm.Message{
+				{Role: "user", Content: "gastei R$ 50 no mercado"},
+			}})
+
+			hooks.AfterTool(ctx, "mecontrola-agent", "register_expense", []byte(`{}`), scenario.args.resultBytes, scenario.args.err)
 			hooks.AfterExecute(ctx, "mecontrola-agent", agent.Result{Content: "ok"}, nil)
 		})
 	}

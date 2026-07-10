@@ -15,6 +15,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/persistence"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 )
 
@@ -56,6 +57,35 @@ func (s *WriteLedgerIntegrationSuite) TestInsertAndFindByKey() {
 	s.Equal(resourceID, found.ResourceID)
 	s.Equal("create_transaction", found.Operation)
 	s.Equal(0, found.ItemSeq)
+}
+
+func (s *WriteLedgerIntegrationSuite) TestIdempotentWrite_SecondSimSameWamidOriginal_ReplaysSingleRow_ADR002() {
+	idem := usecases.NewIdempotentWrite(s.repo, fake.NewProvider())
+	userID := uuid.New()
+	originalWamid := "wamid-original-" + uuid.NewString()
+	firstResource := uuid.New()
+
+	writeCalls := 0
+	write := func(_ context.Context) (uuid.UUID, bool, error) {
+		writeCalls++
+		return firstResource, false, nil
+	}
+
+	firstRes, firstErr := idem.Execute(s.ctx, userID, originalWamid, 0, "create_transaction", "transaction", write, nil)
+	s.Require().NoError(firstErr)
+	s.Equal(firstResource, firstRes.ResourceID)
+	s.Equal(agent.ToolOutcomeRouted, firstRes.Outcome)
+
+	secondRes, secondErr := idem.Execute(s.ctx, userID, originalWamid, 0, "create_transaction", "transaction", write, nil)
+	s.Require().NoError(secondErr)
+	s.Equal(firstResource, secondRes.ResourceID)
+	s.Equal(agent.ToolOutcomeReplay, secondRes.Outcome)
+
+	s.Equal(1, writeCalls, "segundo Sim (mesma pendencia) nao deve escrever novamente")
+
+	found, err := s.repo.FindByKey(s.ctx, originalWamid, 0, "create_transaction")
+	s.Require().NoError(err)
+	s.Equal(firstResource, found.ResourceID)
 }
 
 func (s *WriteLedgerIntegrationSuite) TestFindByKeyNotFound() {

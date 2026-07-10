@@ -260,6 +260,34 @@ func (s *BudgetCreationContinuerSuite) TestContinue_AbreEFechaRunAuditavel() {
 	s.Empty(s.runs.updated[0].Error)
 }
 
+func (s *BudgetCreationContinuerSuite) TestContinue_FalhaAoFecharRunObservaSemQuebrarNegocio() {
+	s.runs.updateErr = errors.New("update falhou no fechamento")
+	s.engineMock.On("Resume", mock.Anything, mock.Anything, "user-close:budget-creation", mock.Anything).
+		Return(workflow.RunResult[workflows.BudgetCreationState]{
+			Status: workflow.RunStatusSucceeded,
+			State: workflows.BudgetCreationState{
+				Status:       workflows.BudgetCreationCompleted,
+				ResponseText: "🎉 Orçamento criado e ativado com sucesso!",
+			},
+		}, nil).Once()
+
+	uc := NewBudgetCreationContinuer(s.engineMock, s.emptyDef, s.threads, s.runs, s.obs)
+	handled, reply, err := uc.Continue(s.ctx, "user-close", "sim", "wamid-close")
+
+	s.NoError(err)
+	s.True(handled)
+	s.Equal("🎉 Orçamento criado e ativado com sucesso!", reply)
+
+	counter := s.obs.Metrics().(*fake.FakeMetrics).GetCounter("agents_run_update_errors_total")
+	s.Require().NotNil(counter)
+	values := counter.GetValues()
+	s.Require().Len(values, 1)
+	assertRunUpdateErrorLabels(s.T(), values[0].Fields, workflows.BudgetCreationWorkflowID, "close", "succeeded")
+
+	entries := s.obs.Logger().(*fake.FakeLogger).GetEntries()
+	s.True(hasRunUpdateErrorLog(entries), "deve emitir log estruturado de falha de fechamento")
+}
+
 func (s *BudgetCreationContinuerSuite) TestContinue_EscritaFalhaGravaErroRealNoRun() {
 	writeErr := errors.New("db unavailable")
 	s.engineMock.On("Resume", mock.Anything, mock.Anything, "user-7:budget-creation", mock.Anything).

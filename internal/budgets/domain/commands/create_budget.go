@@ -66,7 +66,7 @@ func NewCreateBudgetCommand(
 			BasisPoints: bp,
 		})
 	}
-	if sumBP > 10000 {
+	if sumBP != 10000 {
 		errs = append(errs, ErrCommandInvalidAllocation)
 	}
 

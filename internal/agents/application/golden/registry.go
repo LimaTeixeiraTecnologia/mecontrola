@@ -20,6 +20,7 @@ func AllCases() []Case {
 	cases = append(cases, ambiguityCases()...)
 	cases = append(cases, whatsAppFormatCases()...)
 	cases = append(cases, noInternalTermsCases()...)
+	cases = append(cases, journeyCases()...)
 	return cases
 }
 

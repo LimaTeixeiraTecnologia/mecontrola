@@ -32,8 +32,8 @@ func (r *authEventsRepository) Insert(ctx context.Context, event entities.AuthEv
 	defer span.End()
 
 	const query = `
-		INSERT INTO auth_events (id, occurred_at, user_id, kind, source, reason, request_id, client_ip)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO auth_events (id, occurred_at, user_id, kind, source, reason, resolve_path, request_id, client_ip)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (id) DO NOTHING
 	`
 
@@ -45,6 +45,11 @@ func (r *authEventsRepository) Insert(ctx context.Context, event entities.AuthEv
 	var reason sql.NullString
 	if r := event.Reason(); r != nil {
 		reason = sql.NullString{String: string(*r), Valid: true}
+	}
+
+	var resolvePath sql.NullString
+	if rp := event.ResolvePath(); rp != nil {
+		resolvePath = sql.NullString{String: rp.String(), Valid: true}
 	}
 
 	var requestID sql.NullString
@@ -64,6 +69,7 @@ func (r *authEventsRepository) Insert(ctx context.Context, event entities.AuthEv
 		string(event.Kind()),
 		string(event.Source()),
 		reason,
+		resolvePath,
 		requestID,
 		clientIP,
 	)

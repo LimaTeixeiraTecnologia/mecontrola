@@ -10,6 +10,7 @@ type AggregateReader interface {
 	ExpectedToolHits(ctx context.Context, agentID string, since time.Time) (int, error)
 	ScorerAggregates(ctx context.Context, agentID string, since time.Time) (map[string]ScorerAggregate, error)
 	DuplicateWriteViolations(ctx context.Context, agentID string, since time.Time) (int64, error)
+	WritePersistenceViolations(ctx context.Context, agentID string, since time.Time) (int64, error)
 }
 
 type PrometheusCounters struct {
@@ -38,11 +39,17 @@ func ComputeGate(ctx context.Context, reader AggregateReader, agentID string, si
 		return GateVerdict{}, err
 	}
 
+	writePersistenceViolations, err := reader.WritePersistenceViolations(ctx, agentID, since)
+	if err != nil {
+		return GateVerdict{}, err
+	}
+
 	ops := OperationalCounters{
-		AgentID:                  agentID,
-		RunUpdateErrors:          prom.RunUpdateErrors,
-		MessageAppendErrors:      prom.MessageAppendErrors,
-		DuplicateWriteViolations: duplicateWrites,
+		AgentID:                    agentID,
+		RunUpdateErrors:            prom.RunUpdateErrors,
+		MessageAppendErrors:        prom.MessageAppendErrors,
+		DuplicateWriteViolations:   duplicateWrites,
+		WritePersistenceViolations: writePersistenceViolations,
 	}
 
 	return EvaluateGate(runs, hits, scorers, ops), nil

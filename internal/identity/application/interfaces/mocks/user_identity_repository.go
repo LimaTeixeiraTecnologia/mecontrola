@@ -176,6 +176,72 @@ func (_c *UserIdentityRepository_Insert_Call) RunAndReturn(run func(ctx context.
 	return _c
 }
 
+// InsertIfAbsent provides a mock function for the type UserIdentityRepository
+func (_mock *UserIdentityRepository) InsertIfAbsent(ctx context.Context, identity entities.UserIdentity) (bool, error) {
+	ret := _mock.Called(ctx, identity)
+
+	if len(ret) == 0 {
+		panic("no return value specified for InsertIfAbsent")
+	}
+
+	var r0 bool
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.UserIdentity) (bool, error)); ok {
+		return returnFunc(ctx, identity)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, entities.UserIdentity) bool); ok {
+		r0 = returnFunc(ctx, identity)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, entities.UserIdentity) error); ok {
+		r1 = returnFunc(ctx, identity)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// UserIdentityRepository_InsertIfAbsent_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'InsertIfAbsent'
+type UserIdentityRepository_InsertIfAbsent_Call struct {
+	*mock.Call
+}
+
+// InsertIfAbsent is a helper method to define mock.On call
+//   - ctx context.Context
+//   - identity entities.UserIdentity
+func (_e *UserIdentityRepository_Expecter) InsertIfAbsent(ctx any, identity any) *UserIdentityRepository_InsertIfAbsent_Call {
+	return &UserIdentityRepository_InsertIfAbsent_Call{Call: _e.mock.On("InsertIfAbsent", ctx, identity)}
+}
+
+func (_c *UserIdentityRepository_InsertIfAbsent_Call) Run(run func(ctx context.Context, identity entities.UserIdentity)) *UserIdentityRepository_InsertIfAbsent_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 entities.UserIdentity
+		if args[1] != nil {
+			arg1 = args[1].(entities.UserIdentity)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *UserIdentityRepository_InsertIfAbsent_Call) Return(b bool, err error) *UserIdentityRepository_InsertIfAbsent_Call {
+	_c.Call.Return(b, err)
+	return _c
+}
+
+func (_c *UserIdentityRepository_InsertIfAbsent_Call) RunAndReturn(run func(ctx context.Context, identity entities.UserIdentity) (bool, error)) *UserIdentityRepository_InsertIfAbsent_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListByUser provides a mock function for the type UserIdentityRepository
 func (_mock *UserIdentityRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]entities.UserIdentity, error) {
 	ret := _mock.Called(ctx, userID)

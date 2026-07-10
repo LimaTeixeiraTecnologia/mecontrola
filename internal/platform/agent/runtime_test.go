@@ -119,7 +119,12 @@ func (s *RuntimeTestSuite) TestExecute_ValidationError() {
 		},
 		{
 			name:   "deve falhar com message vazio",
-			args:   args{in: InboundRequest{AgentID: "ag", ResourceID: "res", ThreadID: "thr"}},
+			args:   args{in: InboundRequest{AgentID: "ag", ResourceID: "res", ThreadID: "thr", MessageID: "msg-1"}},
+			expect: func(outcome Outcome, err error) { s.Error(err) },
+		},
+		{
+			name:   "deve falhar com message_id vazio",
+			args:   args{in: InboundRequest{AgentID: "ag", ResourceID: "res", ThreadID: "thr", Message: "hi"}},
 			expect: func(outcome Outcome, err error) { s.Error(err) },
 		},
 	}
@@ -136,6 +141,42 @@ func (s *RuntimeTestSuite) TestExecute_ValidationError() {
 			)
 			outcome, err := rt.Execute(s.ctx, scenario.args.in)
 			scenario.expect(outcome, err)
+		})
+	}
+}
+
+func (s *RuntimeTestSuite) TestInboundRequestValidate() {
+	type args struct {
+		in InboundRequest
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(err error)
+	}{
+		{
+			name: "deve rejeitar message_id vazio nomeando o campo",
+			args: args{in: InboundRequest{AgentID: "ag", ResourceID: "res", ThreadID: "thr", Message: "hi"}},
+			expect: func(err error) {
+				s.Require().Error(err)
+				s.True(errors.Is(err, ErrEmptyMessageID))
+				s.Contains(err.Error(), "message_id")
+			},
+		},
+		{
+			name: "deve aceitar request completo",
+			args: args{in: InboundRequest{AgentID: "ag", ResourceID: "res", ThreadID: "thr", Message: "hi", MessageID: "wamid-1"}},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			in := scenario.args.in
+			scenario.expect(in.Validate())
 		})
 	}
 }
@@ -161,6 +202,7 @@ func (s *RuntimeTestSuite) TestExecute_ThreadError() {
 				ResourceID: "res-1",
 				ThreadID:   "thr-1",
 				Message:    "hello",
+				MessageID:  "msg-1",
 			}},
 			dependencies: dependencies{
 				threads: &fakeThreadGateway{err: errors.New("db error")},
@@ -211,6 +253,7 @@ func (s *RuntimeTestSuite) TestExecute_AgentNotFound() {
 				ResourceID: "res-1",
 				ThreadID:   "thr-1",
 				Message:    "hello",
+				MessageID:  "msg-1",
 			}},
 			dependencies: dependencies{
 				threads: &fakeThreadGateway{thread: memory.Thread{ID: threadID, ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
@@ -263,6 +306,7 @@ func (s *RuntimeTestSuite) TestExecute_AgentExecuteError() {
 				ResourceID: "res-1",
 				ThreadID:   "thr-1",
 				Message:    "hello",
+				MessageID:  "msg-1",
 			}},
 			dependencies: dependencies{
 				agent: &fakeAgent{id: "agent-1", instructions: "Be helpful", err: errors.New("agent failed")},

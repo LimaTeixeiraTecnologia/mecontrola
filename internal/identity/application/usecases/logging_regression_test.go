@@ -66,6 +66,8 @@ func (s *LoggingRegressionSuite) TestNoSensitiveFieldsOnSuccess() {
 	s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
 	s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
 	s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(user, true, nil).Once()
+	s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+	s.idRepo.EXPECT().InsertIfAbsent(mock.Anything, mock.AnythingOfType("entities.UserIdentity")).Return(true, nil).Once()
 	s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
 
 	sut := NewEstablishPrincipal(s.uow, s.factory, s.publisher, s.fakeO11y)

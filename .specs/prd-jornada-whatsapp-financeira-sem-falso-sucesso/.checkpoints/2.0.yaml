@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-jornada-whatsapp-financeira-sem-falso-sucesso/2.0_execution_report.md
+summary: Pending-entry sem falso sucesso — DecidePostWrite falha tipada em ambos caminhos, ProcessedMessageID no ACCEPT, maxFailedWriteResumes=1, expiração TTL explícita, ActivePendingEntryMessage; chave do ledger inalterada.
+timestamp: 2026-07-10T13:32:54Z

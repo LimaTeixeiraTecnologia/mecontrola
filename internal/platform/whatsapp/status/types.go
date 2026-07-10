@@ -1,5 +1,45 @@
 package status
 
+import "errors"
+
+var ErrEmptyMessageID = errors.New("whatsapp.status: message_id vazio")
+
+type MessageDeliveryState string
+
+const (
+	DeliveryStateNotReceived MessageDeliveryState = "not_received"
+	DeliveryStateFailed      MessageDeliveryState = "failed"
+	DeliveryStateDelivered   MessageDeliveryState = "delivered"
+)
+
+func (s MessageDeliveryState) String() string {
+	return string(s)
+}
+
+func (s MessageDeliveryState) IsValid() bool {
+	switch s {
+	case DeliveryStateNotReceived, DeliveryStateFailed, DeliveryStateDelivered:
+		return true
+	default:
+		return false
+	}
+}
+
+func DecideDeliveryState(total, failed int) MessageDeliveryState {
+	if total <= 0 {
+		return DeliveryStateNotReceived
+	}
+	if failed > 0 {
+		return DeliveryStateFailed
+	}
+	return DeliveryStateDelivered
+}
+
+type DeliveryCounts struct {
+	Total  int
+	Failed int
+}
+
 type MessageStatus struct {
 	MessageID   string
 	Status      string

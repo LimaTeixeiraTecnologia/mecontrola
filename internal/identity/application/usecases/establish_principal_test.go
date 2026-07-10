@@ -95,6 +95,8 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
 					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
 					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().InsertIfAbsent(mock.Anything, mock.AnythingOfType("entities.UserIdentity")).Return(true, nil).Once()
 					return s.factory
 				}(),
 				publisher: func() *outboxmocks.Publisher {
@@ -162,6 +164,8 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
 					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
 					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().InsertIfAbsent(mock.Anything, mock.AnythingOfType("entities.UserIdentity")).Return(true, nil).Once()
 					return s.factory
 				}(),
 				publisher: func() *outboxmocks.Publisher {
@@ -189,6 +193,8 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
 					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
 					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().InsertIfAbsent(mock.Anything, mock.AnythingOfType("entities.UserIdentity")).Return(true, nil).Once()
 					return s.factory
 				}(),
 				publisher: func() *outboxmocks.Publisher {
@@ -214,6 +220,8 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
 					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
 					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().InsertIfAbsent(mock.Anything, mock.AnythingOfType("entities.UserIdentity")).Return(true, nil).Once()
 					return s.factory
 				}(),
 				publisher: func() *outboxmocks.Publisher {
@@ -237,6 +245,8 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
 					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
 					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().InsertIfAbsent(mock.Anything, mock.AnythingOfType("entities.UserIdentity")).Return(true, nil).Once()
 					return s.factory
 				}(),
 				publisher: func() *outboxmocks.Publisher {
@@ -261,6 +271,8 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
 					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
 					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().InsertIfAbsent(mock.Anything, mock.AnythingOfType("entities.UserIdentity")).Return(true, nil).Once()
 					return s.factory
 				}(),
 				publisher: func() *outboxmocks.Publisher {
@@ -337,6 +349,114 @@ func (s *EstablishPrincipalSuite) TestExecute() {
 			},
 		},
 		{
+			name: "path legacy: cria vinculo e emite resolve_path=legacy",
+			args: args{in: input.EstablishPrincipalInput{WhatsAppNumber: validWA}},
+			dependencies: dependencies{
+				factory: func() *interfacesmocks.MockRepositoryFactory {
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
+					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
+					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().InsertIfAbsent(mock.Anything, mock.AnythingOfType("entities.UserIdentity")).Return(true, nil).Once()
+					return s.factory
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					s.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev outbox.Event) bool {
+						var decoded map[string]any
+						if err := json.Unmarshal(ev.Payload, &decoded); err != nil {
+							return false
+						}
+						return decoded["resolve_path"] == "legacy"
+					})).Return(nil).Once()
+					return s.publisher
+				}(),
+			},
+			expect: func(p auth.Principal, err error) {
+				s.Require().NoError(err)
+				s.Require().False(p.IsZero())
+			},
+		},
+		{
+			name: "path legacy: vinculo ja existente e no-op sem falhar jornada",
+			args: args{in: input.EstablishPrincipalInput{WhatsAppNumber: validWA}},
+			dependencies: dependencies{
+				factory: func() *interfacesmocks.MockRepositoryFactory {
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
+					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
+					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().InsertIfAbsent(mock.Anything, mock.AnythingOfType("entities.UserIdentity")).
+						Return(false, nil).Once()
+					return s.factory
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+					return s.publisher
+				}(),
+			},
+			expect: func(p auth.Principal, err error) {
+				s.Require().NoError(err)
+				s.Require().False(p.IsZero())
+			},
+		},
+		{
+			name: "path legacy: erro nao-sentinela no vinculo nao aborta a jornada",
+			args: args{in: input.EstablishPrincipalInput{WhatsAppNumber: validWA}},
+			dependencies: dependencies{
+				factory: func() *interfacesmocks.MockRepositoryFactory {
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
+					s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
+					s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().InsertIfAbsent(mock.Anything, mock.AnythingOfType("entities.UserIdentity")).
+						Return(false, errors.New("db contention")).Once()
+					return s.factory
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).Return(nil).Once()
+					return s.publisher
+				}(),
+			},
+			expect: func(p auth.Principal, err error) {
+				s.Require().NoError(err)
+				s.Require().False(p.IsZero())
+			},
+		},
+		{
+			name: "path identity: nao cria vinculo (Insert nao chamado)",
+			args: args{in: input.EstablishPrincipalInput{WhatsAppNumber: validWA}},
+			dependencies: dependencies{
+				factory: func() *interfacesmocks.MockRepositoryFactory {
+					identity, errID := entities.NewUserIdentity(
+						uuid.MustParse("c2c2c2c2-0000-0000-0000-000000000003"),
+						uuid.MustParse("a0a0a0a0-0000-0000-0000-000000000001"),
+						channelWA, externalIDWA, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+					)
+					s.Require().NoError(errID)
+					s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+					s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(identity, true, nil).Once()
+					return s.factory
+				}(),
+				publisher: func() *outboxmocks.Publisher {
+					s.publisher.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev outbox.Event) bool {
+						var decoded map[string]any
+						if err := json.Unmarshal(ev.Payload, &decoded); err != nil {
+							return false
+						}
+						return decoded["resolve_path"] == "identity"
+					})).Return(nil).Once()
+					return s.publisher
+				}(),
+			},
+			expect: func(p auth.Principal, err error) {
+				s.Require().NoError(err)
+				s.Require().False(p.IsZero())
+			},
+		},
+		{
 			name: "deve retornar ErrUnknownUser quando ambos caminhos retornam vazio",
 			args: args{in: input.EstablishPrincipalInput{WhatsAppNumber: validWA}},
 			dependencies: dependencies{
@@ -389,6 +509,8 @@ func (s *EstablishPrincipalSuite) TestExecute_FallbacksTraceIDWhenRequestIDMissi
 	s.idRepo.EXPECT().TryFindActive(mock.Anything, channelWA, externalIDWA).Return(entities.UserIdentity{}, false, nil).Once()
 	s.factory.EXPECT().UserRepository(mock.Anything).Return(s.repo).Once()
 	s.repo.EXPECT().TryFindActiveByWhatsApp(mock.Anything, wa).Return(hydratedUser, true, nil).Once()
+	s.factory.EXPECT().UserIdentityRepository(mock.Anything).Return(s.idRepo).Once()
+	s.idRepo.EXPECT().InsertIfAbsent(mock.Anything, mock.AnythingOfType("entities.UserIdentity")).Return(true, nil).Once()
 
 	var captured outbox.Event
 	s.publisher.EXPECT().Publish(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, ev outbox.Event) error {

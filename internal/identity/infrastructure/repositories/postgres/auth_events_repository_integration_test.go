@@ -155,6 +155,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestCheckConstraints() {
 			entities.AuthEventKind("invalid_kind"),
 			entities.AuthEventSourceWhatsApp,
 			nil,
+			nil,
 			"",
 			"",
 		)
@@ -173,6 +174,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestCheckConstraints() {
 			nil,
 			entities.AuthEventKindUnknownUser,
 			entities.AuthEventSource("invalid_source"),
+			nil,
 			nil,
 			"",
 			"",
@@ -194,6 +196,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestCheckConstraints() {
 			entities.AuthEventKindFailed,
 			entities.AuthEventSourceWhatsApp,
 			&invalidReason,
+			nil,
 			"",
 			"",
 		)
@@ -258,7 +261,7 @@ func (s *AuthEventsRepositoryIntegrationSuite) TestDeleteOlderThan() {
 		for range 5 {
 			id, err := uuid.NewV7()
 			s.Require().NoError(err)
-			ev := entities.HydrateAuthEvent(id, oldTime, nil, entities.AuthEventKindUnknownUser, entities.AuthEventSourceWhatsApp, nil, "", "")
+			ev := entities.HydrateAuthEvent(id, oldTime, nil, entities.AuthEventKindUnknownUser, entities.AuthEventSourceWhatsApp, nil, nil, "", "")
 			s.Require().NoError(repo.Insert(s.ctx, ev))
 		}
 

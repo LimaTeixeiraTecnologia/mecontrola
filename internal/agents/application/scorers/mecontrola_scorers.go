@@ -180,6 +180,7 @@ func BuildMeControlaScorers(provider llm.Provider) []scorer.ScorerEntry {
 		scorer.NewScorerEntry(NewVerbatimRequiredScorer(), scorer.AlwaysSample()),
 		scorer.NewScorerEntry(NewNoDuplicateWriteScorer(), scorer.AlwaysSample()),
 		scorer.NewScorerEntry(NewNoHallucinationScorer(), scorer.AlwaysSample()),
+		scorer.NewScorerEntry(NewWritePersistenceAccuracyScorer(), scorer.AlwaysSample()),
 		scorer.NewScorerEntry(NewRequiredArgsScorer(), scorer.AlwaysSample()),
 		scorer.NewScorerEntry(NewMonthReferenceCorrectnessScorer(), scorer.AlwaysSample()),
 	}

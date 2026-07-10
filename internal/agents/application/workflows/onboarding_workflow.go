@@ -131,6 +131,8 @@ const (
 
 var errInvalidAllocationInput = errors.New("distribution: tipo de entrada invalido")
 
+var errAllocationConfirmWithValues = errors.New("recebi valores personalizados; me diga se quer aplicá-los em reais (R$) ou em porcentagem (%)")
+
 func ParseAllocationInputKind(s string) (allocationInputKind, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "confirm":
@@ -206,9 +208,35 @@ func DecideDistribution(allocsBP map[string]int) error {
 	return nil
 }
 
+func sumAllocationValues(valuesBySlug map[string]float64) float64 {
+	var sum float64
+	for _, slug := range canonicalSlugs {
+		sum += valuesBySlug[slug]
+	}
+	return sum
+}
+
+func DecideAllocationKind(kind allocationInputKind, valuesBySlug map[string]float64, incomeCents int64) allocationInputKind {
+	sum := sumAllocationValues(valuesBySlug)
+	if sum <= 0 {
+		return allocationInputConfirm
+	}
+	incomeBRL := float64(incomeCents) / 100
+	if incomeBRL > 0 && math.Abs(sum-incomeBRL) <= 0.5 {
+		return allocationInputReais
+	}
+	if math.Abs(sum-100) <= 0.5 {
+		return allocationInputPercent
+	}
+	return kind
+}
+
 func DecideAllocationsBP(kind allocationInputKind, valuesBySlug map[string]float64, incomeCents int64) (map[string]int, error) {
 	switch kind {
 	case allocationInputConfirm:
+		if sumAllocationValues(valuesBySlug) > 0 {
+			return nil, errAllocationConfirmWithValues
+		}
 		return maps.Clone(defaultDistributionBP), nil
 	case allocationInputPercent:
 		bp := make(map[string]int, len(canonicalSlugs))
@@ -444,9 +472,10 @@ const summaryReprompt = "Sem problema! Quando estiver tudo certo, responda \"sim
 const conclusionRecurrencePrompt = "🎉 Seu orçamento foi ativado com sucesso! Deseja que ele se repita automaticamente pelos próximos 12 meses? Responda \"sim\" ou \"não\"."
 
 const allocationInputSystemPrompt = "Você classifica a resposta do usuário sobre a distribuição do orçamento em 5 categorias: custo_fixo, conhecimento, prazeres, metas, liberdade_financeira. " +
-	"Defina action='confirm' quando o usuário aceitar a sugestão sem informar novos valores (ex.: sim, aceito, pode confirmar, ok). " +
-	"Defina action='percent' quando ele informar percentuais (números pequenos que somam cerca de 100). " +
-	"Defina action='reais' quando ele informar valores em reais (R$). " +
+	"Defina action='confirm' SOMENTE quando o usuário aceitar a sugestão sem informar nenhum valor novo (ex.: sim, aceito, pode confirmar, ok); nunca use 'confirm' quando o texto contiver números para as categorias. " +
+	"Defina action='reais' quando o usuário informar valores em reais — valores acompanhados de R$/reais ou números grandes cuja soma se aproxima da renda mensal (ex.: 2500, 500, 2000). " +
+	"Defina action='percent' quando ele informar percentuais — números pequenos, acompanhados de % ou cuja soma se aproxima de 100. " +
+	"Em caso de dúvida entre 'reais' e 'percent', escolha 'reais' se a soma dos números se aproximar da renda e 'percent' se a soma se aproximar de 100; jamais coaja valores em reais para percentuais ou vice-versa. " +
 	"Preencha cada categoria com o número informado pelo usuário; use 0 quando a categoria não for citada."
 
 const goalWithValueSystemPrompt = "Extraia o objetivo financeiro principal do texto do usuário (campo goal, string concisa) e, se houver, o valor em reais associado a essa meta. " +
@@ -718,6 +747,7 @@ func BuildMethodologyStep(a agent.Agent, budgets interfaces.BudgetPlanner) func(
 			"expense.metas":                input.Metas,
 			"expense.liberdade_financeira": input.LiberdadeFinanceira,
 		}
+		kind = DecideAllocationKind(kind, values, state.IncomeCents)
 		bp, decErr := DecideAllocationsBP(kind, values, state.IncomeCents)
 		if decErr != nil {
 			return suspendStep(state, methodologyReprompt(decErr.Error(), preview)), nil

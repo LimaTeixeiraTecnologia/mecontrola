@@ -201,8 +201,11 @@ func (s *TransactionsLedgerPendingSuite) TestLedgerNilID_NoSuccessResponse_M03()
 
 	result, err := s.engine.Resume(s.ctx, def, k, s.resumeWith("sim"))
 
-	s.NoError(err)
-	s.Equal(PendingStatusCancelled, result.State.Status)
+	s.Error(err)
+	s.ErrorIs(err, ErrWriteAcceptedWithoutResource)
+	s.Equal(workflow.RunStatusFailed, result.Status)
+	s.Equal(PendingStatusActive, result.State.Status)
+	s.NotEqual(PendingStatusCancelled, result.State.Status)
 	s.NotContains(result.State.ResponseText, "registrei")
 }
 

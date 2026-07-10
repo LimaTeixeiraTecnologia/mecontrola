@@ -1,6 +1,7 @@
 package workflows
 
 import (
+	"errors"
 	"regexp"
 	"strconv"
 	"strings"
@@ -9,7 +10,19 @@ import (
 
 	"github.com/google/uuid"
 	"golang.org/x/text/unicode/norm"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
+
+var ErrWriteAcceptedWithoutResource = errors.New("workflows.pending_entry: escrita aceita sem recurso durável")
+
+func DecidePostWrite(outcome agent.ToolOutcome, resourceID uuid.UUID) (PendingStatus, workflow.StepStatus, error) {
+	if outcome != agent.ToolOutcomeReplay && resourceID == uuid.Nil {
+		return PendingStatusActive, workflow.StepStatusFailed, ErrWriteAcceptedWithoutResource
+	}
+	return PendingStatusCompleted, workflow.StepStatusCompleted, nil
+}
 
 const (
 	pendingTTL   = 30 * time.Minute

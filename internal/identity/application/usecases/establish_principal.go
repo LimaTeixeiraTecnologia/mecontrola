@@ -16,6 +16,8 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/auth"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
@@ -24,6 +26,7 @@ import (
 const (
 	prefixEstablishPrincipal  = "identity.usecase.establish_principal:"
 	authSourceWhatsApp        = "whatsapp"
+	pathMiss                  = "miss"
 	reasonOutboxPublishFailed = "outbox_publish_failed"
 	reasonDBUnavailable       = "db_unavailable"
 	reasonInternalError       = "internal_error"
@@ -56,10 +59,14 @@ func classifyEstablishErrorReason(err error) string {
 
 func eventOutboxFromDecision(decision services.PrincipalDecision, requestID, clientIP string) (outbox.Event, error) {
 	userID := ""
+	resolvePath := ""
 	if decision.Found {
 		userID = decision.UserID.String()
+		if decision.ResolvePath.IsValid() {
+			resolvePath = decision.ResolvePath.String()
+		}
 	}
-	return newAuthEventOutbox(decision.EventID.String(), userID, string(decision.EventKind), authSourceWhatsApp, "", requestID, clientIP, decision.OccurredAt)
+	return newAuthEventOutbox(decision.EventID.String(), userID, string(decision.EventKind), authSourceWhatsApp, "", resolvePath, requestID, clientIP, decision.OccurredAt)
 }
 
 type EstablishPrincipal struct {
@@ -189,7 +196,7 @@ func (u *EstablishPrincipal) resolvePrincipal(
 	rid valueobjects.RequestID,
 	cip valueobjects.ClientIP,
 ) (EstablishResult, error) {
-	userID, found, lookupErr := u.lookupUserIDByWhatsApp(ctx, tx, wa)
+	userID, found, resolvePath, lookupErr := u.lookupUserIDByWhatsApp(ctx, tx, wa)
 	if lookupErr != nil {
 		return EstablishResult{}, errLookup{wrapped: fmt.Errorf("lookup: %w", lookupErr)}
 	}
@@ -200,7 +207,11 @@ func (u *EstablishPrincipal) resolvePrincipal(
 	}
 	now := time.Now().UTC()
 
-	decision := u.workflow.DecidePrincipal(userID, found, eventID, now)
+	decision := u.workflow.DecidePrincipal(userID, found, resolvePath, eventID, now)
+
+	if decision.Found && decision.ResolvePath == domain.AuthResolvePathLegacy {
+		u.ensureIdentityLink(ctx, tx, decision.UserID, wa, now)
+	}
 
 	ev, buildErr := eventOutboxFromDecision(decision, rid.String(), cip.String())
 	if buildErr != nil {
@@ -223,37 +234,88 @@ func (u *EstablishPrincipal) lookupUserIDByWhatsApp(
 	ctx context.Context,
 	tx database.DBTX,
 	wa valueobjects.WhatsAppNumber,
-) (uuid.UUID, bool, error) {
+) (uuid.UUID, bool, domain.AuthResolvePath, error) {
 	channel := valueobjects.ChannelWhatsApp()
 	externalID, err := valueobjects.NewExternalID(channel, wa.String())
 	if err == nil {
 		identityRepo := u.factory.UserIdentityRepository(tx)
 		identity, identityFound, identityErr := identityRepo.TryFindActive(ctx, channel, externalID)
 		if identityErr != nil {
-			return uuid.Nil, false, fmt.Errorf("identity lookup: %w", identityErr)
+			return uuid.Nil, false, "", fmt.Errorf("identity lookup: %w", identityErr)
 		}
 		if identityFound {
-			u.resolvePathTotal.Add(ctx, 1, observability.String("path", "identity"))
-			return identity.UserID(), true, nil
+			u.resolvePathTotal.Add(ctx, 1, observability.String("path", domain.AuthResolvePathIdentity.String()))
+			return identity.UserID(), true, domain.AuthResolvePathIdentity, nil
 		}
 	}
 
 	userRepo := u.factory.UserRepository(tx)
 	user, found, lookupErr := userRepo.TryFindActiveByWhatsApp(ctx, wa)
 	if lookupErr != nil {
-		return uuid.Nil, false, lookupErr
+		return uuid.Nil, false, "", lookupErr
 	}
 	if !found {
-		u.resolvePathTotal.Add(ctx, 1, observability.String("path", "miss"))
-		return uuid.Nil, false, nil
+		u.resolvePathTotal.Add(ctx, 1, observability.String("path", pathMiss))
+		return uuid.Nil, false, "", nil
 	}
 
 	parsed, parseErr := uuid.Parse(user.ID())
 	if parseErr != nil {
-		return uuid.Nil, false, fmt.Errorf("parse user id: %w", parseErr)
+		return uuid.Nil, false, "", fmt.Errorf("parse user id: %w", parseErr)
 	}
-	u.resolvePathTotal.Add(ctx, 1, observability.String("path", "legacy"))
-	return parsed, true, nil
+	u.resolvePathTotal.Add(ctx, 1, observability.String("path", domain.AuthResolvePathLegacy.String()))
+	return parsed, true, domain.AuthResolvePathLegacy, nil
+}
+
+func (u *EstablishPrincipal) ensureIdentityLink(
+	ctx context.Context,
+	tx database.DBTX,
+	userID uuid.UUID,
+	wa valueobjects.WhatsAppNumber,
+	now time.Time,
+) {
+	channel := valueobjects.ChannelWhatsApp()
+	externalID, err := valueobjects.NewExternalID(channel, wa.String())
+	if err != nil {
+		u.o11y.Logger().Warn(ctx, "identity.usecase.establish_principal.ensure_link_external_id_failed",
+			observability.String("layer", "usecase"),
+			observability.String("operation", "ensure_identity_link"),
+			observability.String("whatsapp", wa.Masked()),
+			observability.Error(err),
+		)
+		return
+	}
+
+	identityID, err := uuid.NewV7()
+	if err != nil {
+		u.o11y.Logger().Warn(ctx, "identity.usecase.establish_principal.ensure_link_id_failed",
+			observability.String("layer", "usecase"),
+			observability.String("operation", "ensure_identity_link"),
+			observability.String("whatsapp", wa.Masked()),
+			observability.Error(err),
+		)
+		return
+	}
+
+	identity, err := entities.NewUserIdentity(identityID, userID, channel, externalID, now)
+	if err != nil {
+		u.o11y.Logger().Warn(ctx, "identity.usecase.establish_principal.ensure_link_build_failed",
+			observability.String("layer", "usecase"),
+			observability.String("operation", "ensure_identity_link"),
+			observability.String("whatsapp", wa.Masked()),
+			observability.Error(err),
+		)
+		return
+	}
+
+	if _, insertErr := u.factory.UserIdentityRepository(tx).InsertIfAbsent(ctx, identity); insertErr != nil {
+		u.o11y.Logger().Warn(ctx, "identity.usecase.establish_principal.ensure_link_insert_failed",
+			observability.String("layer", "usecase"),
+			observability.String("operation", "ensure_identity_link"),
+			observability.String("whatsapp", wa.Masked()),
+			observability.Error(insertErr),
+		)
+	}
 }
 
 func (u *EstablishPrincipal) publishAuthOutcome(ctx context.Context, ev outbox.Event) error {

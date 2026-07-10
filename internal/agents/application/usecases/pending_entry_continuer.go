@@ -17,15 +17,16 @@ import (
 )
 
 type PendingEntryContinuer struct {
-	engine       workflow.Engine[workflows.PendingEntryState]
-	def          workflow.Definition[workflows.PendingEntryState]
-	threads      memory.ThreadGateway
-	runs         agent.RunStore
-	o11y         observability.Observability
-	total        observability.Counter
-	slotTotal    observability.Counter
-	writeTotal   observability.Counter
-	durationHist observability.Histogram
+	engine          workflow.Engine[workflows.PendingEntryState]
+	def             workflow.Definition[workflows.PendingEntryState]
+	threads         memory.ThreadGateway
+	runs            agent.RunStore
+	o11y            observability.Observability
+	total           observability.Counter
+	slotTotal       observability.Counter
+	writeTotal      observability.Counter
+	durationHist    observability.Histogram
+	runUpdateErrors observability.Counter
 }
 
 func NewPendingEntryContinuer(
@@ -56,15 +57,16 @@ func NewPendingEntryContinuer(
 		"s",
 	)
 	return &PendingEntryContinuer{
-		engine:       engine,
-		def:          def,
-		threads:      threads,
-		runs:         runs,
-		o11y:         o11y,
-		total:        total,
-		slotTotal:    slotTotal,
-		writeTotal:   writeTotal,
-		durationHist: durationHist,
+		engine:          engine,
+		def:             def,
+		threads:         threads,
+		runs:            runs,
+		o11y:            o11y,
+		total:           total,
+		slotTotal:       slotTotal,
+		writeTotal:      writeTotal,
+		durationHist:    durationHist,
+		runUpdateErrors: newRunUpdateErrorsCounter(o11y),
 	}
 }
 
@@ -93,11 +95,11 @@ func (c *PendingEntryContinuer) Continue(ctx context.Context, userID, peer, mess
 		return workflows.PendingEntryResult{}, err
 	}
 	if result.Status == 0 {
-		c.closeRun(ctx, run, agent.RunStatusSucceeded, "", start)
+		c.closeRun(ctx, run, agent.RunStatusSucceeded, "close", "", start)
 		return workflows.PendingEntryResult{Handled: false}, nil
 	}
 
-	c.closeRun(ctx, run, agent.RunStatusSucceeded, "", start)
+	c.closeRun(ctx, run, agent.RunStatusSucceeded, "close", "", start)
 
 	pendingResult := mapPendingEntryResult(result)
 	outcome := pendingEntryModeString(pendingResult.Mode)
@@ -179,6 +181,15 @@ func (c *PendingEntryContinuer) tryResumeFailedWrite(ctx context.Context, key, m
 	}
 
 	now := time.Now().UTC()
+	if workflows.ShouldExpireAfterFailedWrite(failedState, now) {
+		expired := workflows.SeedExpireAfterFailedWrite(failedState, workflows.PendingMessage{Text: message, MessageID: messageID})
+		result, startErr := c.engine.Start(ctx, c.def, key, expired)
+		if startErr != nil {
+			return workflow.RunResult[workflows.PendingEntryState]{}, fmt.Errorf("start_expire: %w", startErr)
+		}
+		return result, nil
+	}
+
 	if !workflows.IsResumableAfterFailedWrite(failedState, now) {
 		return workflow.RunResult[workflows.PendingEntryState]{}, nil
 	}
@@ -285,7 +296,7 @@ func (c *PendingEntryContinuer) recordFailure(ctx context.Context, span observab
 	span.SetStatus(observability.StatusCodeError, stage)
 	c.total.Add(ctx, 1, observability.String("outcome", "error"))
 	c.durationHist.Record(ctx, time.Since(start).Seconds(), observability.String("outcome", "error"))
-	c.closeRun(ctx, run, agent.RunStatusFailed, err.Error(), start)
+	c.closeRun(ctx, run, agent.RunStatusFailed, stage, err.Error(), start)
 	c.o11y.Logger().Error(ctx, "agents.usecase.pending_entry_continuer: "+stage+" falhou",
 		observability.String("thread_id", run.ThreadID),
 		observability.String("run_id", run.ID.String()),
@@ -294,14 +305,6 @@ func (c *PendingEntryContinuer) recordFailure(ctx context.Context, span observab
 	)
 }
 
-func (c *PendingEntryContinuer) closeRun(ctx context.Context, run agent.Run, status agent.RunStatus, errStr string, start time.Time) {
-	if run.ID == uuid.Nil {
-		return
-	}
-	now := time.Now().UTC()
-	run.Status = status
-	run.Error = errStr
-	run.EndedAt = &now
-	run.DurationMs = time.Since(start).Milliseconds()
-	_ = c.runs.Update(ctx, run)
+func (c *PendingEntryContinuer) closeRun(ctx context.Context, run agent.Run, status agent.RunStatus, stage, errStr string, start time.Time) {
+	closeObservedRun(ctx, c.runs, c.o11y, c.runUpdateErrors, run, status, stage, errStr, start)
 }

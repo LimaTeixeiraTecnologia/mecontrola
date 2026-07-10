@@ -24,6 +24,10 @@ type MessageStatusRepository interface {
 	Record(ctx context.Context, record StatusRecord) (stored bool, err error)
 }
 
+type MessageStatusReader interface {
+	DeliveryCounts(ctx context.Context, messageID string) (DeliveryCounts, error)
+}
+
 type RecordMessageStatus struct {
 	repo        MessageStatusRepository
 	o11y        observability.Observability
@@ -86,6 +90,38 @@ func (u *RecordMessageStatus) Execute(ctx context.Context, statuses []MessageSta
 	}
 
 	return nil
+}
+
+type LookupDeliveryState struct {
+	reader MessageStatusReader
+	o11y   observability.Observability
+}
+
+func NewLookupDeliveryState(
+	reader MessageStatusReader,
+	o11y observability.Observability,
+) *LookupDeliveryState {
+	return &LookupDeliveryState{
+		reader: reader,
+		o11y:   o11y,
+	}
+}
+
+func (u *LookupDeliveryState) Execute(ctx context.Context, messageID string) (MessageDeliveryState, error) {
+	ctx, span := u.o11y.Tracer().Start(ctx, "whatsapp.status.usecase.lookup_delivery_state")
+	defer span.End()
+
+	if messageID == "" {
+		return DeliveryStateNotReceived, fmt.Errorf("whatsapp.status.usecase.lookup_delivery_state: %w", ErrEmptyMessageID)
+	}
+
+	counts, err := u.reader.DeliveryCounts(ctx, messageID)
+	if err != nil {
+		span.RecordError(err)
+		return DeliveryStateNotReceived, fmt.Errorf("whatsapp.status.usecase.lookup_delivery_state: %w", err)
+	}
+
+	return DecideDeliveryState(counts.Total, counts.Failed), nil
 }
 
 func parseStatusAt(raw string) time.Time {

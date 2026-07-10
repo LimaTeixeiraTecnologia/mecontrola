@@ -17,12 +17,13 @@ import (
 )
 
 type CardCreateConfirmContinuer struct {
-	engine  workflow.Engine[workflows.CardCreateState]
-	def     workflow.Definition[workflows.CardCreateState]
-	threads memory.ThreadGateway
-	runs    agent.RunStore
-	o11y    observability.Observability
-	total   observability.Counter
+	engine          workflow.Engine[workflows.CardCreateState]
+	def             workflow.Definition[workflows.CardCreateState]
+	threads         memory.ThreadGateway
+	runs            agent.RunStore
+	o11y            observability.Observability
+	total           observability.Counter
+	runUpdateErrors observability.Counter
 }
 
 func NewCardCreateConfirmContinuer(
@@ -38,12 +39,13 @@ func NewCardCreateConfirmContinuer(
 		"1",
 	)
 	return &CardCreateConfirmContinuer{
-		engine:  engine,
-		def:     def,
-		threads: threads,
-		runs:    runs,
-		o11y:    o11y,
-		total:   total,
+		engine:          engine,
+		def:             def,
+		threads:         threads,
+		runs:            runs,
+		o11y:            o11y,
+		total:           total,
+		runUpdateErrors: newRunUpdateErrorsCounter(o11y),
 	}
 }
 
@@ -82,11 +84,11 @@ func (c *CardCreateConfirmContinuer) Continue(ctx context.Context, resourceID, p
 	}
 
 	if result.Status == 0 {
-		c.closeRun(ctx, run, agent.RunStatusSucceeded, "", start)
+		c.closeRun(ctx, run, agent.RunStatusSucceeded, "close", "", start)
 		return false, "", nil
 	}
 
-	c.closeRun(ctx, run, agent.RunStatusSucceeded, "", start)
+	c.closeRun(ctx, run, agent.RunStatusSucceeded, "close", "", start)
 
 	if result.Status == workflow.RunStatusSuspended {
 		c.total.Add(ctx, 1, observability.String("outcome", "replied"))
@@ -146,7 +148,7 @@ func (c *CardCreateConfirmContinuer) recordFailure(ctx context.Context, span obs
 	span.RecordError(err)
 	span.SetStatus(observability.StatusCodeError, stage)
 	c.total.Add(ctx, 1, observability.String("outcome", "error"))
-	c.closeRun(ctx, run, agent.RunStatusFailed, err.Error(), start)
+	c.closeRun(ctx, run, agent.RunStatusFailed, stage, err.Error(), start)
 	c.o11y.Logger().Error(ctx, "agents.usecase.card_create_confirm_continuer: "+stage+" falhou",
 		observability.String("thread_id", run.ThreadID),
 		observability.String("run_id", run.ID.String()),
@@ -155,14 +157,6 @@ func (c *CardCreateConfirmContinuer) recordFailure(ctx context.Context, span obs
 	)
 }
 
-func (c *CardCreateConfirmContinuer) closeRun(ctx context.Context, run agent.Run, status agent.RunStatus, errStr string, start time.Time) {
-	if run.ID == uuid.Nil {
-		return
-	}
-	now := time.Now().UTC()
-	run.Status = status
-	run.Error = errStr
-	run.EndedAt = &now
-	run.DurationMs = time.Since(start).Milliseconds()
-	_ = c.runs.Update(ctx, run)
+func (c *CardCreateConfirmContinuer) closeRun(ctx context.Context, run agent.Run, status agent.RunStatus, stage, errStr string, start time.Time) {
+	closeObservedRun(ctx, c.runs, c.o11y, c.runUpdateErrors, run, status, stage, errStr, start)
 }

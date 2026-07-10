@@ -66,6 +66,7 @@ func (s *AuthEventsRepositorySuite) TestInsert() {
 		entities.AuthEventKindPrincipalEstablished,
 		entities.AuthEventSourceWhatsApp,
 		&reason,
+		nil,
 		"",
 		"",
 	)
@@ -84,7 +85,7 @@ func (s *AuthEventsRepositorySuite) TestInsert() {
 				dbtx.EXPECT().ExecContext(mock.Anything, mock.AnythingOfType("string"),
 					mock.Anything, mock.Anything, mock.Anything,
 					mock.Anything, mock.Anything, mock.Anything,
-					mock.Anything, mock.Anything,
+					mock.Anything, mock.Anything, mock.Anything,
 				).Return(nil, errors.New("db error")).Once()
 				return dbtx
 			},
@@ -102,7 +103,7 @@ func (s *AuthEventsRepositorySuite) TestInsert() {
 				dbtx.EXPECT().ExecContext(mock.Anything, mock.AnythingOfType("string"),
 					mock.Anything, mock.Anything, mock.Anything,
 					mock.Anything, mock.Anything, mock.Anything,
-					mock.Anything, mock.Anything,
+					mock.Anything, mock.Anything, mock.Anything,
 				).Return(result, nil).Once()
 				return dbtx
 			},

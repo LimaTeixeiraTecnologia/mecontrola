@@ -95,6 +95,7 @@ func (u *RecordGatewayAuthFailure) Handle(ctx context.Context, in input.RecordGa
 		string(entities.AuthEventKindFailed),
 		string(entities.AuthEventSourceGateway),
 		string(reason),
+		"",
 		rid.String(),
 		cip.String(),
 		now,

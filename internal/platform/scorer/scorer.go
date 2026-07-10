@@ -8,9 +8,10 @@ import (
 )
 
 type ToolCallRecord struct {
-	ID   string
-	Name string
-	Args map[string]any
+	ID      string
+	Name    string
+	Args    map[string]any
+	Outcome string
 }
 
 type RunSample struct {

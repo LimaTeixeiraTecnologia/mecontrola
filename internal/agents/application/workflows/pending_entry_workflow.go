@@ -59,6 +59,8 @@ const (
 	categorySrcUserSelected = "user_selected_candidate"
 
 	MultiItemOrientationMessage = "Percebi mais de um lançamento na mesma mensagem. Por segurança, registro um de cada vez — me manda o primeiro (ex.: \"gastei 30 no ônibus\") que eu já cuido dele. 🙂"
+
+	ActivePendingEntryMessage = "Ainda tenho um lançamento em aberto aguardando você. Me responda para concluí-lo ou envie \"cancelar\" para descartá-lo, aí seguimos com o próximo. 🙂"
 )
 
 type PendingEntryMode int
@@ -366,6 +368,7 @@ func handleConfirmationResume(ctx context.Context, state PendingEntryState, msg 
 
 	switch decision.Action {
 	case ConfirmActionAccept:
+		state.ProcessedMessageID = state.IncomingMessageID
 		return executeWrite(ctx, state, ledger, cats, idem)
 
 	case ConfirmActionCancel:
@@ -406,7 +409,7 @@ func handleConfirmationResume(ctx context.Context, state PendingEntryState, msg 
 	}
 }
 
-const maxFailedWriteResumes = 2
+const maxFailedWriteResumes = 1
 
 func IsResumableAfterFailedWrite(state PendingEntryState, now time.Time) bool {
 	if state.Status != PendingStatusActive {
@@ -431,6 +434,22 @@ func SeedResumeAfterFailedWrite(state PendingEntryState, msg PendingMessage) Pen
 	state.ResumeText = msg.Text
 	state.IncomingMessageID = msg.MessageID
 	state.FailedWriteResumeCount++
+	return state
+}
+
+func ShouldExpireAfterFailedWrite(state PendingEntryState, now time.Time) bool {
+	if state.Status != PendingStatusActive {
+		return false
+	}
+	if state.Awaiting != AwaitingSlotConfirmation {
+		return false
+	}
+	return isExpired(state, now)
+}
+
+func SeedExpireAfterFailedWrite(state PendingEntryState, msg PendingMessage) PendingEntryState {
+	state.ResumeText = msg.Text
+	state.IncomingMessageID = msg.MessageID
 	return state
 }
 
@@ -552,14 +571,15 @@ func executeWithIdempotency(ctx context.Context, state PendingEntryState, ledger
 		state.ResponseText = "Não consegui registrar. Tente novamente em breve."
 		return workflow.StepOutput[PendingEntryState]{State: state, Status: workflow.StepStatusFailed}, fmt.Errorf("workflows.pending_entry: idempotent_write: %w", idemErr)
 	}
-	if outcome != agent.ToolOutcomeReplay && resourceID == uuid.Nil {
-		state.Status = PendingStatusCancelled
+	pendingStatus, stepStatus, postErr := DecidePostWrite(outcome, resourceID)
+	if postErr != nil {
+		state.Status = pendingStatus
 		state.ResponseText = "Não consegui registrar. Tente novamente em breve."
-		return workflow.StepOutput[PendingEntryState]{State: state, Status: workflow.StepStatusCompleted}, nil
+		return workflow.StepOutput[PendingEntryState]{State: state, Status: stepStatus}, fmt.Errorf("workflows.pending_entry: idempotent_write: %w", postErr)
 	}
-	state.Status = PendingStatusCompleted
+	state.Status = pendingStatus
 	state.ResponseText = buildWriteSuccessText(state)
-	return workflow.StepOutput[PendingEntryState]{State: state, Status: workflow.StepStatusCompleted}, nil
+	return workflow.StepOutput[PendingEntryState]{State: state, Status: stepStatus}, nil
 }
 
 func executeDirectWrite(ctx context.Context, state PendingEntryState, ledger interfaces.TransactionsLedger) (workflow.StepOutput[PendingEntryState], error) {
@@ -583,14 +603,15 @@ func executeDirectWrite(ctx context.Context, state PendingEntryState, ledger int
 		state.ResponseText = "Não consegui registrar. Tente novamente em breve."
 		return workflow.StepOutput[PendingEntryState]{State: state, Status: workflow.StepStatusFailed}, fmt.Errorf("workflows.pending_entry: direct_write: %w", writeErr)
 	}
-	if ref.ID == uuid.Nil {
-		state.Status = PendingStatusCancelled
+	pendingStatus, stepStatus, postErr := DecidePostWrite(agent.ToolOutcomeRouted, ref.ID)
+	if postErr != nil {
+		state.Status = pendingStatus
 		state.ResponseText = "Não consegui registrar. Tente novamente em breve."
-		return workflow.StepOutput[PendingEntryState]{State: state, Status: workflow.StepStatusCompleted}, nil
+		return workflow.StepOutput[PendingEntryState]{State: state, Status: stepStatus}, fmt.Errorf("workflows.pending_entry: direct_write: %w", postErr)
 	}
-	state.Status = PendingStatusCompleted
+	state.Status = pendingStatus
 	state.ResponseText = buildWriteSuccessText(state)
-	return workflow.StepOutput[PendingEntryState]{State: state, Status: workflow.StepStatusCompleted}, nil
+	return workflow.StepOutput[PendingEntryState]{State: state, Status: stepStatus}, nil
 }
 
 func callLedger(ctx context.Context, state PendingEntryState, ledger interfaces.TransactionsLedger) (interfaces.EntryRef, error) {

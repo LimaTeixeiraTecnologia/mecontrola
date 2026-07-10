@@ -214,13 +214,13 @@ func (s *noHallucinationScorer) Score(_ context.Context, sample scorer.RunSample
 		writeSet[t] = true
 	}
 	for _, tc := range sample.ToolCalls {
-		if writeSet[tc.Name] {
-			return scorer.ScoreResult{Score: 1.0, Reason: "marcador de sucesso respaldado por write-tool"}, nil
+		if writeSet[tc.Name] && mecontrolaEffectiveWriteOutcomes[tc.Outcome] {
+			return scorer.ScoreResult{Score: 1.0, Reason: "marcador de sucesso respaldado por write-tool efetivada"}, nil
 		}
 	}
 	return scorer.ScoreResult{
 		Score:  0.0,
-		Reason: "marcador de sucesso sem write-tool correspondente chamada",
+		Reason: "marcador de sucesso sem write-tool efetivada correspondente",
 	}, nil
 }
 

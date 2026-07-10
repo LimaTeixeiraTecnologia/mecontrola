@@ -317,7 +317,7 @@ func (s *MecontrolaScorersSuite) TestBuildMeControlaScorers_ReturnsAllEntries() 
 			name:         "deve retornar os 3 scorers atuais mais os intrinsecos comportamentais",
 			dependencies: dependencies{},
 			expect: func(entries []scorer.ScorerEntry) {
-				s.Len(entries, 11)
+				s.Len(entries, 12)
 			},
 		},
 	}

@@ -58,7 +58,7 @@ func (s *AuthEventsHousekeepingIntegrationSuite) TestRunDeletes25kIn3Batches() {
 		for range 25_000 {
 			id, err := uuid.NewV7()
 			s.Require().NoError(err)
-			ev := entities.HydrateAuthEvent(id, oldTime, nil, entities.AuthEventKindUnknownUser, entities.AuthEventSourceWhatsApp, nil, "", "")
+			ev := entities.HydrateAuthEvent(id, oldTime, nil, entities.AuthEventKindUnknownUser, entities.AuthEventSourceWhatsApp, nil, nil, "", "")
 			s.Require().NoError(repo.Insert(s.ctx, ev))
 		}
 

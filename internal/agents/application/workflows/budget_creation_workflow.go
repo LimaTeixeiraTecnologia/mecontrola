@@ -193,6 +193,7 @@ func handleBudgetDistributionSlot(ctx context.Context, state BudgetCreationState
 		"expense.metas":                input.Metas,
 		"expense.liberdade_financeira": input.LiberdadeFinanceira,
 	}
+	kind = DecideAllocationKind(kind, values, state.TotalCents)
 	bp, decErr := DecideAllocationsBP(kind, values, state.TotalCents)
 	if decErr != nil {
 		return budgetSuspend(state, budgetDistributionReprompt(decErr.Error(), state.TotalCents))

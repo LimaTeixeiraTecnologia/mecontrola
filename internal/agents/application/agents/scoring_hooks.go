@@ -80,10 +80,7 @@ func (h *ScoringHooks) BeforeTool(ctx context.Context, _, _ string) context.Cont
 	return ctx
 }
 
-func (h *ScoringHooks) AfterTool(ctx context.Context, _, toolID string, argsJSON, _ []byte, err error) {
-	if err != nil {
-		return
-	}
+func (h *ScoringHooks) AfterTool(ctx context.Context, _, toolID string, argsJSON, resultBytes []byte, err error) {
 	obs, ok := ctx.Value(scoringStateKey{}).(*scoringObservation)
 	if !ok {
 		return
@@ -92,7 +89,24 @@ func (h *ScoringHooks) AfterTool(ctx context.Context, _, toolID string, argsJSON
 	if len(argsJSON) > 0 {
 		_ = json.Unmarshal(argsJSON, &args)
 	}
-	obs.toolCalls = append(obs.toolCalls, scorer.ToolCallRecord{ID: toolID, Name: toolID, Args: args})
+	outcome := extractOutcome(resultBytes)
+	if err != nil {
+		outcome = agent.ToolOutcomeUsecaseError.String()
+	}
+	obs.toolCalls = append(obs.toolCalls, scorer.ToolCallRecord{ID: toolID, Name: toolID, Args: args, Outcome: outcome})
+}
+
+func extractOutcome(resultBytes []byte) string {
+	if len(resultBytes) == 0 {
+		return ""
+	}
+	var payload struct {
+		Outcome string `json:"outcome"`
+	}
+	if err := json.Unmarshal(resultBytes, &payload); err != nil {
+		return ""
+	}
+	return payload.Outcome
 }
 
 func lastUserMessage(msgs []llm.Message) string {

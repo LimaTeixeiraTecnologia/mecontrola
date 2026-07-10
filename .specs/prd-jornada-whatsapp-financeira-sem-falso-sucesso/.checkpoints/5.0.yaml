@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-jornada-whatsapp-financeira-sem-falso-sucesso/5.0_execution_report.md
+summary: Observabilidade de run — closeRun observável (métrica+log), reconciliação RF-16 e LookupDeliveryState; gates e integração verdes.
+timestamp: 2026-07-10T14:13:00Z

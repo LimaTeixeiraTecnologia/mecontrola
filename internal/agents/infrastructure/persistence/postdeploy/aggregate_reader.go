@@ -113,6 +113,22 @@ func (r *aggregateReader) ScorerAggregates(ctx context.Context, agentID string, 
 }
 
 func (r *aggregateReader) DuplicateWriteViolations(ctx context.Context, agentID string, since time.Time) (int64, error) {
+	violations, err := r.scorerViolations(ctx, agentID, since, postdeploy.ScorerIDNoDuplicateWrite)
+	if err != nil {
+		return 0, fmt.Errorf("postdeploy.postgres.aggregate_reader.duplicate_write_violations: %w", err)
+	}
+	return violations, nil
+}
+
+func (r *aggregateReader) WritePersistenceViolations(ctx context.Context, agentID string, since time.Time) (int64, error) {
+	violations, err := r.scorerViolations(ctx, agentID, since, postdeploy.ScorerIDWritePersistenceAccuracy)
+	if err != nil {
+		return 0, fmt.Errorf("postdeploy.postgres.aggregate_reader.write_persistence_violations: %w", err)
+	}
+	return violations, nil
+}
+
+func (r *aggregateReader) scorerViolations(ctx context.Context, agentID string, since time.Time, scorerID string) (int64, error) {
 	const q = `
 		SELECT count(*)
 		FROM mecontrola.platform_scorer_results sr
@@ -123,9 +139,8 @@ func (r *aggregateReader) DuplicateWriteViolations(ctx context.Context, agentID 
 		  AND sr.score < 1`
 
 	var violations int64
-	err := r.db.QueryRowContext(ctx, q, agentID, since, postdeploy.ScorerIDNoDuplicateWrite).Scan(&violations)
-	if err != nil {
-		return 0, fmt.Errorf("postdeploy.postgres.aggregate_reader.duplicate_write_violations: %w", err)
+	if err := r.db.QueryRowContext(ctx, q, agentID, since, scorerID).Scan(&violations); err != nil {
+		return 0, err
 	}
 	return violations, nil
 }

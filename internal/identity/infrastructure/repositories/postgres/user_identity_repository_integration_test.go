@@ -14,6 +14,9 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/jmoiron/sqlx"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
+
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
@@ -160,6 +163,40 @@ func (s *UserIdentityRepositoryIntegrationSuite) TestInsertDuplicate() {
 			scenario.expect(count, err)
 		})
 	}
+}
+
+func (s *UserIdentityRepositoryIntegrationSuite) TestInsertIfAbsentIdempotentWithinTransaction() {
+	userID := s.seedUser()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	first := s.newWhatsAppIdentity(userID, "+5511900000007", now)
+	second := s.newWhatsAppIdentity(userID, "+5511900000007", now.Add(time.Second))
+
+	unit := uow.NewUnitOfWork(s.db)
+	err := unit.Do(s.ctx, func(ctx context.Context, tx database.DBTX) error {
+		repo := s.factory.UserIdentityRepository(tx)
+
+		created, insertErr := repo.InsertIfAbsent(ctx, first)
+		s.Require().NoError(insertErr)
+		s.True(created)
+
+		createdAgain, dupErr := repo.InsertIfAbsent(ctx, second)
+		s.Require().NoError(dupErr)
+		s.False(createdAgain)
+
+		_, viableErr := tx.ExecContext(ctx, `SELECT 1`)
+		s.Require().NoError(viableErr)
+		return nil
+	})
+	s.Require().NoError(err)
+
+	var count int
+	countErr := s.db.QueryRowContext(
+		s.ctx,
+		`SELECT COUNT(*) FROM mecontrola.user_identities WHERE user_id = $1 AND channel = 'whatsapp' AND unlinked_at IS NULL`,
+		userID,
+	).Scan(&count)
+	s.Require().NoError(countErr)
+	s.Equal(1, count)
 }
 
 func (s *UserIdentityRepositoryIntegrationSuite) TestUnlink() {

@@ -219,7 +219,7 @@ func (s *MigrationSuite) TestReconcilePlatformThreadColumnsFromLegacy() {
 
 	version, dirty, err := migrator.Version()
 	s.Require().NoError(err)
-	s.Equal(uint(7), version)
+	s.Equal(uint(8), version)
 	s.False(dirty)
 }
 
@@ -235,7 +235,7 @@ func (s *MigrationSuite) TestReconcileIsNoopOnFreshBaseline() {
 
 	version, dirty, err := migrator.Version()
 	s.Require().NoError(err)
-	s.Equal(uint(7), version)
+	s.Equal(uint(8), version)
 	s.False(dirty)
 }
 
@@ -565,6 +565,161 @@ func (s *MigrationSuite) assertDictionaryTermResolvesTo(termNormalized, kind, ex
 	`, kind, termNormalized).Scan(&categoryID)
 	s.Require().NoErrorf(err, "term_normalized=%s", termNormalized)
 	s.Equalf(expectedCategoryID, categoryID, "term_normalized=%s resolveu para categoria inesperada", termNormalized)
+}
+
+func (s *MigrationSuite) TestAuthEventsResolvePathAndCorrelationBackfill() {
+	migrator := s.newMigrator()
+
+	migrateErr := migrator.Migrate(7)
+	s.Require().True(
+		migrateErr == nil || errors.Is(migrateErr, migrate.ErrNoChange),
+		"baseline ate 000007 deve aplicar: %v",
+		migrateErr,
+	)
+
+	const legacyThreadID = "11111111-2222-3333-4444-555555555555"
+	const legacyRunEmptyID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	const legacyRunFilledID = "ffffffff-1111-2222-3333-444444444444"
+
+	insertThreadErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.platform_threads (id, resource_id, thread_id)
+		VALUES ($1, 'resource-legacy', 'thread-legacy')
+	`, legacyThreadID)
+	s.Require().NoError(insertThreadErr)
+
+	insertEmptyRunErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.platform_runs (id, platform_thread_id, resource_id, thread_id, status, correlation_key)
+		VALUES ($1, $2, 'resource-legacy', 'thread-legacy', 'succeeded', '')
+	`, legacyRunEmptyID, legacyThreadID)
+	s.Require().NoError(insertEmptyRunErr)
+
+	insertFilledRunErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.platform_runs (id, platform_thread_id, resource_id, thread_id, status, correlation_key)
+		VALUES ($1, $2, 'resource-legacy', 'thread-legacy', 'succeeded', 'wamid.EXISTING')
+	`, legacyRunFilledID, legacyThreadID)
+	s.Require().NoError(insertFilledRunErr)
+
+	stepErr := migrator.Steps(1)
+	s.Require().NoError(stepErr, "000008 up deve aplicar com runs legados vazios (backfill antes do CHECK)")
+
+	version, dirty, versionErr := migrator.Version()
+	s.Require().NoError(versionErr)
+	s.False(dirty)
+	s.Equal(uint(8), version)
+
+	s.assertColumnPresent("mecontrola.auth_events", "resolve_path")
+	s.assertConstraintPresent("auth_events", "auth_events_resolve_path_chk")
+	s.assertConstraintPresent("auth_events", "auth_events_reason_check")
+	s.assertConstraintPresent("platform_runs", "platform_runs_correlation_len_chk")
+
+	var emptyCount int64
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT COUNT(*) FROM mecontrola.platform_runs WHERE correlation_key = ''`,
+	).Scan(&emptyCount))
+	s.Equal(int64(0), emptyCount, "backfill deve eliminar todo correlation_key vazio")
+
+	var backfilledKey string
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT correlation_key FROM mecontrola.platform_runs WHERE id = $1::uuid`, legacyRunEmptyID,
+	).Scan(&backfilledKey))
+	s.Equal("legacy:"+legacyRunEmptyID, backfilledKey, "run legado vazio deve migrar para 'legacy:' || id")
+
+	var untouchedKey string
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT correlation_key FROM mecontrola.platform_runs WHERE id = $1::uuid`, legacyRunFilledID,
+	).Scan(&untouchedKey))
+	s.Equal("wamid.EXISTING", untouchedKey, "run com correlation_key preenchido nao deve ser tocado pelo backfill")
+
+	validPathErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.auth_events (id, kind, source, resolve_path)
+		VALUES (gen_random_uuid(), 'principal_established', 'whatsapp', 'legacy')
+	`)
+	s.Require().NoError(validPathErr)
+
+	nullPathErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.auth_events (id, kind, source, resolve_path)
+		VALUES (gen_random_uuid(), 'principal_established', 'whatsapp', NULL)
+	`)
+	s.Require().NoError(nullPathErr, "resolve_path NULL deve ser aceito (coluna nullable)")
+
+	invalidPathErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.auth_events (id, kind, source, resolve_path)
+		VALUES (gen_random_uuid(), 'principal_established', 'whatsapp', 'bogus')
+	`)
+	s.Require().Error(invalidPathErr)
+	s.Contains(invalidPathErr.Error(), "auth_events_resolve_path_chk")
+
+	failedReasonPreservedErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.auth_events (id, kind, source, reason)
+		VALUES (gen_random_uuid(), 'principal_established', 'whatsapp', 'invalid_signature')
+	`)
+	s.Require().Error(failedReasonPreservedErr)
+	s.Contains(failedReasonPreservedErr.Error(), "auth_events_reason_check")
+
+	emptyCorrelationErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.platform_runs (id, platform_thread_id, resource_id, thread_id, status, correlation_key)
+		VALUES (gen_random_uuid(), $1, 'resource-legacy', 'thread-legacy', 'running', '')
+	`, legacyThreadID)
+	s.Require().Error(emptyCorrelationErr)
+	s.Contains(emptyCorrelationErr.Error(), "platform_runs_correlation_len_chk")
+
+	longCorrelationErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.platform_runs (id, platform_thread_id, resource_id, thread_id, status, correlation_key)
+		VALUES (gen_random_uuid(), $1, 'resource-legacy', 'thread-legacy', 'running', $2)
+	`, legacyThreadID, strings.Repeat("x", 257))
+	s.Require().Error(longCorrelationErr)
+	s.Contains(longCorrelationErr.Error(), "platform_runs_correlation_len_chk")
+
+	downErr := migrator.Steps(-1)
+	s.Require().NoError(downErr, "000008 down deve reverter")
+
+	s.assertColumnMissing("mecontrola.auth_events", "resolve_path")
+	s.assertConstraintMissing("auth_events", "auth_events_resolve_path_chk")
+	s.assertConstraintMissing("platform_runs", "platform_runs_correlation_len_chk")
+	s.assertConstraintPresent("auth_events", "auth_events_reason_check")
+
+	var emptyAfterDownCount int64
+	s.Require().NoError(s.db.QueryRowContext(s.ctx,
+		`SELECT COUNT(*) FROM mecontrola.platform_runs WHERE correlation_key = ''`,
+	).Scan(&emptyAfterDownCount))
+	s.Equal(int64(0), emptyAfterDownCount, "down nao desfaz o backfill (idempotente)")
+
+	reUpErr := migrator.Steps(1)
+	s.Require().NoError(reUpErr, "000008 up reaplicado deve ser reentrante")
+
+	s.assertColumnPresent("mecontrola.auth_events", "resolve_path")
+	s.assertConstraintPresent("auth_events", "auth_events_resolve_path_chk")
+	s.assertConstraintPresent("platform_runs", "platform_runs_correlation_len_chk")
+}
+
+func (s *MigrationSuite) assertConstraintPresent(table, constraint string) {
+	var count int64
+	err := s.db.QueryRowContext(s.ctx, `
+		SELECT COUNT(*)
+		FROM pg_constraint c
+		JOIN pg_class t ON t.oid = c.conrelid
+		JOIN pg_namespace n ON n.oid = t.relnamespace
+		WHERE n.nspname = 'mecontrola'
+		  AND t.relname = $1
+		  AND c.conname = $2
+	`, table, constraint).Scan(&count)
+	s.Require().NoError(err)
+	s.Equalf(int64(1), count, "constraint %s.%s ausente", table, constraint)
+}
+
+func (s *MigrationSuite) assertConstraintMissing(table, constraint string) {
+	var count int64
+	err := s.db.QueryRowContext(s.ctx, `
+		SELECT COUNT(*)
+		FROM pg_constraint c
+		JOIN pg_class t ON t.oid = c.conrelid
+		JOIN pg_namespace n ON n.oid = t.relnamespace
+		WHERE n.nspname = 'mecontrola'
+		  AND t.relname = $1
+		  AND c.conname = $2
+	`, table, constraint).Scan(&count)
+	s.Require().NoError(err)
+	s.Equalf(int64(0), count, "constraint %s.%s deveria ter sido removida", table, constraint)
 }
 
 func (s *MigrationSuite) TestTransactionsConstraints() {

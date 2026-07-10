@@ -88,6 +88,8 @@ func (r *agentRuntime) Execute(ctx context.Context, in InboundRequest) (Outcome,
 	ctx, span := r.o11y.Tracer().Start(ctx, "agent.runtime.execute",
 		observability.WithAttributes(
 			observability.String("agent_id", in.AgentID),
+			observability.String("wamid", in.MessageID),
+			observability.String("workflow", in.AgentID),
 		),
 	)
 	defer span.End()

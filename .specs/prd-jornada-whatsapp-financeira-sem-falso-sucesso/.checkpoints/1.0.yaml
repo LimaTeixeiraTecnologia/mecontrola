@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-jornada-whatsapp-financeira-sem-falso-sucesso/1.0_execution_report.md
+summary: Validação simétrica de distribuição de orçamento (vetores a/b/c) — caso real preservado, gates verdes
+timestamp: 2026-07-10T13:34:09Z

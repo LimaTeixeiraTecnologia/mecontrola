@@ -15,7 +15,7 @@ install_wrapper() {
   cat > "$WRAPPER" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-CONTAINER=\$(docker ps --filter "name=${STACK}_${POSTGRES_SERVICE}" --format "{{.Names}}" | head -1)
+CONTAINER=\$(docker ps --filter "name=${STACK}_${POSTGRES_SERVICE}\\." --format "{{.Names}}" | head -1)
 if [[ -z "\$CONTAINER" ]]; then
   echo "pgbackrest-run: container ${STACK}_${POSTGRES_SERVICE} nao encontrado" >&2
   exit 1

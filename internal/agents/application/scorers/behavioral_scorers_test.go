@@ -290,14 +290,58 @@ func (s *BehavioralScorersSuite) TestNoHallucinationScorer() {
 			},
 		},
 		{
-			name: "deve retornar score 1 com marcador de sucesso respaldado por write-tool",
+			name: "deve retornar score 1 com marcador de sucesso respaldado por write-tool efetivada (routed)",
 			args: args{sample: scorer.RunSample{
 				Output:    "Registrei sua despesa de R$ 50,00.",
-				ToolCalls: []scorer.ToolCallRecord{{Name: "register_expense"}},
+				ToolCalls: []scorer.ToolCallRecord{{Name: "register_expense", Outcome: "routed"}},
 			}},
 			expect: func(result scorer.ScoreResult, err error) {
 				s.NoError(err)
 				s.InDelta(1.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve retornar score 1 com marcador de sucesso respaldado por write-tool reconciled",
+			args: args{sample: scorer.RunSample{
+				Output:    "Registrei sua despesa de R$ 50,00.",
+				ToolCalls: []scorer.ToolCallRecord{{Name: "register_expense", Outcome: "reconciled"}},
+			}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(1.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve retornar score 0 com marcador de sucesso e write-tool com usecaseError",
+			args: args{sample: scorer.RunSample{
+				Output:    "Registrei sua despesa de R$ 50,00.",
+				ToolCalls: []scorer.ToolCallRecord{{Name: "register_expense", Outcome: "usecaseError"}},
+			}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(0.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve retornar score 0 com marcador de sucesso e write-tool com replay",
+			args: args{sample: scorer.RunSample{
+				Output:    "Registrei sua despesa de R$ 50,00.",
+				ToolCalls: []scorer.ToolCallRecord{{Name: "register_expense", Outcome: "replay"}},
+			}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(0.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve retornar score 0 com marcador de sucesso e write-tool com clarify",
+			args: args{sample: scorer.RunSample{
+				Output:    "Registrei sua despesa de R$ 50,00.",
+				ToolCalls: []scorer.ToolCallRecord{{Name: "register_expense", Outcome: "clarify"}},
+			}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(0.0, result.Score, 0.001)
 			},
 		},
 		{

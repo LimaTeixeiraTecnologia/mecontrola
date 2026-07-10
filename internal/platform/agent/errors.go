@@ -9,6 +9,7 @@ var (
 	ErrEmptyResourceID = errors.New("agent: resource_id is required")
 	ErrEmptyThreadID   = errors.New("agent: thread_id is required")
 	ErrEmptyMessage    = errors.New("agent: message is required")
+	ErrEmptyMessageID  = errors.New("agent: message_id is required")
 	ErrRunNotFound     = errors.New("agent: run not found")
 	ErrMaxToolRounds   = errors.New("agent: max tool iterations exceeded")
 )

@@ -20,6 +20,8 @@ const (
 	ScorerIDCompleteness     = "completeness"
 	ScorerIDCategorization   = "categorization"
 	ScorerIDNoDuplicateWrite = "no_duplicate_write"
+
+	ScorerIDWritePersistenceAccuracy = "write_persistence_accuracy"
 )
 
 type RunAggregate struct {
@@ -41,10 +43,11 @@ type ScorerAggregate struct {
 }
 
 type OperationalCounters struct {
-	AgentID                  string
-	RunUpdateErrors          int64
-	MessageAppendErrors      int64
-	DuplicateWriteViolations int64
+	AgentID                    string
+	RunUpdateErrors            int64
+	MessageAppendErrors        int64
+	DuplicateWriteViolations   int64
+	WritePersistenceViolations int64
 }
 
 func (a RunAggregate) SampleWindowDays() float64 {
@@ -129,9 +132,9 @@ func EvaluateGate(runs RunAggregate, toolCallHits int, scorers map[string]Scorer
 		}
 	}
 
-	verdict.NoRegressionOperational = ops.RunUpdateErrors == 0 && ops.MessageAppendErrors == 0 && ops.DuplicateWriteViolations == 0 && runs.TruncatedRuns == 0
+	verdict.NoRegressionOperational = ops.RunUpdateErrors == 0 && ops.MessageAppendErrors == 0 && ops.DuplicateWriteViolations == 0 && ops.WritePersistenceViolations == 0 && runs.TruncatedRuns == 0
 	if !verdict.NoRegressionOperational {
-		verdict.Reasons = append(verdict.Reasons, "regressão operacional detectada (truncamento, update de run, append de mensagem ou escrita duplicada)")
+		verdict.Reasons = append(verdict.Reasons, "regressão operacional detectada (truncamento, update de run, append de mensagem, escrita duplicada ou escrita sem persistência)")
 	}
 
 	verdict.Promote = verdict.SampleSufficient && verdict.FailureRatePassed && allMetricsPassed && verdict.NoRegressionOperational

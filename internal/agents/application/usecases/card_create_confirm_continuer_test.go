@@ -254,6 +254,34 @@ func (s *CardCreateConfirmContinuerSuite) TestContinue_EscritaFalhaGravaErroReal
 	s.Contains(s.runs.updated[0].Error, "db unavailable")
 }
 
+func (s *CardCreateConfirmContinuerSuite) TestContinue_FalhaAoFecharRunObservaSemQuebrarNegocio() {
+	s.runs.updateErr = errors.New("update falhou no fechamento")
+	s.engineMock.On("Resume", mock.Anything, mock.Anything, "user-9:card-create", mock.Anything).
+		Return(workflow.RunResult[workflows.CardCreateState]{
+			Status: workflow.RunStatusSucceeded,
+			State: workflows.CardCreateState{
+				Status:       workflows.CardCreateStatusCompleted,
+				ResponseText: "✅ Cartão cadastrado com sucesso.",
+			},
+		}, nil).Once()
+
+	uc := NewCardCreateConfirmContinuer(s.engineMock, s.emptyDef, s.threads, s.runs, s.obs)
+	handled, reply, err := uc.Continue(s.ctx, "user-9", "+5511999999999", "sim", "wamid-009")
+
+	s.NoError(err)
+	s.True(handled)
+	s.Equal("✅ Cartão cadastrado com sucesso.", reply)
+
+	counter := s.obs.Metrics().(*fake.FakeMetrics).GetCounter("agents_run_update_errors_total")
+	s.Require().NotNil(counter)
+	values := counter.GetValues()
+	s.Require().Len(values, 1)
+	assertRunUpdateErrorLabels(s.T(), values[0].Fields, workflows.CardCreateConfirmWorkflowID, "close", "succeeded")
+
+	entries := s.obs.Logger().(*fake.FakeLogger).GetEntries()
+	s.True(hasRunUpdateErrorLog(entries), "deve emitir log estruturado de falha de fechamento")
+}
+
 func (s *CardCreateConfirmContinuerSuite) TestContinue_FalhaAoAbrirThreadNaoAbreRun() {
 	s.threads.err = errors.New("thread store down")
 

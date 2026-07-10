@@ -228,3 +228,73 @@ func (s *RegisterExpenseIntegrationSuite) TestIdentityInjectedAndPendingOpened()
 	s.Require().NoError(err)
 	s.Equal(0, toolMsgCount, "RF-39: mensagens role=tool NÃO devem ser persistidas no histórico (evita órfão tool → HTTP 400)")
 }
+
+func (s *RegisterExpenseIntegrationSuite) TestRF08_PlatformMessagesContainsInboundAndFinalResponse() {
+	obs := fake.NewProvider()
+	reader := &stubCategoriesReader{rootID: uuid.New(), leafID: uuid.New()}
+	store := workflowpg.NewPostgresStore(obs, s.db)
+	engine := workflow.NewEngine[workflows.PendingEntryState](store, obs)
+	def := workflows.BuildPendingEntryWorkflow(&stubLedger{createdID: uuid.New()}, nil, reader, nil)
+	registrar := usecases.NewRegisterAttempt(reader, &stubLedger{createdID: uuid.New()}, engine, def, obs)
+	handle := BuildRegisterExpenseTool(registrar, &stubCardManager{})
+
+	agentID := "agent-rf08-" + uuid.NewString()
+	ag := &toolInvokingAgent{id: agentID, handle: handle}
+	reg := agent.NewAgentRegistry()
+	reg.Register(ag)
+
+	userID := uuid.New()
+	threadID := "thr-rf08-" + uuid.NewString()
+	wamid := "wamid-rf08-" + uuid.NewString()
+
+	rt := agent.NewAgentRuntime(
+		reg,
+		mempostgres.NewThreadRepository(s.db, obs),
+		mempostgres.NewMessageRepository(s.db, obs),
+		mempostgres.NewWorkingMemoryRepository(s.db, obs),
+		agentpostgres.NewRunStore(s.db),
+		obs,
+		agent.WithWriteToolSet(handle.ID()),
+	)
+
+	inbound := "Gastei 19 na padaria no Pix"
+	outcome, err := rt.Execute(s.ctx, agent.InboundRequest{
+		AgentID:    agentID,
+		ResourceID: userID.String(),
+		ThreadID:   threadID,
+		Message:    inbound,
+		MessageID:  wamid,
+	})
+	s.Require().NoError(err)
+	s.Equal(agent.RunStatusSucceeded, outcome.Status)
+
+	var userCount, assistantCount int
+	err = s.db.QueryRowContext(s.ctx,
+		`SELECT COUNT(*) FROM mecontrola.platform_messages WHERE resource_id = $1 AND role = $2`,
+		userID.String(), string(memory.RoleUser),
+	).Scan(&userCount)
+	s.Require().NoError(err)
+	err = s.db.QueryRowContext(s.ctx,
+		`SELECT COUNT(*) FROM mecontrola.platform_messages WHERE resource_id = $1 AND role = $2`,
+		userID.String(), string(memory.RoleAssistant),
+	).Scan(&assistantCount)
+	s.Require().NoError(err)
+
+	s.Equal(1, userCount, "RF-08: platform_messages deve conter exatamente a mensagem inbound do usuário")
+	s.Equal(1, assistantCount, "RF-08: platform_messages deve conter exatamente a resposta final da pendência")
+
+	var storedInbound, storedResponse string
+	err = s.db.QueryRowContext(s.ctx,
+		`SELECT content FROM mecontrola.platform_messages WHERE resource_id = $1 AND role = $2 LIMIT 1`,
+		userID.String(), string(memory.RoleUser),
+	).Scan(&storedInbound)
+	s.Require().NoError(err)
+	s.Equal(inbound, storedInbound, "RF-08: a linha inbound deve preservar o texto do usuário")
+
+	err = s.db.QueryRowContext(s.ctx,
+		`SELECT content FROM mecontrola.platform_messages WHERE resource_id = $1 AND role = $2 LIMIT 1`,
+		userID.String(), string(memory.RoleAssistant),
+	).Scan(&storedResponse)
+	s.Require().NoError(err)
+	s.NotEmpty(storedResponse, "RF-08: a resposta final da pendência deve ser persistida")
+}

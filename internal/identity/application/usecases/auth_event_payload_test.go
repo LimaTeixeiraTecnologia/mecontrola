@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 )
 
@@ -18,7 +19,7 @@ func TestNewAuthEventOutbox_PrincipalEstablished(t *testing.T) {
 	userID := uuid.New().String()
 	now := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
 
-	ev, err := newAuthEventOutbox(eventID, userID, "principal_established", "whatsapp", "", "", "", now)
+	ev, err := newAuthEventOutbox(eventID, userID, "principal_established", "whatsapp", "", "", "", "", now)
 	require.NoError(t, err)
 
 	require.Equal(t, eventID, ev.ID)
@@ -36,6 +37,23 @@ func TestNewAuthEventOutbox_PrincipalEstablished(t *testing.T) {
 	require.Equal(t, "principal_established", decoded.Kind)
 	require.Equal(t, "whatsapp", decoded.Source)
 	require.Nil(t, decoded.Reason)
+	require.Nil(t, decoded.ResolvePath)
+}
+
+func TestNewAuthEventOutbox_WithResolvePath(t *testing.T) {
+	t.Parallel()
+
+	eventID := uuid.New().String()
+	userID := uuid.New().String()
+	now := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
+
+	ev, err := newAuthEventOutbox(eventID, userID, "principal_established", "whatsapp", "", "legacy", "", "", now)
+	require.NoError(t, err)
+
+	var decoded authEventPayload
+	require.NoError(t, json.Unmarshal(ev.Payload, &decoded))
+	require.NotNil(t, decoded.ResolvePath)
+	require.Equal(t, "legacy", *decoded.ResolvePath)
 }
 
 func TestNewAuthEventOutbox_UnknownUser(t *testing.T) {
@@ -44,7 +62,7 @@ func TestNewAuthEventOutbox_UnknownUser(t *testing.T) {
 	eventID := uuid.New().String()
 	now := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
 
-	ev, err := newAuthEventOutbox(eventID, "", "unknown_user", "whatsapp", "", "", "", now)
+	ev, err := newAuthEventOutbox(eventID, "", "unknown_user", "whatsapp", "", "", "", "", now)
 	require.NoError(t, err)
 
 	require.Equal(t, eventID, ev.AggregateID)
@@ -63,7 +81,7 @@ func TestNewAuthEventOutbox_WithReason(t *testing.T) {
 	eventID := uuid.New().String()
 	now := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
 
-	ev, err := newAuthEventOutbox(eventID, "", "failed", "whatsapp", "invalid_signature", "", "", now)
+	ev, err := newAuthEventOutbox(eventID, "", "failed", "whatsapp", "invalid_signature", "", "", "", now)
 	require.NoError(t, err)
 
 	var decoded authEventPayload
@@ -100,6 +118,52 @@ func TestParseAuthEvent_Valid(t *testing.T) {
 	require.Equal(t, entities.AuthEventSourceWhatsApp, ev.Source())
 	require.NotNil(t, ev.Reason())
 	require.Equal(t, entities.AuthEventReason("invalid_signature"), *ev.Reason())
+}
+
+func TestParseAuthEvent_WithResolvePath(t *testing.T) {
+	t.Parallel()
+
+	eventID := uuid.New()
+	userID := uuid.New()
+	occurredAt := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
+
+	uidStr := userID.String()
+	pathStr := "legacy"
+	raw, err := json.Marshal(authEventPayload{
+		EventID:     eventID.String(),
+		UserID:      &uidStr,
+		Kind:        "principal_established",
+		Source:      "whatsapp",
+		ResolvePath: &pathStr,
+		OccurredAt:  occurredAt.Format(time.RFC3339),
+	})
+	require.NoError(t, err)
+
+	ev, err := parseAuthEvent(raw)
+	require.NoError(t, err)
+	require.NotNil(t, ev.ResolvePath())
+	require.Equal(t, domain.AuthResolvePathLegacy, *ev.ResolvePath())
+}
+
+func TestParseAuthEvent_InvalidResolvePath(t *testing.T) {
+	t.Parallel()
+
+	eventID := uuid.New()
+	occurredAt := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
+
+	bad := "unknown"
+	raw, err := json.Marshal(authEventPayload{
+		EventID:     eventID.String(),
+		Kind:        "principal_established",
+		Source:      "whatsapp",
+		ResolvePath: &bad,
+		OccurredAt:  occurredAt.Format(time.RFC3339),
+	})
+	require.NoError(t, err)
+
+	_, err = parseAuthEvent(raw)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "parse resolve_path")
 }
 
 func TestParseAuthEvent_ErrorPaths(t *testing.T) {

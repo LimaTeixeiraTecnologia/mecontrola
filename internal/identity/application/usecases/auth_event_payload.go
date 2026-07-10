@@ -7,22 +7,24 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/identity/domain/entities"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
 
 type authEventPayload struct {
-	EventID    string  `json:"event_id"`
-	UserID     *string `json:"user_id"`
-	Kind       string  `json:"kind"`
-	Source     string  `json:"source"`
-	Reason     *string `json:"reason"`
-	OccurredAt string  `json:"occurred_at"`
-	RequestID  string  `json:"request_id,omitempty"`
-	ClientIP   string  `json:"client_ip,omitempty"`
+	EventID     string  `json:"event_id"`
+	UserID      *string `json:"user_id"`
+	Kind        string  `json:"kind"`
+	Source      string  `json:"source"`
+	Reason      *string `json:"reason"`
+	ResolvePath *string `json:"resolve_path,omitempty"`
+	OccurredAt  string  `json:"occurred_at"`
+	RequestID   string  `json:"request_id,omitempty"`
+	ClientIP    string  `json:"client_ip,omitempty"`
 }
 
-func newAuthEventOutbox(eventID, userID, kind, source, reason, requestID, clientIP string, now time.Time) (outbox.Event, error) {
+func newAuthEventOutbox(eventID, userID, kind, source, reason, resolvePath, requestID, clientIP string, now time.Time) (outbox.Event, error) {
 	payload := authEventPayload{
 		EventID:    eventID,
 		Kind:       kind,
@@ -36,6 +38,9 @@ func newAuthEventOutbox(eventID, userID, kind, source, reason, requestID, client
 	}
 	if reason != "" {
 		payload.Reason = &reason
+	}
+	if resolvePath != "" {
+		payload.ResolvePath = &resolvePath
 	}
 
 	rawPayload, err := json.Marshal(payload)
@@ -90,6 +95,15 @@ func parseAuthEvent(raw []byte) (entities.AuthEvent, error) {
 		reason = &r
 	}
 
+	var resolvePath *domain.AuthResolvePath
+	if p.ResolvePath != nil {
+		rp, parseErr := domain.ParseAuthResolvePath(*p.ResolvePath)
+		if parseErr != nil {
+			return entities.AuthEvent{}, fmt.Errorf("parse resolve_path: %w", parseErr)
+		}
+		resolvePath = &rp
+	}
+
 	return entities.HydrateAuthEvent(
 		eventID,
 		occurredAt,
@@ -97,6 +111,7 @@ func parseAuthEvent(raw []byte) (entities.AuthEvent, error) {
 		entities.AuthEventKind(p.Kind),
 		entities.AuthEventSource(p.Source),
 		reason,
+		resolvePath,
 		p.RequestID,
 		p.ClientIP,
 	), nil

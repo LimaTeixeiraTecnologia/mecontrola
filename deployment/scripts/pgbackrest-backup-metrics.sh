@@ -13,7 +13,7 @@ log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] pgbackrest-metrics: $*"; }
 cleanup() { rm -f "$TMP"; }
 trap cleanup EXIT
 
-CONTAINER="$(docker ps --filter "name=${STACK}_${POSTGRES_SERVICE}" --format "{{.Names}}" | head -1 || true)"
+CONTAINER="$(docker ps --filter "name=${STACK}_${POSTGRES_SERVICE}\." --format "{{.Names}}" | head -1 || true)"
 if [[ -z "$CONTAINER" ]]; then
   log "Container ${STACK}_${POSTGRES_SERVICE} nao encontrado, nada a exportar"
   exit 0
