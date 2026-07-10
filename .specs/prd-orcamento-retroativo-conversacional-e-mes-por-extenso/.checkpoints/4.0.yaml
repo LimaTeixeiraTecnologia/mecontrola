@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-orcamento-retroativo-conversacional-e-mes-por-extenso/4.0_execution_report.md
-summary: Tool fina create_budget implementada (inicia workflow budget-creation via engine.Start, DTO Validate, mapeamento MonthReference), 13 testes whitebox verdes, sem regressao.
-timestamp: 2026-07-09T14:06:35Z

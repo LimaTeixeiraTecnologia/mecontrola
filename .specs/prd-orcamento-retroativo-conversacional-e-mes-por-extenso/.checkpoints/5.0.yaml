@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-orcamento-retroativo-conversacional-e-mes-por-extenso/5.0_execution_report.md
-summary: Wiring da criacao conversacional de orcamento (tool+workflow+continuer+reaper) no module.go e tryBudgetCreation no consumer, com fix RF-26/RF-30 de mensagem especifica e run auditavel.
-timestamp: 2026-07-09T14:16:43Z

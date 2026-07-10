@@ -80,6 +80,14 @@ func (s *OnboardingWorkflowPostgresResumeIntegrationSuite) TestInteg_RetomadaPos
 	s.True(startResult.Handled)
 	s.NotEmpty(startResult.Message, "RF-15: estado de espera persistido antes de pedir a primeira pergunta")
 
+	triggerAgent := agentmocks.NewAgent(s.T())
+	_, triggerResolver := s.buildResolver(triggerAgent)
+
+	triggerResult, triggerErr := triggerResolver.Execute(s.ctx, userID.String(), peer, "vamos começar")
+	s.Require().NoError(triggerErr)
+	s.True(triggerResult.Handled, "RF-03/D-07: resposta à boas-vindas é apenas gatilho de avanço para o passo de meta")
+	s.NotEmpty(triggerResult.Message, "passo de meta deve suspender com sua própria pergunta")
+
 	extract := struct {
 		Goal      string  `json:"goal"`
 		HasAmount bool    `json:"hasAmount"`
@@ -110,7 +118,7 @@ func (s *OnboardingWorkflowPostgresResumeIntegrationSuite) TestInteg_RetomadaPos
 	s.Contains(state, "comprar um carro", "RF-15: merge-patch aplicado sobre o snapshot preserva o estado rico acumulado (goal extraído)")
 }
 
-func (s *OnboardingWorkflowPostgresResumeIntegrationSuite) TestInteg_SemTTL_OnboardingPermaneceSuspendedEntrePassos_DecisaoDeDesign() {
+func (s *OnboardingWorkflowPostgresResumeIntegrationSuite) TestInteg_DentroDoTTL_OnboardingPermaneceSuspendedEntrePassos() {
 	userID := s.newUser()
 	peer := "peer-onboarding-ttl-" + uuid.NewString()
 
@@ -132,7 +140,7 @@ func (s *OnboardingWorkflowPostgresResumeIntegrationSuite) TestInteg_SemTTL_Onbo
 		workflows.OnboardingWorkflowID, userID.String(),
 	).Scan(&status)
 	s.Require().NoError(scanErr)
-	s.Equal("suspended", status, "onboarding não possui reaper/TTL wired em module.go por decisão de design: conversação multi-step de duração indeterminada, distinta das confirmações HITL de curta duração")
+	s.Equal("suspended", status, "onboarding tem reaper dedicado com TTL de 7 dias (workflows.OnboardingStaleAfter, D-12/ADR-005); 3 horas de inatividade não expira o run, distinto das confirmações HITL de curta duração")
 }
 
 func agentResultRawJSON(rawJSON []byte) agent.Result {

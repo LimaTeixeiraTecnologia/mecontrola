@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-cadastro-conversacional-cartao/8.0_execution_report.md
-summary: Testes de integracao Postgres (7/7), harness real-LLM (ratio 1.0) e regressao deterministica do incidente criados e validados; nenhum arquivo de producao alterado.
-timestamp: 2026-07-09T10:41:00Z

@@ -77,7 +77,7 @@ func (s *BudgetCreationWorkflowSuite) TestHandleBudgetTotalSlot() {
 			args: args{state: BudgetCreationState{UserID: s.userID, Competence: "2026-06", Awaiting: AwaitingBudgetTotal, ResumeText: "3500"}},
 			dependencies: dependencies{
 				agentMock: func() *agentmocks.Agent {
-					payload, _ := json.Marshal(incomeExtract{AmountBRL: 3500})
+					payload, _ := json.Marshal(monthlyBudgetExtract{AmountBRL: 3500})
 					s.agentMock.EXPECT().
 						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
 						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
@@ -97,7 +97,7 @@ func (s *BudgetCreationWorkflowSuite) TestHandleBudgetTotalSlot() {
 			args: args{state: BudgetCreationState{UserID: s.userID, Competence: "2026-06", Awaiting: AwaitingBudgetTotal, ResumeText: "não sei"}},
 			dependencies: dependencies{
 				agentMock: func() *agentmocks.Agent {
-					payload, _ := json.Marshal(incomeExtract{AmountBRL: 0})
+					payload, _ := json.Marshal(monthlyBudgetExtract{AmountBRL: 0})
 					s.agentMock.EXPECT().
 						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
 						Return(agentpkg.Result{RawJSON: payload}, nil).Once()

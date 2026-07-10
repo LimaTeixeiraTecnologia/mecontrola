@@ -112,12 +112,12 @@ func handleBudgetTotalSlot(ctx context.Context, state BudgetCreationState, a age
 			{Role: "system", Content: "Extraia o valor total do orçamento em reais (BRL) do texto do usuario. Retorne como numero decimal."},
 			{Role: "user", Content: resumeText},
 		},
-		Schema: &llm.Schema{Name: "income_extract", Strict: true, Schema: incomeSchema},
+		Schema: &llm.Schema{Name: "monthly_budget_extract", Strict: true, Schema: monthlyBudgetSchema},
 	})
 	if err != nil {
 		return budgetFail(state, fmt.Errorf("agents.budget_creation.total: parse: %w", err))
 	}
-	var extract incomeExtract
+	var extract monthlyBudgetExtract
 	if err := json.Unmarshal(extracted.RawJSON, &extract); err != nil {
 		return budgetFail(state, fmt.Errorf("agents.budget_creation.total: unmarshal: %w", err))
 	}
@@ -133,7 +133,7 @@ func handleBudgetTotalSlot(ctx context.Context, state BudgetCreationState, a age
 }
 
 func mustCentsFromBRL(amountBRL float64) int64 {
-	cents, err := DecideIncomeCents(amountBRL)
+	cents, err := DecideMonthlyBudgetCents(amountBRL)
 	if err != nil {
 		return 0
 	}

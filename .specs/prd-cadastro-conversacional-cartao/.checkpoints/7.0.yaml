@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-cadastro-conversacional-cartao/7.0_execution_report.md
-summary: Wiring de card-create-confirm (engine/def/continuer/reaper), tryContinueCardCreate no resume chain e instrucoes RF-13 do agente concluidos.
-timestamp: 2026-07-09T10:24:06Z

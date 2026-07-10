@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-orquestracao-conversacional-confiavel/3.0_execution_report.md
-summary: Cadeia de guardas conversacionais CoR implementada (guard_chain.go + guards/), absorvendo MultiItemGuard e adicionando verbatim_relay/empty_answer/internal_terms/success_without_tool; wiring em BuildMeControlaAgent via WithGuardChain preservando assinatura publica.
-timestamp: 2026-07-09T17:46:26Z

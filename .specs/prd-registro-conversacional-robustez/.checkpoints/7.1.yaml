@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-registro-conversacional-robustez/7.1_execution_report.md
-summary: Guard determinístico WithMultiItemGuard elimina 100% a variância estatística do G6 (RF-21); G5 e demais cenários sem regressão.
-timestamp: 2026-07-09T00:17:04Z

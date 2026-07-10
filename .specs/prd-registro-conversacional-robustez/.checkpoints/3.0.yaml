@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-registro-conversacional-robustez/3.0_execution_report.md
-summary: "Fim do swallow em executeWithIdempotency/executeDirectWrite/validateCategoryForWrite (StepStatusFailed + erro real); Run auditavel em platform_runs no resume (pending_entry_continuer.go) e no turno de tool-calling (runtime.go); span de erro pesquisavel + log ERROR com thread_id/run_id/wamid em ambos os turnos."
-timestamp: "2026-07-08T21:26:23Z"

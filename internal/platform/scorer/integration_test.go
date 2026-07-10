@@ -46,9 +46,9 @@ func (s *ScorerResultStoreIntegrationSuite) insertRun(platformThreadID uuid.UUID
 	id := uuid.New()
 	_, err := s.db.ExecContext(s.ctx, `
 		INSERT INTO mecontrola.platform_runs
-			(id, platform_thread_id, resource_id, thread_id, status, started_at)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		id, platformThreadID, "res-"+id.String(), "thr-"+id.String(), "running", time.Now().UTC(),
+			(id, platform_thread_id, resource_id, thread_id, correlation_key, status, started_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		id, platformThreadID, "res-"+id.String(), "thr-"+id.String(), "ck-"+id.String(), "running", time.Now().UTC(),
 	)
 	s.Require().NoError(err)
 	return id

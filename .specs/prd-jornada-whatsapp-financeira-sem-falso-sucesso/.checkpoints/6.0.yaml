@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-jornada-whatsapp-financeira-sem-falso-sucesso/6.0_execution_report.md
-summary: Identidade canonica com resolve_path (tipo fechado, ensureIdentityLink mesma tx via InsertIfAbsent+SAVEPOINT, coluna auth_events.resolve_path)
-timestamp: 2026-07-10T13:57:41Z

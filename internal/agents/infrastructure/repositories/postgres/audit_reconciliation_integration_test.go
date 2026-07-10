@@ -14,7 +14,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/reconciliation"
-	agentspostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/postgres"
+	agentspostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/repositories/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"

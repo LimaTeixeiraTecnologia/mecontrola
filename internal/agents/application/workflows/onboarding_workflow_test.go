@@ -5,12 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	interfacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces/mocks"
@@ -239,7 +243,34 @@ func (s *OnboardingWorkflowSuite) TestOnboardingState_MergePatch_PreservesGoalVa
 	s.Equal("sim, exatamente", result.ResumeText)
 }
 
-func (s *OnboardingWorkflowSuite) TestDecideIncomeCents() {
+func (s *OnboardingWorkflowSuite) TestOnboardingState_MergePatch_PreservesMonthlyBudgetAndReviewAwait() {
+	codec := workflow.NewCodec[OnboardingState]()
+	base := OnboardingState{
+		Phase:              PhaseBudgetReview,
+		UserID:             "user-1",
+		Goal:               "comprar uma casa",
+		MonthlyBudgetCents: 1350000,
+		ReviewAwait:        reviewAwaitConfirm,
+		Allocations:        map[string]int{"expense.custo_fixo": 4000},
+	}
+
+	baseBytes, err := codec.Encode(base)
+	s.Require().NoError(err)
+
+	patch := []byte(`{"resumeText":"sim"}`)
+	merged, err := codec.MergePatch(baseBytes, patch)
+	s.Require().NoError(err)
+
+	result, err := codec.Decode(merged)
+	s.Require().NoError(err)
+
+	s.Equal(int64(1350000), result.MonthlyBudgetCents)
+	s.Equal(reviewAwaitConfirm, result.ReviewAwait)
+	s.Equal(4000, result.Allocations["expense.custo_fixo"])
+	s.Equal("sim", result.ResumeText)
+}
+
+func (s *OnboardingWorkflowSuite) TestDecideMonthlyBudgetCents() {
 	type args struct {
 		amountBRL float64
 	}
@@ -271,8 +302,46 @@ func (s *OnboardingWorkflowSuite) TestDecideIncomeCents() {
 	}
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			cents, err := DecideIncomeCents(scenario.args.amountBRL)
+			cents, err := DecideMonthlyBudgetCents(scenario.args.amountBRL)
 			scenario.expect(cents, err)
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestCompetenceLocationFallsBackToUTC() {
+	saoPaulo, loadErr := time.LoadLocation("America/Sao_Paulo")
+	scenarios := []struct {
+		name   string
+		loc    *time.Location
+		err    error
+		expect func(loc *time.Location)
+	}{
+		{
+			name:   "deve cair para UTC quando LoadLocation falha (runtime distroless sem tzdata)",
+			loc:    nil,
+			err:    errors.New("unknown time zone America/Sao_Paulo"),
+			expect: func(loc *time.Location) { s.NotNil(loc); s.Equal(time.UTC, loc) },
+		},
+		{
+			name:   "deve cair para UTC quando loc e nil sem erro",
+			loc:    nil,
+			err:    nil,
+			expect: func(loc *time.Location) { s.NotNil(loc); s.Equal(time.UTC, loc) },
+		},
+		{
+			name:   "deve preservar a localizacao carregada com sucesso",
+			loc:    saoPaulo,
+			err:    loadErr,
+			expect: func(loc *time.Location) { s.NotNil(loc); s.Equal(saoPaulo, loc) },
+		},
+	}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			s.NotPanics(func() {
+				loc := competenceLocation(scenario.loc, scenario.err)
+				_ = time.Now().In(loc).Format("2006-01")
+				scenario.expect(loc)
+			})
 		})
 	}
 }
@@ -413,7 +482,7 @@ func (s *OnboardingWorkflowSuite) TestDecideAllocationsBP() {
 			},
 		},
 		{
-			name: "reais que nao somam a renda deve retornar erro amigavel",
+			name: "reais que nao somam ao orcamento mensal deve retornar erro amigavel",
 			args: args{kind: allocationInputReais, values: map[string]float64{
 				"expense.custo_fixo": 5400, "expense.conhecimento": 1350, "expense.prazeres": 1350,
 				"expense.metas": 1350, "expense.liberdade_financeira": 2700,
@@ -421,7 +490,7 @@ func (s *OnboardingWorkflowSuite) TestDecideAllocationsBP() {
 			expect: func(bp map[string]int, err error) {
 				s.Error(err)
 				s.Nil(bp)
-				s.Contains(err.Error(), "renda")
+				s.Contains(err.Error(), "orçamento mensal")
 			},
 		},
 	}
@@ -558,6 +627,36 @@ func (s *OnboardingWorkflowSuite) TestParseOnboardingPhase() {
 			expect: func(phase OnboardingPhase, err error) { s.NoError(err); s.Equal(PhaseWelcome, phase) },
 		},
 		{
+			name:   "deve parsear goal",
+			args:   args{s: "goal"},
+			expect: func(phase OnboardingPhase, err error) { s.NoError(err); s.Equal(PhaseGoal, phase) },
+		},
+		{
+			name:   "deve parsear monthly_budget",
+			args:   args{s: "monthly_budget"},
+			expect: func(phase OnboardingPhase, err error) { s.NoError(err); s.Equal(PhaseMonthlyBudget, phase) },
+		},
+		{
+			name:   "deve parsear budget_review",
+			args:   args{s: "budget_review"},
+			expect: func(phase OnboardingPhase, err error) { s.NoError(err); s.Equal(PhaseBudgetReview, phase) },
+		},
+		{
+			name:   "deve parsear activation",
+			args:   args{s: "activation"},
+			expect: func(phase OnboardingPhase, err error) { s.NoError(err); s.Equal(PhaseActivation, phase) },
+		},
+		{
+			name:   "deve parsear recurrence",
+			args:   args{s: "recurrence"},
+			expect: func(phase OnboardingPhase, err error) { s.NoError(err); s.Equal(PhaseRecurrence, phase) },
+		},
+		{
+			name:   "deve parsear cards",
+			args:   args{s: "cards"},
+			expect: func(phase OnboardingPhase, err error) { s.NoError(err); s.Equal(PhaseCards, phase) },
+		},
+		{
 			name:   "deve parsear conclusion",
 			args:   args{s: "conclusion"},
 			expect: func(phase OnboardingPhase, err error) { s.NoError(err); s.Equal(PhaseConclusion, phase) },
@@ -567,11 +666,131 @@ func (s *OnboardingWorkflowSuite) TestParseOnboardingPhase() {
 			args:   args{s: "invalid"},
 			expect: func(phase OnboardingPhase, err error) { s.Error(err); s.Equal(OnboardingPhase(0), phase) },
 		},
+		{
+			name:   "deve retornar erro para fase antiga removida",
+			args:   args{s: "monthly_income"},
+			expect: func(phase OnboardingPhase, err error) { s.Error(err); s.Equal(OnboardingPhase(0), phase) },
+		},
 	}
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			phase, err := ParseOnboardingPhase(scenario.args.s)
 			scenario.expect(phase, err)
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestOnboardingPhase_String_RoundTrip() {
+	phases := []OnboardingPhase{
+		PhaseWelcome, PhaseGoal, PhaseMonthlyBudget, PhaseBudgetReview,
+		PhaseActivation, PhaseRecurrence, PhaseCards, PhaseConclusion,
+	}
+	for _, phase := range phases {
+		s.Run(phase.String(), func() {
+			s.True(phase.IsValid())
+			parsed, err := ParseOnboardingPhase(phase.String())
+			s.NoError(err)
+			s.Equal(phase, parsed)
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestOnboardingPhase_IsValid_ZeroValue() {
+	var zero OnboardingPhase
+	s.False(zero.IsValid())
+	s.Equal("unknown", zero.String())
+}
+
+func (s *OnboardingWorkflowSuite) TestParseReviewAwaitKind() {
+	type args struct {
+		s string
+	}
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(kind reviewAwaitKind, err error)
+	}{
+		{
+			name: "deve parsear distribution",
+			args: args{s: "distribution"},
+			expect: func(kind reviewAwaitKind, err error) {
+				s.NoError(err)
+				s.Equal(reviewAwaitDistribution, kind)
+			},
+		},
+		{
+			name: "deve parsear confirm",
+			args: args{s: "confirm"},
+			expect: func(kind reviewAwaitKind, err error) {
+				s.NoError(err)
+				s.Equal(reviewAwaitConfirm, kind)
+			},
+		},
+		{
+			name: "deve retornar erro para valor invalido",
+			args: args{s: "invalid"},
+			expect: func(kind reviewAwaitKind, err error) {
+				s.Error(err)
+				s.Equal(reviewAwaitKind(0), kind)
+			},
+		},
+	}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			kind, err := parseReviewAwaitKind(scenario.args.s)
+			scenario.expect(kind, err)
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestReviewAwaitKind_IsValid_ZeroValue() {
+	var zero reviewAwaitKind
+	s.False(zero.IsValid())
+	s.Equal("unknown", zero.String())
+	s.True(reviewAwaitDistribution.IsValid())
+	s.True(reviewAwaitConfirm.IsValid())
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildWelcomeStep() {
+	type args struct {
+		state OnboardingState
+	}
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(out workflow.StepOutput[OnboardingState], err error)
+	}{
+		{
+			name: "primeira entrada deve suspender com boas-vindas isolada sem meta orcamento renda ou cartao",
+			args: args{state: OnboardingState{UserID: "u1"}},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.NotNil(out.Suspend)
+				s.Equal(welcomePrompt, out.Suspend.Prompt)
+				s.NotContains(out.Suspend.Prompt, "?")
+				s.NotContains(out.Suspend.Prompt, "orçamento")
+				s.NotContains(out.Suspend.Prompt, "renda")
+				s.NotContains(out.Suspend.Prompt, "cartão")
+				s.Equal(PhaseWelcome, out.State.Phase)
+			},
+		},
+		{
+			name: "resume com qualquer texto deve completar ignorando o conteudo (D-07)",
+			args: args{state: OnboardingState{UserID: "u1", Phase: PhaseWelcome, ResumeText: "texto irrelevante que nao deve virar objetivo"}},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.Empty(out.State.ResumeText)
+				s.Empty(out.State.Goal)
+			},
+		},
+	}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			step := workflow.NewStepFunc(stepWelcomeID, BuildWelcomeStep())
+			out, err := step.Execute(s.ctx, scenario.args.state)
+			scenario.expect(out, err)
 		})
 	}
 }
@@ -590,7 +809,7 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 		expect       func(out workflow.StepOutput[OnboardingState], err error)
 	}{
 		{
-			name:         "primeira mensagem deve saudar e ja perguntar o objetivo",
+			name:         "primeira mensagem deve perguntar o objetivo sem preambulo de boas-vindas",
 			args:         args{state: OnboardingState{UserID: "u1"}},
 			dependencies: dependencies{agentMock: s.agentMock},
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
@@ -602,6 +821,7 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 				s.Contains(out.Suspend.Prompt, "objetivo")
 				s.Contains(out.Suspend.Prompt, "valor da meta")
 				s.Contains(out.Suspend.Prompt, "R$ 400.000,00")
+				s.NotContains(out.Suspend.Prompt, "Bem-vindo")
 				s.Equal(PhaseGoal, out.State.Phase)
 			},
 		},
@@ -664,12 +884,12 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 				s.Equal(workflow.StepStatusSuspended, out.Status)
 				s.Equal(goalReprompt, out.Suspend.Prompt)
 				s.Empty(out.State.Goal)
-				s.True(out.State.GoalValueAsked)
+				s.False(out.State.GoalValueAsked)
 			},
 		},
 		{
-			name: "resume da repergunta combinada com objetivo desta vez valido nao deve reperguntar valor de novo",
-			args: args{state: OnboardingState{UserID: "u1", GoalValueAsked: true, ResumeText: "quero viajar"}},
+			name: "resume da repergunta de objetivo com meta valida sem valor deve honrar a pergunta opcional de valor",
+			args: args{state: OnboardingState{UserID: "u1", GoalValueAsked: false, ResumeText: "quero viajar"}},
 			dependencies: dependencies{
 				agentMock: func() *agentmocks.Agent {
 					payload, _ := json.Marshal(goalWithValueExtract{Goal: "viajar", HasAmount: false, AmountBRL: 0})
@@ -681,7 +901,8 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 			},
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
-				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(goalValueReprompt, out.Suspend.Prompt)
 				s.Equal("viajar", out.State.Goal)
 				s.Equal(int64(0), out.State.GoalValueCents)
 				s.True(out.State.GoalValueAsked)
@@ -896,7 +1117,7 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep_NoValueCombinationCompletesW
 	}
 }
 
-func (s *OnboardingWorkflowSuite) TestBuildIncomeStep() {
+func (s *OnboardingWorkflowSuite) TestBuildMonthlyBudgetStep() {
 	type args struct {
 		state OnboardingState
 	}
@@ -910,22 +1131,26 @@ func (s *OnboardingWorkflowSuite) TestBuildIncomeStep() {
 		expect       func(out workflow.StepOutput[OnboardingState], err error)
 	}{
 		{
-			name:         "primeira chamada deve perguntar a renda de forma deterministica",
+			name:         "primeira chamada deve apresentar as 5 categorias e perguntar o orcamento mensal em mensagem unica",
 			args:         args{state: OnboardingState{UserID: "u1"}},
 			dependencies: dependencies{agentMock: s.agentMock},
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
-				s.Equal(incomePrompt, out.Suspend.Prompt)
-				s.Equal(PhaseMonthlyIncome, out.State.Phase)
+				s.Equal(monthlyBudgetPrompt, out.Suspend.Prompt)
+				s.Contains(out.Suspend.Prompt, "Antes de montar seu planejamento, deixa eu te mostrar como organizamos o dinheiro por aqui. Tudo vive em apenas 5 categorias: Custo Fixo, Conhecimento, Prazeres, Metas e Liberdade Financeira.")
+				s.Contains(out.Suspend.Prompt, "orçamento mensal")
+				s.NotContains(out.Suspend.Prompt, "renda")
+				s.NotContains(out.Suspend.Prompt, "Faz sentido?")
+				s.Equal(PhaseMonthlyBudget, out.State.Phase)
 			},
 		},
 		{
-			name: "resume com renda valida deve completar",
+			name: "resume com orcamento valido deve completar e persistir MonthlyBudgetCents",
 			args: args{state: OnboardingState{UserID: "u1", ResumeText: "R$ 13.500,00"}},
 			dependencies: dependencies{
 				agentMock: func() *agentmocks.Agent {
-					payload, _ := json.Marshal(incomeExtract{AmountBRL: 13500})
+					payload, _ := json.Marshal(monthlyBudgetExtract{AmountBRL: 13500})
 					s.agentMock.EXPECT().
 						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
 						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
@@ -935,20 +1160,74 @@ func (s *OnboardingWorkflowSuite) TestBuildIncomeStep() {
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusCompleted, out.Status)
-				s.Equal(int64(1350000), out.State.IncomeCents)
+				s.Equal(int64(1350000), out.State.MonthlyBudgetCents)
+				s.Empty(out.State.ResumeText)
+			},
+		},
+		{
+			name: "resume sem valor positivo identificavel deve reperguntar com exemplo em reais sem criar nada",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "nao sei"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(monthlyBudgetExtract{AmountBRL: 0})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(monthlyBudgetReprompt, out.Suspend.Prompt)
+				s.Contains(out.Suspend.Prompt, "R$ 3.500,00")
+				s.Equal(int64(0), out.State.MonthlyBudgetCents)
+				s.Empty(out.State.ResumeText)
+			},
+		},
+		{
+			name: "falha do parser deve falhar o step",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "R$ 3.000"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{}, errors.New("llm error")).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.Error(err)
+				s.Equal(workflow.StepStatusFailed, out.Status)
+			},
+		},
+		{
+			name: "json invalido deve falhar o step",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "R$ 3.000"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: []byte("nao-e-json")}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.Error(err)
+				s.Equal(workflow.StepStatusFailed, out.Status)
 			},
 		},
 	}
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			step := workflow.NewStepFunc(stepIncomeID, BuildIncomeStep(scenario.dependencies.agentMock))
+			step := workflow.NewStepFunc(stepMonthlyBudgetID, BuildMonthlyBudgetStep(scenario.dependencies.agentMock))
 			out, err := step.Execute(s.ctx, scenario.args.state)
 			scenario.expect(out, err)
 		})
 	}
 }
 
-func (s *OnboardingWorkflowSuite) TestBuildMethodologyStep() {
+func (s *OnboardingWorkflowSuite) TestBuildBudgetReviewStep() {
 	type args struct {
 		state OnboardingState
 	}
@@ -963,8 +1242,8 @@ func (s *OnboardingWorkflowSuite) TestBuildMethodologyStep() {
 		expect       func(out workflow.StepOutput[OnboardingState], err error)
 	}{
 		{
-			name: "primeira chamada deve suspender com sugestao pre-preenchida em R$ e %",
-			args: args{state: OnboardingState{UserID: "u1", IncomeCents: 1350000}},
+			name: "primeira chamada deve suspender com sugestao pre-preenchida em R$ e % e ReviewAwait=distribution",
+			args: args{state: OnboardingState{UserID: "u1", MonthlyBudgetCents: 1350000}},
 			dependencies: dependencies{
 				agentMock: s.agentMock,
 				budgetsMock: func() *interfacemocks.BudgetPlanner {
@@ -981,11 +1260,16 @@ func (s *OnboardingWorkflowSuite) TestBuildMethodologyStep() {
 				s.Contains(out.Suspend.Prompt, "R$")
 				s.Contains(out.Suspend.Prompt, "40%")
 				s.Contains(out.Suspend.Prompt, "💰 Custo Fixo")
+				s.Equal(reviewAwaitDistribution, out.State.ReviewAwait)
+				s.Equal(PhaseBudgetReview, out.State.Phase)
 			},
 		},
 		{
-			name: "resume confirmando deve aplicar a distribuicao oficial",
-			args: args{state: OnboardingState{UserID: "u1", IncomeCents: 1350000, ResumeText: "sim"}},
+			name: "resume em reviewAwaitDistribution confirmando deve aplicar distribuicao oficial, recriar draft e suspender no resumo",
+			args: args{state: OnboardingState{
+				UserID: "11111111-1111-1111-1111-111111111111", Goal: "economizar",
+				MonthlyBudgetCents: 1350000, ResumeText: "sim", ReviewAwait: reviewAwaitDistribution,
+			}},
 			dependencies: dependencies{
 				agentMock: func() *agentmocks.Agent {
 					payload, _ := json.Marshal(allocationInputExtract{Action: "confirm"})
@@ -997,20 +1281,39 @@ func (s *OnboardingWorkflowSuite) TestBuildMethodologyStep() {
 				budgetsMock: func() *interfacemocks.BudgetPlanner {
 					s.budgetsMock.EXPECT().
 						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
-						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Twice()
+					s.budgetsMock.EXPECT().
+						GetMonthlySummary(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+						Return(interfaces.BudgetSummary{}, interfaces.ErrBudgetNotFound).Once()
+					s.budgetsMock.EXPECT().
+						CreateBudget(mock.Anything, mock.MatchedBy(func(d interfaces.DraftBudget) bool {
+							sum := 0
+							for _, a := range d.Allocations {
+								sum += a.BasisPoints
+							}
+							return sum == 10000
+						})).
+						Return(interfaces.BudgetRef{}, nil).Once()
 					return s.budgetsMock
 				}(),
 			},
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
-				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Contains(out.Suspend.Prompt, "revisar a distribuição")
+				s.Contains(out.Suspend.Prompt, "economizar")
 				s.Equal(4000, out.State.Allocations["expense.custo_fixo"])
 				s.Equal(3000, out.State.Allocations["expense.liberdade_financeira"])
+				s.Equal(reviewAwaitConfirm, out.State.ReviewAwait)
+				s.Empty(out.State.ResumeText)
 			},
 		},
 		{
-			name: "resume com valores em reais deve converter para basis points",
-			args: args{state: OnboardingState{UserID: "u1", IncomeCents: 1350000, ResumeText: "custo 5400..."}},
+			name: "resume em reviewAwaitDistribution com valores em reais deve converter para basis points e recriar draft existente",
+			args: args{state: OnboardingState{
+				UserID: "11111111-1111-1111-1111-111111111111", Goal: "economizar",
+				MonthlyBudgetCents: 1350000, ResumeText: "custo 5400...", ReviewAwait: reviewAwaitDistribution,
+			}},
 			dependencies: dependencies{
 				agentMock: func() *agentmocks.Agent {
 					payload, _ := json.Marshal(allocationInputExtract{
@@ -1025,19 +1328,31 @@ func (s *OnboardingWorkflowSuite) TestBuildMethodologyStep() {
 				budgetsMock: func() *interfacemocks.BudgetPlanner {
 					s.budgetsMock.EXPECT().
 						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
-						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Twice()
+					s.budgetsMock.EXPECT().
+						GetMonthlySummary(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+						Return(interfaces.BudgetSummary{State: "draft"}, nil).Once()
+					s.budgetsMock.EXPECT().
+						DeleteDraftBudget(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+						Return(nil).Once()
+					s.budgetsMock.EXPECT().
+						CreateBudget(mock.Anything, mock.AnythingOfType("interfaces.DraftBudget")).
+						Return(interfaces.BudgetRef{}, nil).Once()
 					return s.budgetsMock
 				}(),
 			},
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
-				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
 				s.Equal(4000, out.State.Allocations["expense.custo_fixo"])
+				s.Equal(reviewAwaitConfirm, out.State.ReviewAwait)
 			},
 		},
 		{
-			name: "resume invalido deve re-suspender com mensagem deterministica sem 3a pessoa",
-			args: args{state: OnboardingState{UserID: "u1", IncomeCents: 1350000, ResumeText: "40 10 10 10 20"}},
+			name: "resume em reviewAwaitDistribution com soma que nao fecha deve reprompt sem ativar, mantendo mesmo sub-estado",
+			args: args{state: OnboardingState{
+				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "40 10 10 10 20", ReviewAwait: reviewAwaitDistribution,
+			}},
 			dependencies: dependencies{
 				agentMock: func() *agentmocks.Agent {
 					payload, _ := json.Marshal(allocationInputExtract{
@@ -1064,59 +1379,14 @@ func (s *OnboardingWorkflowSuite) TestBuildMethodologyStep() {
 				s.NotContains(out.Suspend.Prompt, "o usuário")
 				s.NotContains(out.Suspend.Prompt, "você orienta")
 				s.Empty(out.State.ResumeText)
-			},
-		},
-	}
-	for _, scenario := range scenarios {
-		s.Run(scenario.name, func() {
-			step := workflow.NewStepFunc(stepMethodologyID, BuildMethodologyStep(scenario.dependencies.agentMock, scenario.dependencies.budgetsMock))
-			out, err := step.Execute(s.ctx, scenario.args.state)
-			scenario.expect(out, err)
-		})
-	}
-}
-
-func (s *OnboardingWorkflowSuite) TestBuildSummaryStep() {
-	type args struct {
-		state OnboardingState
-	}
-	type dependencies struct {
-		agentMock   *agentmocks.Agent
-		budgetsMock *interfacemocks.BudgetPlanner
-	}
-	validState := OnboardingState{
-		UserID: "u1", Goal: "economizar", IncomeCents: 1350000,
-		Allocations: defaultDistributionBP,
-	}
-	scenarios := []struct {
-		name         string
-		args         args
-		dependencies dependencies
-		expect       func(out workflow.StepOutput[OnboardingState], err error)
-	}{
-		{
-			name: "primeira chamada deve suspender com resumo deterministico",
-			args: args{state: validState},
-			dependencies: dependencies{
-				agentMock: s.agentMock,
-				budgetsMock: func() *interfacemocks.BudgetPlanner {
-					s.budgetsMock.EXPECT().
-						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
-						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
-					return s.budgetsMock
-				}(),
-			},
-			expect: func(out workflow.StepOutput[OnboardingState], err error) {
-				s.NoError(err)
-				s.Equal(workflow.StepStatusSuspended, out.Status)
-				s.Contains(out.Suspend.Prompt, "revisar")
-				s.Contains(out.Suspend.Prompt, "economizar")
-				s.Equal(PhaseSummary, out.State.Phase)
+				s.Equal(reviewAwaitDistribution, out.State.ReviewAwait)
 			},
 		},
 		{
-			name: "resume com confirmacao deve completar",
-			args: args{state: OnboardingState{UserID: "u1", Goal: "economizar", ResumeText: "sim, confirmo"}},
+			name: "resume em reviewAwaitConfirm com sim deve completar e avancar para activation",
+			args: args{state: OnboardingState{
+				UserID: "u1", Goal: "economizar", ResumeText: "sim, confirmo", ReviewAwait: reviewAwaitConfirm,
+			}},
 			dependencies: dependencies{
 				agentMock: func() *agentmocks.Agent {
 					payload, _ := json.Marshal(yesNoExtract{Confirmed: true})
@@ -1134,8 +1404,11 @@ func (s *OnboardingWorkflowSuite) TestBuildSummaryStep() {
 			},
 		},
 		{
-			name: "resume sem confirmacao deve re-suspender de forma deterministica",
-			args: args{state: OnboardingState{UserID: "u1", Goal: "economizar", ResumeText: "nao"}},
+			name: "resume em reviewAwaitConfirm com nao deve reabrir distribuicao (D-09) sem ativar parcial",
+			args: args{state: OnboardingState{
+				UserID: "u1", Goal: "economizar", MonthlyBudgetCents: 1350000,
+				ResumeText: "nao", ReviewAwait: reviewAwaitConfirm,
+			}},
 			dependencies: dependencies{
 				agentMock: func() *agentmocks.Agent {
 					payload, _ := json.Marshal(yesNoExtract{Confirmed: false})
@@ -1144,18 +1417,51 @@ func (s *OnboardingWorkflowSuite) TestBuildSummaryStep() {
 						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
 					return s.agentMock
 				}(),
-				budgetsMock: s.budgetsMock,
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					s.budgetsMock.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
+					return s.budgetsMock
+				}(),
 			},
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
-				s.Equal(summaryReprompt, out.Suspend.Prompt)
+				s.Contains(out.Suspend.Prompt, "Aceita esta sugestão")
+				s.Equal(reviewAwaitDistribution, out.State.ReviewAwait)
 				s.Empty(out.State.ResumeText)
 			},
 		},
 		{
-			name: "deve falhar quando execute retorna erro",
-			args: args{state: OnboardingState{UserID: "u1", Goal: "economizar", ResumeText: "sim"}},
+			name: "resume em reviewAwaitConfirm ambiguo deve reabrir distribuicao (D-09)",
+			args: args{state: OnboardingState{
+				UserID: "u1", Goal: "economizar", MonthlyBudgetCents: 1350000,
+				ResumeText: "talvez", ReviewAwait: reviewAwaitConfirm,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(yesNoExtract{Confirmed: false})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					s.budgetsMock.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
+					return s.budgetsMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(reviewAwaitDistribution, out.State.ReviewAwait)
+			},
+		},
+		{
+			name: "deve falhar quando execute retorna erro em reviewAwaitConfirm",
+			args: args{state: OnboardingState{UserID: "u1", Goal: "economizar", ResumeText: "sim", ReviewAwait: reviewAwaitConfirm}},
 			dependencies: dependencies{
 				agentMock: func() *agentmocks.Agent {
 					s.agentMock.EXPECT().
@@ -1173,14 +1479,14 @@ func (s *OnboardingWorkflowSuite) TestBuildSummaryStep() {
 	}
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			step := workflow.NewStepFunc(stepSummaryID, BuildSummaryStep(scenario.dependencies.agentMock, scenario.dependencies.budgetsMock))
+			step := workflow.NewStepFunc(stepBudgetReviewID, BuildBudgetReviewStep(scenario.dependencies.agentMock, scenario.dependencies.budgetsMock))
 			out, err := step.Execute(s.ctx, scenario.args.state)
 			scenario.expect(out, err)
 		})
 	}
 }
 
-func (s *OnboardingWorkflowSuite) TestBuildDistributionStep() {
+func (s *OnboardingWorkflowSuite) TestBuildActivationStep() {
 	type args struct {
 		state OnboardingState
 	}
@@ -1188,9 +1494,9 @@ func (s *OnboardingWorkflowSuite) TestBuildDistributionStep() {
 		budgetsMock *interfacemocks.BudgetPlanner
 	}
 	baseState := OnboardingState{
-		UserID:      "11111111-1111-1111-1111-111111111111",
-		IncomeCents: 1350000,
-		Allocations: defaultDistributionBP,
+		UserID:             "11111111-1111-1111-1111-111111111111",
+		MonthlyBudgetCents: 1350000,
+		Allocations:        defaultDistributionBP,
 	}
 	scenarios := []struct {
 		name         string
@@ -1199,44 +1505,30 @@ func (s *OnboardingWorkflowSuite) TestBuildDistributionStep() {
 		expect       func(out workflow.StepOutput[OnboardingState], err error)
 	}{
 		{
-			name: "sem orcamento pre-existente deve criar e completar",
+			name: "deve ativar o orcamento e completar",
 			args: args{state: baseState},
 			dependencies: dependencies{
 				budgetsMock: func() *interfacemocks.BudgetPlanner {
 					s.budgetsMock.EXPECT().
-						GetMonthlySummary(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
-						Return(interfaces.BudgetSummary{}, interfaces.ErrBudgetNotFound).Once()
-					s.budgetsMock.EXPECT().
-						CreateBudget(mock.Anything, mock.MatchedBy(func(d interfaces.DraftBudget) bool {
-							sum := 0
-							for _, a := range d.Allocations {
-								sum += a.BasisPoints
-							}
-							return sum == 10000
-						})).
-						Return(interfaces.BudgetRef{}, nil).Once()
-					return s.budgetsMock
-				}(),
-			},
-			expect: func(out workflow.StepOutput[OnboardingState], err error) {
-				s.NoError(err)
-				s.Equal(workflow.StepStatusCompleted, out.Status)
-			},
-		},
-		{
-			name: "orcamento pre-existente em draft deve deletar e recriar",
-			args: args{state: baseState},
-			dependencies: dependencies{
-				budgetsMock: func() *interfacemocks.BudgetPlanner {
-					s.budgetsMock.EXPECT().
-						GetMonthlySummary(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
-						Return(interfaces.BudgetSummary{State: "draft"}, nil).Once()
-					s.budgetsMock.EXPECT().
-						DeleteDraftBudget(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+						ActivateBudget(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
 						Return(nil).Once()
+					return s.budgetsMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.Equal(PhaseActivation, out.State.Phase)
+			},
+		},
+		{
+			name: "deve ser idempotente quando o orcamento ja esta ativo",
+			args: args{state: baseState},
+			dependencies: dependencies{
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
 					s.budgetsMock.EXPECT().
-						CreateBudget(mock.Anything, mock.AnythingOfType("interfaces.DraftBudget")).
-						Return(interfaces.BudgetRef{}, nil).Once()
+						ActivateBudget(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+						Return(interfaces.ErrBudgetAlreadyActive).Once()
 					return s.budgetsMock
 				}(),
 			},
@@ -1246,71 +1538,355 @@ func (s *OnboardingWorkflowSuite) TestBuildDistributionStep() {
 			},
 		},
 		{
-			name: "orcamento pre-existente ativo deve reutilizar sem criar",
+			name: "deve falhar quando activate_budget retorna erro diferente de ja-ativo",
 			args: args{state: baseState},
 			dependencies: dependencies{
 				budgetsMock: func() *interfacemocks.BudgetPlanner {
 					s.budgetsMock.EXPECT().
-						GetMonthlySummary(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
-						Return(interfaces.BudgetSummary{State: "active"}, nil).Once()
+						ActivateBudget(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+						Return(errors.New("db down")).Once()
 					return s.budgetsMock
 				}(),
 			},
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
-				s.NoError(err)
-				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.Error(err)
+				s.Equal(workflow.StepStatusFailed, out.Status)
 			},
 		},
 	}
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			step := workflow.NewStepFunc(stepDistributionID, BuildDistributionStep(scenario.dependencies.budgetsMock))
+			step := workflow.NewStepFunc(stepActivationID, BuildActivationStep(scenario.dependencies.budgetsMock))
 			out, err := step.Execute(s.ctx, scenario.args.state)
 			scenario.expect(out, err)
 		})
 	}
 }
 
-func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_ActivateAlreadyActiveIsIdempotent() {
-	state := OnboardingState{UserID: "11111111-1111-1111-1111-111111111111", Goal: "economizar"}
-	s.budgetsMock.EXPECT().
-		ActivateBudget(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
-		Return(interfaces.ErrBudgetAlreadyActive).Once()
-
-	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.agentMock, s.budgetsMock, s.wmMock))
-	out, err := step.Execute(s.ctx, state)
-
-	s.NoError(err)
-	s.Equal(workflow.StepStatusSuspended, out.Status)
-	s.Equal(conclusionRecurrencePrompt, out.Suspend.Prompt)
+func recurrenceExtractJSON(confirmed bool) []byte {
+	b, _ := json.Marshal(yesNoExtract{Confirmed: confirmed})
+	return b
 }
 
-func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_AffirmativeCreatesRecurrence() {
-	state := OnboardingState{
-		UserID:     "11111111-1111-1111-1111-111111111111",
-		Goal:       "economizar",
-		ResumeText: "sim",
+func (s *OnboardingWorkflowSuite) TestBuildRecurrenceStep() {
+	type args struct {
+		state OnboardingState
 	}
-	payload, _ := json.Marshal(yesNoExtract{Confirmed: true})
-	s.agentMock.EXPECT().
-		Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
-		Return(agentpkg.Result{RawJSON: payload}, nil).Once()
-	s.budgetsMock.EXPECT().
-		CreateRecurrence(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string"), 12).
-		Return(nil).Once()
+	type dependencies struct {
+		agentMock   *agentmocks.Agent
+		budgetsMock *interfacemocks.BudgetPlanner
+	}
+	baseState := OnboardingState{
+		UserID:             "11111111-1111-1111-1111-111111111111",
+		Phase:              PhaseActivation,
+		MonthlyBudgetCents: 1350000,
+	}
+	scenarios := []struct {
+		name         string
+		args         args
+		dependencies dependencies
+		expect       func(out workflow.StepOutput[OnboardingState], err error)
+	}{
+		{
+			name: "primeira entrada deve suspender perguntando sobre recorrencia",
+			args: args{state: baseState},
+			dependencies: dependencies{
+				agentMock:   s.agentMock,
+				budgetsMock: s.budgetsMock,
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.NotNil(out.Suspend)
+				s.Equal(conclusionRecurrencePrompt, out.Suspend.Prompt)
+				s.Equal(PhaseRecurrence, out.State.Phase)
+			},
+		},
+		{
+			name: "resposta afirmativa deve criar recorrencia de 12 meses e completar",
+			args: args{state: OnboardingState{
+				UserID:             baseState.UserID,
+				Phase:              PhaseRecurrence,
+				MonthlyBudgetCents: baseState.MonthlyBudgetCents,
+				ResumeText:         "sim, quero repetir",
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: recurrenceExtractJSON(true)}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					s.budgetsMock.EXPECT().
+						CreateRecurrence(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string"), 12).
+						Return(nil).Once()
+					return s.budgetsMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.True(out.State.Recurrence)
+				s.Empty(out.State.ResumeText)
+			},
+		},
+		{
+			name: "resposta negativa nao deve criar recorrencia nem desfazer orcamento",
+			args: args{state: OnboardingState{
+				UserID:             baseState.UserID,
+				Phase:              PhaseRecurrence,
+				MonthlyBudgetCents: baseState.MonthlyBudgetCents,
+				ResumeText:         "não, obrigado",
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: recurrenceExtractJSON(false)}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: s.budgetsMock,
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.False(out.State.Recurrence)
+			},
+		},
+		{
+			name: "resposta ambigua deve seguir sem recorrencia e sem reprompt",
+			args: args{state: OnboardingState{
+				UserID:             baseState.UserID,
+				Phase:              PhaseRecurrence,
+				MonthlyBudgetCents: baseState.MonthlyBudgetCents,
+				ResumeText:         "sei lá, talvez",
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: recurrenceExtractJSON(false)}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: s.budgetsMock,
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.False(out.State.Recurrence)
+				s.NotEqual(workflow.StepStatusSuspended, out.Status)
+			},
+		},
+		{
+			name: "erro ao criar recorrencia deve falhar sem desfazer orcamento",
+			args: args{state: OnboardingState{
+				UserID:             baseState.UserID,
+				Phase:              PhaseRecurrence,
+				MonthlyBudgetCents: baseState.MonthlyBudgetCents,
+				ResumeText:         "sim",
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: recurrenceExtractJSON(true)}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					s.budgetsMock.EXPECT().
+						CreateRecurrence(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string"), 12).
+						Return(errors.New("db down")).Once()
+					return s.budgetsMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.Error(err)
+				s.Equal(workflow.StepStatusFailed, out.Status)
+			},
+		},
+	}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			step := workflow.NewStepFunc(stepRecurrenceID, BuildRecurrenceStep(scenario.dependencies.agentMock, scenario.dependencies.budgetsMock))
+			out, err := step.Execute(s.ctx, scenario.args.state)
+			scenario.expect(out, err)
+		})
+	}
+}
+
+func cardExtractJSON(t *testing.T, extract cardExtract) []byte {
+	t.Helper()
+	b, err := json.Marshal(extract)
+	if err != nil {
+		t.Fatalf("marshal card extract: %v", err)
+	}
+	return b
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildCardsStep() {
+	userID := "11111111-1111-1111-1111-111111111111"
+	userUUID := uuid.MustParse(userID)
+
+	s.Run("primeira entrada deve listar cartoes e suspender com o prompt", func() {
+		s.SetupTest()
+		s.cardsMock.EXPECT().ListCards(mock.Anything, userUUID).Return(nil, nil).Once()
+
+		step := workflow.NewStepFunc(stepCardsID, BuildCardsStep(s.agentMock, s.cardsMock))
+		out, err := step.Execute(s.ctx, OnboardingState{UserID: userID})
+
+		s.NoError(err)
+		s.Equal(workflow.StepStatusSuspended, out.Status)
+		s.NotNil(out.Suspend)
+		s.Equal(cardsPrompt(0), out.Suspend.Prompt)
+		s.Equal(PhaseCards, out.State.Phase)
+	})
+
+	s.Run("erro ao listar cartoes deve falhar o step", func() {
+		s.SetupTest()
+		s.cardsMock.EXPECT().ListCards(mock.Anything, userUUID).Return(nil, errors.New("db down")).Once()
+
+		step := workflow.NewStepFunc(stepCardsID, BuildCardsStep(s.agentMock, s.cardsMock))
+		out, err := step.Execute(s.ctx, OnboardingState{UserID: userID})
+
+		s.Error(err)
+		s.Equal(workflow.StepStatusFailed, out.Status)
+	})
+
+	s.Run("recusa imediata deve marcar CardsDone e completar sem chamar CreateCard", func() {
+		s.SetupTest()
+		s.agentMock.EXPECT().
+			Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+			Return(agentpkg.Result{RawJSON: cardExtractJSON(s.T(), cardExtract{WantsCard: false})}, nil).Once()
+
+		step := workflow.NewStepFunc(stepCardsID, BuildCardsStep(s.agentMock, s.cardsMock))
+		out, err := step.Execute(s.ctx, OnboardingState{UserID: userID, Phase: PhaseCards, ResumeText: "não, obrigado"})
+
+		s.NoError(err)
+		s.Equal(workflow.StepStatusCompleted, out.Status)
+		s.True(out.State.CardsDone)
+		s.cardsMock.AssertNotCalled(s.T(), "CreateCard", mock.Anything, mock.Anything)
+	})
+
+	s.Run("cartao valido deve criar e re-suspender perguntando por outro (loop)", func() {
+		s.SetupTest()
+		s.agentMock.EXPECT().
+			Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+			Return(agentpkg.Result{RawJSON: cardExtractJSON(s.T(), cardExtract{WantsCard: true, Nickname: "Nubank", Bank: "Nubank", DueDay: 10})}, nil).Once()
+		s.cardsMock.EXPECT().
+			CreateCard(mock.Anything, interfaces.NewCard{UserID: userUUID, Nickname: "Nubank", Bank: "Nubank", DueDay: 10}).
+			Return(interfaces.CardRef{}, nil).Once()
+		s.cardsMock.EXPECT().
+			ListCards(mock.Anything, userUUID).
+			Return([]interfaces.Card{{Nickname: "Nubank"}}, nil).Once()
+
+		step := workflow.NewStepFunc(stepCardsID, BuildCardsStep(s.agentMock, s.cardsMock))
+		out, err := step.Execute(s.ctx, OnboardingState{UserID: userID, Phase: PhaseCards, ResumeText: "Nubank, vencimento dia 10"})
+
+		s.NoError(err)
+		s.Equal(workflow.StepStatusSuspended, out.Status)
+		s.NotNil(out.Suspend)
+		s.Equal(cardsPrompt(1), out.Suspend.Prompt)
+		s.False(out.State.CardsDone)
+	})
+
+	s.Run("dois cartoes em turnos consecutivos devem criar ambos e encerrar apenas na recusa", func() {
+		s.SetupTest()
+		s.agentMock.EXPECT().
+			Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+			Return(agentpkg.Result{RawJSON: cardExtractJSON(s.T(), cardExtract{WantsCard: true, Nickname: "Nubank", Bank: "Nubank", DueDay: 10})}, nil).Once()
+		s.cardsMock.EXPECT().
+			CreateCard(mock.Anything, interfaces.NewCard{UserID: userUUID, Nickname: "Nubank", Bank: "Nubank", DueDay: 10}).
+			Return(interfaces.CardRef{}, nil).Once()
+		s.cardsMock.EXPECT().
+			ListCards(mock.Anything, userUUID).
+			Return([]interfaces.Card{{Nickname: "Nubank"}}, nil).Once()
+
+		step := workflow.NewStepFunc(stepCardsID, BuildCardsStep(s.agentMock, s.cardsMock))
+		firstOut, err := step.Execute(s.ctx, OnboardingState{UserID: userID, Phase: PhaseCards, ResumeText: "Nubank, vencimento dia 10"})
+		s.NoError(err)
+		s.Equal(workflow.StepStatusSuspended, firstOut.Status)
+		s.Equal(cardsPrompt(1), firstOut.Suspend.Prompt)
+
+		s.agentMock.EXPECT().
+			Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+			Return(agentpkg.Result{RawJSON: cardExtractJSON(s.T(), cardExtract{WantsCard: true, Nickname: "Inter", Bank: "Inter", DueDay: 5})}, nil).Once()
+		s.cardsMock.EXPECT().
+			CreateCard(mock.Anything, interfaces.NewCard{UserID: userUUID, Nickname: "Inter", Bank: "Inter", DueDay: 5}).
+			Return(interfaces.CardRef{}, nil).Once()
+		s.cardsMock.EXPECT().
+			ListCards(mock.Anything, userUUID).
+			Return([]interfaces.Card{{Nickname: "Nubank"}, {Nickname: "Inter"}}, nil).Once()
+
+		secondState := firstOut.State
+		secondState.ResumeText = "Inter, vencimento dia 5"
+		secondOut, err := step.Execute(s.ctx, secondState)
+		s.NoError(err)
+		s.Equal(workflow.StepStatusSuspended, secondOut.Status)
+		s.Equal(cardsPrompt(2), secondOut.Suspend.Prompt)
+
+		s.agentMock.EXPECT().
+			Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+			Return(agentpkg.Result{RawJSON: cardExtractJSON(s.T(), cardExtract{WantsCard: false})}, nil).Once()
+
+		thirdState := secondOut.State
+		thirdState.ResumeText = "não, é só isso"
+		thirdOut, err := step.Execute(s.ctx, thirdState)
+		s.NoError(err)
+		s.Equal(workflow.StepStatusCompleted, thirdOut.Status)
+		s.True(thirdOut.State.CardsDone)
+	})
+
+	s.Run("cartao invalido deve re-suspender com reprompt sem criar cartao parcial", func() {
+		s.SetupTest()
+		s.agentMock.EXPECT().
+			Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+			Return(agentpkg.Result{RawJSON: cardExtractJSON(s.T(), cardExtract{WantsCard: true, Nickname: "", Bank: "Nubank", DueDay: 10})}, nil).Once()
+
+		step := workflow.NewStepFunc(stepCardsID, BuildCardsStep(s.agentMock, s.cardsMock))
+		out, err := step.Execute(s.ctx, OnboardingState{UserID: userID, Phase: PhaseCards, ResumeText: "vencimento dia 10, banco Nubank"})
+
+		s.NoError(err)
+		s.Equal(workflow.StepStatusSuspended, out.Status)
+		s.Equal(cardsReprompt, out.Suspend.Prompt)
+		s.False(out.State.CardsDone)
+		s.cardsMock.AssertNotCalled(s.T(), "CreateCard", mock.Anything, mock.Anything)
+	})
+
+	s.Run("erro ao criar cartao deve falhar o step sem marcar CardsDone", func() {
+		s.SetupTest()
+		s.agentMock.EXPECT().
+			Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+			Return(agentpkg.Result{RawJSON: cardExtractJSON(s.T(), cardExtract{WantsCard: true, Nickname: "Nubank", Bank: "Nubank", DueDay: 10})}, nil).Once()
+		s.cardsMock.EXPECT().
+			CreateCard(mock.Anything, interfaces.NewCard{UserID: userUUID, Nickname: "Nubank", Bank: "Nubank", DueDay: 10}).
+			Return(interfaces.CardRef{}, errors.New("db down")).Once()
+
+		step := workflow.NewStepFunc(stepCardsID, BuildCardsStep(s.agentMock, s.cardsMock))
+		out, err := step.Execute(s.ctx, OnboardingState{UserID: userID, Phase: PhaseCards, ResumeText: "Nubank, vencimento dia 10"})
+
+		s.Error(err)
+		s.Equal(workflow.StepStatusFailed, out.Status)
+		s.False(out.State.CardsDone)
+	})
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_UpsertsWorkingMemoryAndSetsPhase() {
+	state := OnboardingState{UserID: "11111111-1111-1111-1111-111111111111", Goal: "economizar", CardsDone: true}
 	s.wmMock.EXPECT().
-		Upsert(mock.Anything, state.UserID, mock.AnythingOfType("string")).
+		Upsert(mock.Anything, state.UserID, "## Objetivo Financeiro\n\n"+state.Goal).
 		Return(nil).Once()
 	s.wmMock.EXPECT().
 		UpsertMetadata(mock.Anything, state.UserID, map[string]any{"objetivo_financeiro": state.Goal}).
 		Return(nil).Once()
 
-	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.agentMock, s.budgetsMock, s.wmMock))
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock))
 	out, err := step.Execute(s.ctx, state)
 
 	s.NoError(err)
 	s.Equal(workflow.StepStatusCompleted, out.Status)
-	s.True(out.State.Recurrence)
+	s.True(out.State.CardsDone)
+	s.Equal(PhaseConclusion, out.State.Phase)
 	s.Contains(out.State.FinalMessage, "economizar")
 }
 
@@ -1319,15 +1895,7 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WithGoalValuePersistsM
 		UserID:         "11111111-1111-1111-1111-111111111111",
 		Goal:           "comprar uma casa",
 		GoalValueCents: 40000000,
-		ResumeText:     "sim",
 	}
-	payload, _ := json.Marshal(yesNoExtract{Confirmed: true})
-	s.agentMock.EXPECT().
-		Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
-		Return(agentpkg.Result{RawJSON: payload}, nil).Once()
-	s.budgetsMock.EXPECT().
-		CreateRecurrence(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string"), 12).
-		Return(nil).Once()
 	s.wmMock.EXPECT().
 		Upsert(mock.Anything, state.UserID, "## Objetivo Financeiro\n\n"+state.Goal).
 		Return(nil).Once()
@@ -1338,7 +1906,7 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WithGoalValuePersistsM
 		}).
 		Return(nil).Once()
 
-	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.agentMock, s.budgetsMock, s.wmMock))
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock))
 	out, err := step.Execute(s.ctx, state)
 
 	s.NoError(err)
@@ -1349,14 +1917,9 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WithGoalValuePersistsM
 
 func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WithoutGoalValueOmitsMetadataKeyAndMarkdownUnchanged() {
 	state := OnboardingState{
-		UserID:     "11111111-1111-1111-1111-111111111111",
-		Goal:       "economizar",
-		ResumeText: "nao",
+		UserID: "11111111-1111-1111-1111-111111111111",
+		Goal:   "economizar",
 	}
-	payload, _ := json.Marshal(yesNoExtract{Confirmed: false})
-	s.agentMock.EXPECT().
-		Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
-		Return(agentpkg.Result{RawJSON: payload}, nil).Once()
 	s.wmMock.EXPECT().
 		Upsert(mock.Anything, state.UserID, "## Objetivo Financeiro\n\n"+state.Goal).
 		Return(nil).Once()
@@ -1364,14 +1927,55 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WithoutGoalValueOmitsM
 		UpsertMetadata(mock.Anything, state.UserID, map[string]any{"objetivo_financeiro": state.Goal}).
 		Return(nil).Once()
 
-	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.agentMock, s.budgetsMock, s.wmMock))
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock))
 	out, err := step.Execute(s.ctx, state)
 
 	s.NoError(err)
 	s.Equal(workflow.StepStatusCompleted, out.Status)
-	s.False(out.State.Recurrence)
 	s.Contains(out.State.FinalMessage, "economizar")
 	s.NotContains(out.State.FinalMessage, "meta de")
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_DoesNotReopenDistributionSummaryOrActivation() {
+	state := OnboardingState{
+		UserID:      "11111111-1111-1111-1111-111111111111",
+		Goal:        "economizar",
+		Allocations: defaultDistributionBP,
+		Recurrence:  true,
+	}
+	s.wmMock.EXPECT().
+		Upsert(mock.Anything, state.UserID, mock.AnythingOfType("string")).
+		Return(nil).Once()
+	s.wmMock.EXPECT().
+		UpsertMetadata(mock.Anything, state.UserID, mock.AnythingOfType("map[string]interface {}")).
+		Return(nil).Once()
+
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock))
+	out, err := step.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+	s.Equal(defaultDistributionBP, out.State.Allocations)
+	s.True(out.State.Recurrence)
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WorkingMemoryHasNoIncomeLine() {
+	state := OnboardingState{UserID: "11111111-1111-1111-1111-111111111111", Goal: "economizar"}
+	var capturedContent string
+	s.wmMock.EXPECT().
+		Upsert(mock.Anything, state.UserID, mock.AnythingOfType("string")).
+		Run(func(_ context.Context, _ string, content string) { capturedContent = content }).
+		Return(nil).Once()
+	s.wmMock.EXPECT().
+		UpsertMetadata(mock.Anything, state.UserID, mock.AnythingOfType("map[string]interface {}")).
+		Return(nil).Once()
+
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock))
+	_, err := step.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.NotContains(strings.ToLower(capturedContent), "renda")
+	s.NotContains(strings.ToLower(capturedContent), "orçamento")
 }
 
 func (s *OnboardingWorkflowSuite) TestConclusionFinalMessage_WithValueMentionsAmount() {
@@ -1397,6 +2001,65 @@ func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_IDAndStructure() {
 	s.NotNil(def.Root)
 	s.True(def.Durable)
 	s.Equal(3, def.MaxAttempts)
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_SequenceStartsAtWelcomeAndSuspendsFirstEntry() {
+	s.threadsMock.EXPECT().GetOrCreate(mock.Anything, mock.Anything, mock.Anything).
+		Return(memory.Thread{ID: uuid.New()}, nil).Maybe()
+	s.messagesMock.EXPECT().Append(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	def := BuildOnboardingWorkflow(s.agentMock, s.cardsMock, s.budgetsMock, s.wmMock, s.threadsMock, s.messagesMock)
+	out, err := def.Root.Execute(s.ctx, OnboardingState{UserID: "user-x", PeerID: "peer-x"})
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusSuspended, out.Status)
+	s.Equal(PhaseWelcome, out.State.Phase)
+	s.NotNil(out.Suspend)
+	s.Equal(welcomePrompt, out.Suspend.Prompt)
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_SequenceAdvancesWelcomeToGoalOnResume() {
+	s.threadsMock.EXPECT().GetOrCreate(mock.Anything, mock.Anything, mock.Anything).
+		Return(memory.Thread{ID: uuid.New()}, nil).Maybe()
+	s.messagesMock.EXPECT().Append(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	def := BuildOnboardingWorkflow(s.agentMock, s.cardsMock, s.budgetsMock, s.wmMock, s.threadsMock, s.messagesMock)
+	out, err := def.Root.Execute(s.ctx, OnboardingState{UserID: "user-x", PeerID: "peer-x", ResumeText: "vamos comecar"})
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusSuspended, out.Status)
+	s.Equal(PhaseGoal, out.State.Phase)
+	s.Equal("", out.State.ResumeText)
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_ActivationFailureProducesFailedStatusWithoutFalseSuccess() {
+	s.threadsMock.EXPECT().GetOrCreate(mock.Anything, mock.Anything, mock.Anything).
+		Return(memory.Thread{ID: uuid.New()}, nil).Maybe()
+	s.messagesMock.EXPECT().Append(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	s.budgetsMock.EXPECT().
+		ActivateBudget(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+		Return(errors.New("db down")).Once()
+
+	state := OnboardingState{
+		Phase:              PhaseActivation,
+		UserID:             "11111111-1111-1111-1111-111111111111",
+		PeerID:             "peer-x",
+		MonthlyBudgetCents: 1350000,
+		ReviewAwait:        0,
+		Allocations:        defaultDistributionBP,
+	}
+	out, err := workflow.NewStepFunc(stepActivationID, wrapStepWithMessages(BuildActivationStep(s.budgetsMock), s.threadsMock, s.messagesMock)).Execute(s.ctx, state)
+
+	s.Error(err)
+	s.Equal(workflow.StepStatusFailed, out.Status)
+	s.Empty(out.State.FinalMessage)
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildOnboardingReaper_UsesOnboardingWorkflowIDAndTTL() {
+	reaper := BuildOnboardingReaper(nil, fake.NewProvider())
+	s.NotNil(reaper)
+	s.Equal(7*24*3600, int(OnboardingStaleAfter.Seconds()))
+	s.Equal(100, OnboardingReaperBatch)
 }
 
 func (s *OnboardingWorkflowSuite) TestWrapStepWithMessages_AppendsOutboundOnSuspend() {
@@ -1472,4 +2135,80 @@ func (s *OnboardingWorkflowSuite) TestWelcomeGoalPromptHasNoThirdPersonLeak() {
 	s.NotContains(welcomeGoalPrompt, "o usuário")
 	s.NotContains(welcomeGoalPrompt, "peça")
 	s.True(strings.Contains(welcomeGoalPrompt, "Vamos começar?"))
+}
+
+func (s *OnboardingWorkflowSuite) TestM02_NoRendaTermInAnyOnboardingSurface() {
+	rendaPattern := regexp.MustCompile(`(?i)\brenda\b`)
+
+	sampleAllocations := suggestReturn(500000, defaultDistributionBP)
+	sampleState := OnboardingState{
+		UserID:             "user-m02",
+		Goal:               "juntar uma reserva",
+		MonthlyBudgetCents: 500000,
+	}
+
+	surfaces := map[string]string{
+		"welcomePrompt":                   welcomePrompt,
+		"welcomeGoalPrompt":               welcomeGoalPrompt,
+		"goalReprompt":                    goalReprompt,
+		"goalValueReprompt":               goalValueReprompt,
+		"monthlyBudgetPrompt":             monthlyBudgetPrompt,
+		"monthlyBudgetReprompt":           monthlyBudgetReprompt,
+		"cardsReprompt":                   cardsReprompt,
+		"conclusionRecurrencePrompt":      conclusionRecurrencePrompt,
+		"allocationInputSystemPrompt":     allocationInputSystemPrompt,
+		"summaryConfirmSystemPrompt":      summaryConfirmSystemPrompt,
+		"goalWithValueSystemPrompt":       goalWithValueSystemPrompt,
+		"goalValueSystemPrompt":           goalValueSystemPrompt,
+		"monthlyBudgetSystemPrompt":       monthlyBudgetSystemPrompt,
+		"cardsSystemPrompt":               cardsSystemPrompt,
+		"recurrenceSystemPrompt":          recurrenceSystemPrompt,
+		"cardsPrompt(0)":                  cardsPrompt(0),
+		"cardsPrompt(2)":                  cardsPrompt(2),
+		"methodologyPrompt":               methodologyPrompt(sampleAllocations),
+		"methodologyReprompt":             methodologyReprompt("valores não fecham", sampleAllocations),
+		"summaryPrompt":                   summaryPrompt(sampleState, sampleAllocations),
+		"conclusionFinalMessage_valor":    conclusionFinalMessage("juntar reserva", 100000),
+		"conclusionFinalMessage_semValor": conclusionFinalMessage("juntar reserva", 0),
+		"renderAllocationLines":           renderAllocationLines(sampleAllocations),
+	}
+
+	for label, text := range surfaces {
+		s.Falsef(rendaPattern.MatchString(text), "surface %s contém termo 'renda': %q", label, text)
+	}
+
+	decideErrors := []error{
+		func() error { _, err := DecideGoal(""); return err }(),
+		func() error { _, err := DecideMonthlyBudgetCents(0); return err }(),
+		DecideDistribution(map[string]int{"expense.custo_fixo": 10000}),
+		func() error {
+			_, err := DecideAllocationsBP(allocationInputPercent, map[string]float64{"expense.custo_fixo": -10}, 500000)
+			return err
+		}(),
+		func() error {
+			_, err := DecideAllocationsBP(allocationInputPercent, map[string]float64{"expense.custo_fixo": 50}, 500000)
+			return err
+		}(),
+		func() error {
+			_, err := DecideAllocationsBP(allocationInputReais, map[string]float64{"expense.custo_fixo": -10}, 500000)
+			return err
+		}(),
+		func() error {
+			_, err := DecideAllocationsBP(allocationInputReais, map[string]float64{"expense.custo_fixo": 100}, 500000)
+			return err
+		}(),
+		DecideCardEntry("", "", 0),
+		DecideCardEntry("Nubank", "Nubank", 40),
+		errInvalidOnboardingPhase,
+		errInvalidReviewAwaitKind,
+		errInvalidAllocationInput,
+		errAllocationConfirmWithValues,
+	}
+
+	for i, err := range decideErrors {
+		if err == nil {
+			continue
+		}
+		s.Falsef(rendaPattern.MatchString(err.Error()), "decide error[%d] contém termo 'renda': %q", i, err.Error())
+	}
 }

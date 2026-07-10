@@ -253,6 +253,8 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	cardCreateReaperJob := jobhandlers.NewCardCreateReaperJob("agents-card-create-reaper", cardCreateReaper, "")
 	budgetCreationReaper := workflows.BuildBudgetCreationReaper(workflowStore, deps.O11y)
 	budgetCreationReaperJob := jobhandlers.NewConfirmReaperJob("agents-budget-creation-reaper", budgetCreationReaper, "")
+	onboardingReaper := workflows.BuildOnboardingReaper(workflowStore, deps.O11y)
+	onboardingReaperJob := jobhandlers.NewConfirmReaperJob("agents-onboarding-reaper", onboardingReaper, "")
 
 	var whatsAppRoute func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome
 	if deps.OutboxPublisher != nil && deps.WhatsAppGateway != nil {
@@ -296,7 +298,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		HandleInbound:      handleInbound,
 		WhatsAppAgentRoute: whatsAppRoute,
 		EventHandlers:      eventHandlers,
-		Jobs:               []worker.Job{ledgerRetentionJob, confirmReaperJob, pendingEntryReaperJob, cardCreateReaperJob, budgetCreationReaperJob},
+		Jobs:               []worker.Job{ledgerRetentionJob, confirmReaperJob, pendingEntryReaperJob, cardCreateReaperJob, budgetCreationReaperJob, onboardingReaperJob},
 		scorerRunner:       scorerRunner,
 	}, nil
 }

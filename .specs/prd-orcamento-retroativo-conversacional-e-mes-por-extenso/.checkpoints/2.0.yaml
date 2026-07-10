@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-orcamento-retroativo-conversacional-e-mes-por-extenso/2.0_execution_report.md
-summary: Estado fechado BudgetCreationState/BudgetAwaitingSlot/BudgetCreationStatus + Decide* puros de coleta e confirmacao implementados e testados (412/412, 100% cobertura nos arquivos novos).
-timestamp: 2026-07-09T13:44:21Z

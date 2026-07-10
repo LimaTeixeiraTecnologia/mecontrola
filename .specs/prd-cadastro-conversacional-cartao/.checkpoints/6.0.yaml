@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-cadastro-conversacional-cartao/6.0_execution_report.md
-summary: Tool create_card (adapter fino) implementada com slot-filling, gate de reconhecimento de banco e engine.Start do workflow card-create-confirm; 11/11 testes pass, build/vet/lint limpos
-timestamp: 2026-07-09T10:15:09Z

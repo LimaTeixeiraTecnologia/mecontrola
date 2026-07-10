@@ -264,7 +264,7 @@ func (s *OnboardingWorkflowRealLLMSuite) TestGoalValueCombinedExtractionGate() {
 	require.GreaterOrEqual(s.T(), ratio, 0.90, "gate de merge RF-14/ADR-003: ratio %.4f abaixo de 0.90 em %q", ratio, s.model)
 }
 
-func (s *OnboardingWorkflowRealLLMSuite) TestMethodologyParsesConfirmPercentReais() {
+func (s *OnboardingWorkflowRealLLMSuite) TestBudgetReviewParsesConfirmPercentReais() {
 	obs := fake.NewProvider()
 	a := agents.BuildMeControlaAgent(s.provider, []tool.ToolHandle{}, nil, obs, 0)
 
@@ -287,7 +287,7 @@ func (s *OnboardingWorkflowRealLLMSuite) TestMethodologyParsesConfirmPercentReai
 			args: args{resumeText: "Custo Fixo 40%, Conhecimento 10%, Prazeres 10%, Metas 10%, Liberdade Financeira 30%"},
 		},
 		{
-			name: "valores em reais somando a renda",
+			name: "valores em reais somando o orcamento mensal",
 			args: args{resumeText: "Custo Fixo R$ 5.400, Conhecimento R$ 1.350, Prazeres R$ 1.350, Metas R$ 1.350, Liberdade Financeira R$ 4.050"},
 		},
 	}
@@ -300,21 +300,34 @@ func (s *OnboardingWorkflowRealLLMSuite) TestMethodologyParsesConfirmPercentReai
 					SuggestAllocation(mock.Anything, income, mock.Anything).
 					Return(onboardingSuggestReturn(income), nil).
 					Maybe()
+				m.EXPECT().
+					GetMonthlySummary(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+					Return(interfaces.BudgetSummary{}, interfaces.ErrBudgetNotFound).
+					Maybe()
+				m.EXPECT().
+					CreateBudget(mock.Anything, mock.AnythingOfType("interfaces.DraftBudget")).
+					Return(interfaces.BudgetRef{}, nil).
+					Maybe()
 				return m
 			}()
 
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 
-			step := workflows.BuildMethodologyStep(a, budgets)
-			out, err := step(ctx, workflows.OnboardingState{
-				UserID:      "11111111-1111-1111-1111-111111111111",
-				IncomeCents: income,
-				ResumeText:  scenario.args.resumeText,
+			step := workflows.BuildBudgetReviewStep(a, budgets)
+			firstEntry, err := step(ctx, workflows.OnboardingState{
+				UserID:             "11111111-1111-1111-1111-111111111111",
+				MonthlyBudgetCents: income,
 			})
+			require.NoError(s.T(), err)
+			require.Equal(s.T(), workflow.StepStatusSuspended, firstEntry.Status)
+
+			resumeState := firstEntry.State
+			resumeState.ResumeText = scenario.args.resumeText
+			out, err := step(ctx, resumeState)
 
 			require.NoError(s.T(), err)
-			require.Equal(s.T(), workflow.StepStatusCompleted, out.Status)
+			require.Equal(s.T(), workflow.StepStatusSuspended, out.Status)
 			require.Equal(s.T(), 4000, out.State.Allocations["expense.custo_fixo"])
 			require.Equal(s.T(), 1000, out.State.Allocations["expense.conhecimento"])
 			require.Equal(s.T(), 1000, out.State.Allocations["expense.prazeres"])
@@ -329,4 +342,276 @@ func (s *OnboardingWorkflowRealLLMSuite) TestMethodologyParsesConfirmPercentReai
 			s.T().Logf("caso %q → allocations %v", scenario.name, out.State.Allocations)
 		})
 	}
+}
+
+func (s *OnboardingWorkflowRealLLMSuite) TestMonthlyBudgetExtractionGate() {
+	obs := fake.NewProvider()
+	a := agents.BuildMeControlaAgent(s.provider, nil, nil, obs, 0)
+
+	type args struct {
+		resumeText string
+	}
+	type expected struct {
+		cents int64
+	}
+
+	scenarios := []struct {
+		name     string
+		args     args
+		expected expected
+	}{
+		{name: "mascarado-milhar", args: args{resumeText: "R$ 3.500,00"}, expected: expected{cents: 350000}},
+		{name: "digitos-puros", args: args{resumeText: "3500"}, expected: expected{cents: 350000}},
+		{name: "coloquial-mil", args: args{resumeText: "5 mil por mês"}, expected: expected{cents: 500000}},
+		{name: "frase-completa", args: args{resumeText: "meu orçamento mensal é de R$ 4.200,00"}, expected: expected{cents: 420000}},
+		{name: "valor-alto", args: args{resumeText: "uns 12 mil reais"}, expected: expected{cents: 1200000}},
+		{name: "valor-baixo", args: args{resumeText: "800 reais"}, expected: expected{cents: 80000}},
+		{name: "valor-medio-decimal", args: args{resumeText: "R$ 2.750,50"}, expected: expected{cents: 275050}},
+		{name: "coloquial-mil-e-quebrado", args: args{resumeText: "6 mil e quinhentos"}, expected: expected{cents: 650000}},
+		{name: "numero-redondo-grande", args: args{resumeText: "10000"}, expected: expected{cents: 1000000}},
+		{name: "valor-pequeno-redondo", args: args{resumeText: "1200"}, expected: expected{cents: 120000}},
+	}
+
+	hits := 0
+	total := len(scenarios)
+	step := workflows.BuildMonthlyBudgetStep(a)
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+
+			out, err := step(ctx, workflows.OnboardingState{
+				UserID:     "11111111-1111-1111-1111-111111111111",
+				ResumeText: scenario.args.resumeText,
+			})
+
+			ok := err == nil && out.Status == workflow.StepStatusCompleted && out.State.MonthlyBudgetCents == scenario.expected.cents
+			if ok {
+				hits++
+			}
+			s.T().Logf("caso=%q modelo=%q status=%v cents=%d esperado=%d err=%v ok=%v",
+				scenario.name, s.model, out.Status, out.State.MonthlyBudgetCents, scenario.expected.cents, err, ok)
+		})
+	}
+
+	ratio := float64(hits) / float64(total)
+	s.T().Logf("gate real-LLM onboarding_monthly_budget modelo=%q hits=%d total=%d ratio=%.4f", s.model, hits, total, ratio)
+	require.GreaterOrEqual(s.T(), ratio, 0.90, "gate de merge RF-42 (monthly_budget): ratio %.4f abaixo de 0.90 em %q", ratio, s.model)
+}
+
+func (s *OnboardingWorkflowRealLLMSuite) TestSummaryConfirmExtractionGate() {
+	obs := fake.NewProvider()
+	a := agents.BuildMeControlaAgent(s.provider, nil, nil, obs, 0)
+
+	const income int64 = 500000
+
+	type expected struct {
+		confirmed bool
+	}
+
+	scenarios := []struct {
+		name       string
+		resumeText string
+		expected   expected
+	}{
+		{name: "sim-simples", resumeText: "sim", expected: expected{confirmed: true}},
+		{name: "sim-esta-correto", resumeText: "está correto, pode ativar", expected: expected{confirmed: true}},
+		{name: "sim-confirmado", resumeText: "confirmado, pode seguir", expected: expected{confirmed: true}},
+		{name: "nao-simples", resumeText: "não", expected: expected{confirmed: false}},
+		{name: "nao-quero-revisar", resumeText: "não, quero revisar a distribuição", expected: expected{confirmed: false}},
+		{name: "nao-mudar-valores", resumeText: "não, quero mudar os valores", expected: expected{confirmed: false}},
+	}
+
+	hits := 0
+	total := len(scenarios)
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			budgets := func() *interfacemocks.BudgetPlanner {
+				m := interfacemocks.NewBudgetPlanner(s.T())
+				m.EXPECT().
+					SuggestAllocation(mock.Anything, income, mock.Anything).
+					Return(onboardingSuggestReturn(income), nil).
+					Maybe()
+				m.EXPECT().
+					GetMonthlySummary(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+					Return(interfaces.BudgetSummary{}, interfaces.ErrBudgetNotFound).
+					Maybe()
+				m.EXPECT().
+					CreateBudget(mock.Anything, mock.AnythingOfType("interfaces.DraftBudget")).
+					Return(interfaces.BudgetRef{}, nil).
+					Maybe()
+				return m
+			}()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+
+			step := workflows.BuildBudgetReviewStep(a, budgets)
+			firstEntry, err := step(ctx, workflows.OnboardingState{
+				UserID:             "11111111-1111-1111-1111-111111111111",
+				MonthlyBudgetCents: income,
+			})
+			require.NoError(s.T(), err)
+			require.Equal(s.T(), workflow.StepStatusSuspended, firstEntry.Status)
+
+			acceptState := firstEntry.State
+			acceptState.ResumeText = "aceito a sugestão"
+			confirmEntry, err := step(ctx, acceptState)
+			require.NoError(s.T(), err)
+			require.Equal(s.T(), workflow.StepStatusSuspended, confirmEntry.Status)
+
+			resumeState := confirmEntry.State
+			resumeState.ResumeText = scenario.resumeText
+			out, err := step(ctx, resumeState)
+
+			ok := err == nil
+			if ok {
+				if scenario.expected.confirmed {
+					ok = out.Status == workflow.StepStatusCompleted
+				} else {
+					ok = out.Status == workflow.StepStatusSuspended && out.State.ReviewAwait.String() == "distribution"
+				}
+			}
+			if ok {
+				hits++
+			}
+			s.T().Logf("caso=%q modelo=%q status=%v reviewAwait=%v esperado(confirmed=%v) err=%v ok=%v",
+				scenario.name, s.model, out.Status, out.State.ReviewAwait, scenario.expected.confirmed, err, ok)
+		})
+	}
+
+	ratio := float64(hits) / float64(total)
+	s.T().Logf("gate real-LLM onboarding_summary_confirm modelo=%q hits=%d total=%d ratio=%.4f", s.model, hits, total, ratio)
+	require.GreaterOrEqual(s.T(), ratio, 0.90, "gate de merge RF-42 (summary_confirm): ratio %.4f abaixo de 0.90 em %q", ratio, s.model)
+}
+
+func (s *OnboardingWorkflowRealLLMSuite) TestRecurrenceExtractionGate() {
+	obs := fake.NewProvider()
+	a := agents.BuildMeControlaAgent(s.provider, nil, nil, obs, 0)
+
+	type expected struct {
+		recurrence bool
+	}
+
+	scenarios := []struct {
+		name       string
+		resumeText string
+		expected   expected
+	}{
+		{name: "sim-simples", resumeText: "sim", expected: expected{recurrence: true}},
+		{name: "sim-quero-repetir", resumeText: "sim, quero repetir automaticamente", expected: expected{recurrence: true}},
+		{name: "nao-simples", resumeText: "não", expected: expected{recurrence: false}},
+		{name: "nao-prefiro-manual", resumeText: "não, prefiro configurar manualmente", expected: expected{recurrence: false}},
+		{name: "ambiguo-talvez", resumeText: "talvez depois", expected: expected{recurrence: false}},
+	}
+
+	hits := 0
+	total := len(scenarios)
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			budgets := interfacemocks.NewBudgetPlanner(s.T())
+			if scenario.expected.recurrence {
+				budgets.EXPECT().
+					CreateRecurrence(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string"), 12).
+					Return(nil).
+					Maybe()
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+
+			step := workflows.BuildRecurrenceStep(a, budgets)
+			firstEntry, err := step(ctx, workflows.OnboardingState{UserID: "11111111-1111-1111-1111-111111111111"})
+			require.NoError(s.T(), err)
+			require.Equal(s.T(), workflow.StepStatusSuspended, firstEntry.Status)
+
+			resumeState := firstEntry.State
+			resumeState.ResumeText = scenario.resumeText
+			out, err := step(ctx, resumeState)
+
+			ok := err == nil && out.Status == workflow.StepStatusCompleted && out.State.Recurrence == scenario.expected.recurrence
+			if ok {
+				hits++
+			}
+			s.T().Logf("caso=%q modelo=%q status=%v recurrence=%v esperado=%v err=%v ok=%v",
+				scenario.name, s.model, out.Status, out.State.Recurrence, scenario.expected.recurrence, err, ok)
+		})
+	}
+
+	ratio := float64(hits) / float64(total)
+	s.T().Logf("gate real-LLM onboarding_recurrence modelo=%q hits=%d total=%d ratio=%.4f", s.model, hits, total, ratio)
+	require.GreaterOrEqual(s.T(), ratio, 0.90, "gate de merge RF-42 (recurrence): ratio %.4f abaixo de 0.90 em %q", ratio, s.model)
+}
+
+func (s *OnboardingWorkflowRealLLMSuite) TestCardExtractionGate() {
+	obs := fake.NewProvider()
+	a := agents.BuildMeControlaAgent(s.provider, nil, nil, obs, 0)
+
+	type expected struct {
+		wantsCard bool
+	}
+
+	scenarios := []struct {
+		name       string
+		resumeText string
+		expected   expected
+	}{
+		{name: "completo-simples", resumeText: "Nubank, vencimento dia 10", expected: expected{wantsCard: true}},
+		{name: "completo-frase", resumeText: "quero adicionar meu Itaú, vence todo dia 5", expected: expected{wantsCard: true}},
+		{name: "completo-apelido-diferente", resumeText: "cartão do trabalho, banco Santander, dia 20", expected: expected{wantsCard: true}},
+		{name: "recusa-nao", resumeText: "não", expected: expected{wantsCard: false}},
+		{name: "recusa-nao-quero", resumeText: "não quero adicionar cartão", expected: expected{wantsCard: false}},
+	}
+
+	hits := 0
+	total := len(scenarios)
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			cards := interfacemocks.NewCardManager(s.T())
+			cards.EXPECT().
+				ListCards(mock.Anything, mock.AnythingOfType("uuid.UUID")).
+				Return([]interfaces.Card{}, nil).
+				Maybe()
+			if scenario.expected.wantsCard {
+				cards.EXPECT().
+					CreateCard(mock.Anything, mock.AnythingOfType("interfaces.NewCard")).
+					Return(interfaces.CardRef{}, nil).
+					Maybe()
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+
+			step := workflows.BuildCardsStep(a, cards)
+			firstEntry, err := step(ctx, workflows.OnboardingState{UserID: "11111111-1111-1111-1111-111111111111"})
+			require.NoError(s.T(), err)
+			require.Equal(s.T(), workflow.StepStatusSuspended, firstEntry.Status)
+
+			resumeState := firstEntry.State
+			resumeState.ResumeText = scenario.resumeText
+			out, err := step(ctx, resumeState)
+
+			ok := err == nil
+			if ok {
+				if scenario.expected.wantsCard {
+					ok = out.Status == workflow.StepStatusSuspended && !out.State.CardsDone
+				} else {
+					ok = out.Status == workflow.StepStatusCompleted && out.State.CardsDone
+				}
+			}
+			if ok {
+				hits++
+			}
+			s.T().Logf("caso=%q modelo=%q status=%v cardsDone=%v esperado(wantsCard=%v) err=%v ok=%v",
+				scenario.name, s.model, out.Status, out.State.CardsDone, scenario.expected.wantsCard, err, ok)
+		})
+	}
+
+	ratio := float64(hits) / float64(total)
+	s.T().Logf("gate real-LLM onboarding_card modelo=%q hits=%d total=%d ratio=%.4f", s.model, hits, total, ratio)
+	require.GreaterOrEqual(s.T(), ratio, 0.90, "gate de merge RF-42 (card): ratio %.4f abaixo de 0.90 em %q", ratio, s.model)
 }

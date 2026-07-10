@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-cadastro-conversacional-cartao/1.0_execution_report.md
-summary: Card module extended additively with optional closing day sentinel and bank recognition read; onboarding path unchanged.
-timestamp: 2026-07-09T09:52:00Z

@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-registro-conversacional-robustez/7.0_execution_report.md
-summary: Heuristica de separador de milhar BRL corrigida, slot de pagamento com exemplos e prova de inferencia proibida, mapa knownPaymentMethods corrigido (doc->ted); review APPROVED.
-timestamp: 2026-07-08T22:35:41Z

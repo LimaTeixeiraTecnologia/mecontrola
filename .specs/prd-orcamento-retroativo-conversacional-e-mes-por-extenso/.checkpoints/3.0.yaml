@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-orcamento-retroativo-conversacional-e-mes-por-extenso/3.0_execution_report.md
-summary: Workflow budget-creation + Continuer + Reaper implementados, testados (unit + integração Postgres) e validados; corrigido bug real de TTL/replay durante integração.
-timestamp: 2026-07-09T14:01:02Z

@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-jornada-whatsapp-financeira-sem-falso-sucesso/3.0_execution_report.md
-summary: WAMID irrepresentável na fronteira (ErrEmptyMessageID) + span wamid/workflow + ToolCallRecord.Outcome propagado (AfterTool trata resultBytes e err)
-timestamp: 2026-07-10T13:32:57Z
