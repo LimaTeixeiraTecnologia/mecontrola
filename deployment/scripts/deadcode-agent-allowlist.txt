@@ -4,6 +4,11 @@ internal/agents/application/scorers/mecontrola_scorers.go:expectedToolScorer.ID
 internal/agents/application/scorers/mecontrola_scorers.go:expectedToolScorer.Kind
 internal/agents/application/scorers/mecontrola_scorers.go:expectedToolScorer.Score
 internal/agents/application/scorers/mecontrola_scorers.go:NewExpectedToolScorer
+# expectedToolOracleScorer: variante oracle do scorer de validacao de tool calls ainda nao 100% wired no registry.
+internal/agents/application/scorers/behavioral_scorers.go:expectedToolOracleScorer.ID
+internal/agents/application/scorers/behavioral_scorers.go:expectedToolOracleScorer.Kind
+internal/agents/application/scorers/behavioral_scorers.go:expectedToolOracleScorer.Score
+internal/agents/application/scorers/behavioral_scorers.go:NewExpectedToolOracleScorer
 # Parse* functions: smart constructors de tipos fechados (DMMF) mantidos por simetria de API.
 internal/agents/application/workflows/confirm_state.go:ParseAwaitingKind
 internal/agents/application/workflows/confirm_state.go:ParseOperationKind
