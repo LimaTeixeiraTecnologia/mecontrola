@@ -29,17 +29,17 @@ padrão Chain of Responsibility (confirmado pelo seletor de `design-patterns-man
 
 ## Subtarefas
 
-- [ ] 3.1 `guard_chain.go`: `GuardDecision`, `PreGuard`, `PostGuard`, `guardChainAgent` (embed
+- [x] 3.1 `guard_chain.go`: `GuardDecision`, `PreGuard`, `PostGuard`, `guardChainAgent` (embed
   `agent.Agent`, override `Execute`, delega `Stream`), `WithGuardChain`, métrica por handler.
-- [ ] 3.2 `guards/multi_item.go`: mover o `MultiItemGuard` para `PreGuard` (equivalência de saída).
-- [ ] 3.3 `guards/verbatim_relay.go` (`PostGuard`): força `Content` = `verbatimText` da tool quando
+- [x] 3.2 `guards/multi_item.go`: mover o `MultiItemGuard` para `PreGuard` (equivalência de saída).
+- [x] 3.3 `guards/verbatim_relay.go` (`PostGuard`): força `Content` = `verbatimText` da tool quando
   divergir.
-- [ ] 3.4 `guards/empty_answer.go` (`PostGuard`): `Content` vazio → fallback seguro.
-- [ ] 3.5 `guards/internal_terms.go` (`PostGuard`): blocklist fechada de termos internos → sanitiza/override.
-- [ ] 3.6 `guards/success_without_tool.go` (`PostGuard`): marcador de sucesso sem write-tool bem-sucedido
+- [x] 3.4 `guards/empty_answer.go` (`PostGuard`): `Content` vazio → fallback seguro.
+- [x] 3.5 `guards/internal_terms.go` (`PostGuard`): blocklist fechada de termos internos → sanitiza/override.
+- [x] 3.6 `guards/success_without_tool.go` (`PostGuard`): marcador de sucesso sem write-tool bem-sucedido
   e sem verbatim → fallback + Failed.
-- [ ] 3.7 `mecontrola_agent.go`: trocar `WithMultiItemGuard(...)` por `WithGuardChain(...)`.
-- [ ] 3.8 Métrica `agent_guard_decisions_total{agent_id, guard, decision}` (decision ∈ {pass, handled}).
+- [x] 3.7 `mecontrola_agent.go`: trocar `WithMultiItemGuard(...)` por `WithGuardChain(...)`.
+- [x] 3.8 Métrica `agent_guard_decisions_total{agent_id, guard, decision}` (decision ∈ {pass, handled}).
 
 ## Detalhes de Implementação
 

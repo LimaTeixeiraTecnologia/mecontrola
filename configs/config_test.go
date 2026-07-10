@@ -1736,6 +1736,7 @@ func (s *ConfigSuite) newProductionConfig() *configs.Config {
 	cfg.AgentConfig.OpenRouterAPIKey = "sk-real-key-for-testing"
 	cfg.AgentConfig.PrimaryModel = "openai/gpt-4o-mini"
 	cfg.AgentConfig.MaxTokens = 256
+	cfg.AgentConfig.MecontrolaMaxTokens = 3072
 	cfg.OnboardingConfig.AbandonmentTTLHours = 48
 	cfg.OnboardingConfig.AbandonmentJobSchedule = "@hourly"
 	cfg.OnboardingConfig.AbandonmentBatchSize = 100

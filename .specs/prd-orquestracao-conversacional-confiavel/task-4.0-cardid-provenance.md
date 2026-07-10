@@ -18,12 +18,12 @@ Garantir, por código determinístico, que todo `cardId` usado em escrita/consul
 
 ## Subtarefas
 
-- [ ] 4.1 Tools consumidoras de `cardId` (`register_expense`, `create_recurrence`, `query_card_invoice`):
+- [x] 4.1 Tools consumidoras de `cardId` (`register_expense`, `create_recurrence`, `query_card_invoice`):
   validar que o `cardId` resolve para um cartão real do `resourceId` (usecase de leitura); inexistente →
   erro de domínio limpo → `clarify`/fallback pedindo escolha.
-- [ ] 4.2 `guards/card_provenance.go` (`PostGuard`): se uma tool consumidora de cartão aparece em
+- [x] 4.2 `guards/card_provenance.go` (`PostGuard`): se uma tool consumidora de cartão aparece em
   `Result.ToolCalls` sem `resolve_card`/`list_cards` antes na sequência → override para pedir escolha.
-- [ ] 4.3 Registrar o handler `card_provenance` na cadeia (3.0).
+- [x] 4.3 Registrar o handler `card_provenance` na cadeia (3.0).
 
 ## Detalhes de Implementação
 
@@ -51,9 +51,9 @@ resolução/validação é do usecase; o guard só inspeciona a sequência (R-AG
 
 ## Testes da Tarefa
 
-- [ ] Testes unitários: `cardId` inexistente → clarify; consumidora sem resolve prévio → pede escolha;
+- [x] Testes unitários: `cardId` inexistente → clarify; consumidora sem resolve prévio → pede escolha;
   caminho feliz; `resolve_card found=false` → escolha.
-- [ ] Testes de integração: não aplicável (E2E de cartão no golden — 6.0).
+- [x] Testes de integração: não aplicável (E2E de cartão no golden — 6.0).
 
 <critical>SEMPRE CRIAR E EXECUTAR TESTES DA TAREFA ANTES DE CONSIDERAR A TAREFA COMO `done`</critical>
 

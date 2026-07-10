@@ -50,8 +50,35 @@ func (s *CardManagerAdapterSuite) buildAdapter() agentsifaces.CardManager {
 	o11y := fake.NewProvider()
 	createCard := cardusecases.NewCreateCard(s.uow, s.factory, s.idem, o11y)
 	listCards := cardusecases.NewListCards(s.cardRepo, o11y)
+	getCard := cardusecases.NewGetCard(s.cardRepo, o11y)
 	isBankRecognized := cardusecases.NewIsBankRecognized(s.factory, nil, o11y)
-	return NewCardManagerAdapter(createCard, listCards, nil, nil, nil, nil, nil, nil, nil, isBankRecognized, o11y)
+	return NewCardManagerAdapter(createCard, listCards, getCard, nil, nil, nil, nil, nil, nil, isBankRecognized, o11y)
+}
+
+func (s *CardManagerAdapterSuite) TestGetCard_NotFound_MapsToAgentsErrCardNotFound() {
+	s.cardRepo.EXPECT().
+		GetByIDForUser(mock.Anything, mock.Anything, mock.Anything).
+		Return(cardentities.Card{}, carddomain.ErrCardNotFound).
+		Once()
+
+	adapter := s.buildAdapter()
+	_, err := adapter.GetCard(s.ctx, uuid.New(), s.userID)
+
+	s.Error(err)
+	s.True(errors.Is(err, agentsifaces.ErrCardNotFound))
+}
+
+func (s *CardManagerAdapterSuite) TestGetCard_OtherError_DoesNotMapToNotFound() {
+	s.cardRepo.EXPECT().
+		GetByIDForUser(mock.Anything, mock.Anything, mock.Anything).
+		Return(cardentities.Card{}, errors.New("falha no banco")).
+		Once()
+
+	adapter := s.buildAdapter()
+	_, err := adapter.GetCard(s.ctx, uuid.New(), s.userID)
+
+	s.Error(err)
+	s.False(errors.Is(err, agentsifaces.ErrCardNotFound))
 }
 
 func (s *CardManagerAdapterSuite) TestCreateCard_NicknameConflict_ReturnsError() {

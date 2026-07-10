@@ -244,6 +244,7 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		WhatsAppGateway:    onboardingModule.WhatsAppGateway,
 		WelcomeDedup:       onboardingpostgres.NewWelcomeDedupRepository(r.o11y, r.db),
 		InboundTimeout:     r.cfg.AgentConfig.InboundTimeout,
+		AgentMaxTokens:     r.cfg.AgentConfig.MecontrolaMaxTokens,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo agents: %w", err)

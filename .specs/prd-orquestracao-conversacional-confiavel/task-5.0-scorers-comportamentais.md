@@ -22,14 +22,14 @@ scorers que inspecionam argumentos.
 
 ## Subtarefas
 
-- [ ] 5.1 `ScoringHooks.AfterTool`: preencher `ToolCallRecord.Args` a partir do `argsJSON` hoje
+- [x] 5.1 `ScoringHooks.AfterTool`: preencher `ToolCallRecord.Args` a partir do `argsJSON` hoje
   descartado (`_ []byte`).
-- [ ] 5.2 Scorers intrínsecos (prod, `AlwaysSample`): `no_empty_answer`, `whatsapp_format`,
+- [x] 5.2 Scorers intrínsecos (prod, `AlwaysSample`): `no_empty_answer`, `whatsapp_format`,
   `no_internal_terms`, `verbatim_required`, `no_duplicate_write`, `no_hallucination`, `required_args`,
   `month_reference_correctness`.
-- [ ] 5.3 Scorer oracle-dependente `expected_tool` (usa `RunSample.Metadata["expected_tool"]`), usado só
+- [x] 5.3 Scorer oracle-dependente `expected_tool` (usa `RunSample.Metadata["expected_tool"]`), usado só
   pelo harness golden (não registrado em prod).
-- [ ] 5.4 Registrar os intrínsecos em `BuildMeControlaScorers` mantendo os 3 atuais.
+- [x] 5.4 Registrar os intrínsecos em `BuildMeControlaScorers` mantendo os 3 atuais.
 
 ## Detalhes de Implementação
 
@@ -58,7 +58,7 @@ persiste em `platform_scorer_results` (sem mudança de schema).
 
 ## Testes da Tarefa
 
-- [ ] Testes unitários: cada scorer intrínseco (RunSample fixo → ScoreResult); `AfterTool` captura args;
+- [x] Testes unitários: cada scorer intrínseco (RunSample fixo → ScoreResult); `AfterTool` captura args;
   `expected_tool` com metadata; não-regressão dos 3 scorers atuais.
 - [ ] Testes de integração: persistência de `ScorerResult` (coberto/compartilhado com 7.0/8.0).
 

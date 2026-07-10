@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-orquestracao-conversacional-confiavel/4.0_execution_report.md
+summary: Proveniência determinística de cardId via validação de existência na tool + PostGuard de sequência (card_provenance)
+timestamp: 2026-07-09T18:01:03Z

@@ -50,7 +50,7 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasCorrectID() {
 		s.Run(scenario.name, func() {
 			provider := llmmocks.NewProvider(s.T())
 			obs := fake.NewProvider()
-			a := BuildMeControlaAgent(provider, nil, nil, obs)
+			a := BuildMeControlaAgent(provider, nil, nil, obs, 0)
 			scenario.expect(a.ID())
 		})
 	}
@@ -386,7 +386,7 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 		s.Run(scenario.name, func() {
 			provider := llmmocks.NewProvider(s.T())
 			obs := fake.NewProvider()
-			a := BuildMeControlaAgent(provider, nil, nil, obs)
+			a := BuildMeControlaAgent(provider, nil, nil, obs, 0)
 			scenario.expect(a.Instructions())
 		})
 	}
@@ -427,7 +427,7 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_DefaultMaxTokensA
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			obs := fake.NewProvider()
-			a := BuildMeControlaAgent(scenario.dependencies.provider, nil, nil, obs)
+			a := BuildMeControlaAgent(scenario.dependencies.provider, nil, nil, obs, 0)
 			result, err := a.Execute(s.ctx, agent.Request{
 				AgentID:  MecontrolaAgentID,
 				Messages: []llm.Message{{Role: "user", Content: "oi"}},
@@ -439,6 +439,74 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_DefaultMaxTokensA
 
 func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_DefaultMaxTokensCoversOnboardingResponse() {
 	s.GreaterOrEqual(mecontrolaAgentDefaultMaxTokens, 1536)
+}
+
+func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_RF24_ConfigurableMaxTokensOverridesDefault() {
+	type dependencies struct {
+		provider *llmmocks.Provider
+	}
+
+	scenarios := []struct {
+		name         string
+		maxTokens    int
+		dependencies dependencies
+		expect       func(result agent.Result, err error)
+	}{
+		{
+			name:      "deve usar o teto configurado quando maior que zero",
+			maxTokens: 4096,
+			dependencies: dependencies{
+				provider: func() *llmmocks.Provider {
+					provider := llmmocks.NewProvider(s.T())
+					provider.EXPECT().
+						Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+						Run(func(_ context.Context, req llm.Request) {
+							s.Equal(4096, req.MaxTokens)
+						}).
+						Return(llm.Response{Content: "ok"}, nil).
+						Once()
+					return provider
+				}(),
+			},
+			expect: func(result agent.Result, err error) {
+				s.NoError(err)
+				s.Equal("ok", result.Content)
+			},
+		},
+		{
+			name:      "deve cair no default quando valor for zero ou negativo",
+			maxTokens: -1,
+			dependencies: dependencies{
+				provider: func() *llmmocks.Provider {
+					provider := llmmocks.NewProvider(s.T())
+					provider.EXPECT().
+						Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+						Run(func(_ context.Context, req llm.Request) {
+							s.Equal(mecontrolaAgentDefaultMaxTokens, req.MaxTokens)
+						}).
+						Return(llm.Response{Content: "ok"}, nil).
+						Once()
+					return provider
+				}(),
+			},
+			expect: func(result agent.Result, err error) {
+				s.NoError(err)
+				s.Equal("ok", result.Content)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			obs := fake.NewProvider()
+			a := BuildMeControlaAgent(scenario.dependencies.provider, nil, nil, obs, scenario.maxTokens)
+			result, err := a.Execute(s.ctx, agent.Request{
+				AgentID:  MecontrolaAgentID,
+				Messages: []llm.Message{{Role: "user", Content: "oi"}},
+			})
+			scenario.expect(result, err)
+		})
+	}
 }
 
 func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_OnboardingSummaryNotTruncatedWithEmojis() {
@@ -501,7 +569,7 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_OnboardingSummary
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			obs := fake.NewProvider()
-			a := BuildMeControlaAgent(scenario.dependencies.provider, nil, nil, obs)
+			a := BuildMeControlaAgent(scenario.dependencies.provider, nil, nil, obs, 0)
 			result, err := a.Execute(s.ctx, agent.Request{
 				AgentID:  MecontrolaAgentID,
 				Messages: []llm.Message{{Role: "user", Content: "quero configurar meu orçamento"}},

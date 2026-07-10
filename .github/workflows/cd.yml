@@ -110,6 +110,32 @@ jobs:
       - run: task ci:no-internal-agent
       - run: task ci:deploy-anti-storm
 
+  golden-gate:
+    name: Golden Gate (real-LLM pre-deploy, RF-39/RF-40/RF-41)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go-task
+      - name: Verify OPENROUTER_API_KEY is configured
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "OPENROUTER_API_KEY nao configurado: o gate pre-deploy real-LLM (RF-39/RF-40/RF-41) e"
+            echo "bloqueante e nao pode ser pulado silenciosamente antes de promover a versao."
+            exit 1
+          fi
+      - name: Run real-LLM golden gate
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: task test:golden:gate
+
   build:
     name: Build
     runs-on: ubuntu-24.04
@@ -135,7 +161,7 @@ jobs:
     name: Quality Gates
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [quality, unit, integration, vulncheck, gates, build]
+    needs: [quality, unit, integration, vulncheck, gates, golden-gate, build]
     if: always()
     permissions:
       contents: read

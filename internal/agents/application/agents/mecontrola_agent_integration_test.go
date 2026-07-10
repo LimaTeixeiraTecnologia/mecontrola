@@ -456,7 +456,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestToolCalling() {
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			obs := fake.NewProvider()
-			a := BuildMeControlaAgent(s.provider, scenario.dependencies.tools, nil, obs)
+			a := BuildMeControlaAgent(s.provider, scenario.dependencies.tools, nil, obs, 0)
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 			result, err := a.Execute(ctx, agent.Request{
@@ -494,7 +494,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestScorerCategorizationLLMJudged() {
 func (s *MecontrolaAgentIntegrationSuite) TestOnboardingSummaryUsesWhatsAppFormattingAndEmojis() {
 	obs := fake.NewProvider()
 
-	a := BuildMeControlaAgent(s.provider, nil, nil, obs)
+	a := BuildMeControlaAgent(s.provider, nil, nil, obs, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -528,7 +528,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestToolErrorProducesHonestResponse() 
 
 	tools := []tool.ToolHandle{buildFailingRegisterExpenseTool()}
 
-	a := BuildMeControlaAgent(s.provider, tools, nil, obs)
+	a := BuildMeControlaAgent(s.provider, tools, nil, obs, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -592,6 +592,8 @@ func (s *MecontrolaAgentIntegrationSuite) TestCardPurchaseChainResolveClassifyRe
 					resolveCalled = true
 					return agentsifaces.Card{ID: cardID.String(), UserID: userID.String(), Nickname: "Nubank", Bank: "Nubank", DueDay: 1}, nil
 				}).Maybe()
+			cardMock.EXPECT().GetCard(mock.Anything, cardID, userID).
+				Return(agentsifaces.Card{ID: cardID.String(), UserID: userID.String(), Nickname: "Nubank", Bank: "Nubank", DueDay: 1}, nil).Maybe()
 
 			catMock := imocks.NewCategoriesReader(t)
 			catMock.EXPECT().SearchDictionary(mock.Anything, mock.Anything, "expense").
@@ -628,10 +630,10 @@ func (s *MecontrolaAgentIntegrationSuite) TestCardPurchaseChainResolveClassifyRe
 
 			tools := []tool.ToolHandle{
 				agenttools.BuildResolveCardTool(cardMock),
-				agenttools.BuildRegisterExpenseTool(registrar),
+				agenttools.BuildRegisterExpenseTool(registrar, cardMock),
 			}
 
-			a := BuildMeControlaAgent(s.provider, tools, nil, obs)
+			a := BuildMeControlaAgent(s.provider, tools, nil, obs, 0)
 
 			ctx := agent.WithToolInvocationContext(context.Background(), userID.String(), sc.wamid, 0)
 			ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
@@ -697,14 +699,15 @@ func (s *MecontrolaAgentIntegrationSuite) TestRegisterOpensConfirmationGate() {
 		}, nil).Maybe()
 
 	ledgerMock := imocks.NewTransactionsLedger(t)
+	cardMock := imocks.NewCardManager(t)
 
 	registrar, store := chainGatedRegistrar(catMock, ledgerMock, obs)
 
 	tools := []tool.ToolHandle{
-		agenttools.BuildRegisterExpenseTool(registrar),
+		agenttools.BuildRegisterExpenseTool(registrar, cardMock),
 		agenttools.BuildClassifyCategoryTool(catMock),
 	}
-	a := BuildMeControlaAgent(s.provider, tools, nil, obs)
+	a := BuildMeControlaAgent(s.provider, tools, nil, obs, 0)
 
 	ctx := agent.WithToolInvocationContext(context.Background(), userID.String(), "wamid-gate-chain", 0)
 	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
@@ -749,6 +752,8 @@ func (s *MecontrolaAgentIntegrationSuite) TestQueryCardInvoiceChainC4() {
 			RunAndReturn(func(_ context.Context, _ uuid.UUID, _ string) (agentsifaces.Card, error) {
 				return agentsifaces.Card{ID: cardID.String(), UserID: userID.String(), Nickname: "Nubank", Bank: "Nubank", DueDay: 10}, nil
 			}).Maybe()
+		cardMock.EXPECT().GetCard(mock.Anything, cardID, userID).
+			Return(agentsifaces.Card{ID: cardID.String(), UserID: userID.String(), Nickname: "Nubank", Bank: "Nubank", DueDay: 10}, nil).Maybe()
 
 		ledgerMock := imocks.NewTransactionsLedger(t)
 		ledgerMock.EXPECT().GetCardInvoice(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
@@ -768,10 +773,10 @@ func (s *MecontrolaAgentIntegrationSuite) TestQueryCardInvoiceChainC4() {
 
 		tools := []tool.ToolHandle{
 			agenttools.BuildResolveCardTool(cardMock),
-			agenttools.BuildQueryCardInvoiceTool(ledgerMock),
+			agenttools.BuildQueryCardInvoiceTool(ledgerMock, cardMock),
 		}
 
-		a := BuildMeControlaAgent(s.provider, tools, nil, obs)
+		a := BuildMeControlaAgent(s.provider, tools, nil, obs, 0)
 		ctx := agent.WithToolInvocationContext(context.Background(), userID.String(), "wamid-c4-chain", 0)
 		ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 
@@ -851,7 +856,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestLastTransactionChainC5() {
 		agenttools.BuildGetTransactionTool(ledgerMock),
 	}
 
-	a := BuildMeControlaAgent(s.provider, tools, nil, obs)
+	a := BuildMeControlaAgent(s.provider, tools, nil, obs, 0)
 	ctx := agent.WithToolInvocationContext(context.Background(), userID.String(), "wamid-c5-chain", 0)
 	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
@@ -882,7 +887,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestCA03HonestConfirmationToolErrorNev
 
 	tools := []tool.ToolHandle{buildFailingRegisterExpenseToolCA03()}
 
-	a := BuildMeControlaAgent(s.provider, tools, nil, obs)
+	a := BuildMeControlaAgent(s.provider, tools, nil, obs, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -925,7 +930,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestPendingEntryCA01ClarifyAsksOneQues
 	t := s.T()
 	obs := fake.NewProvider()
 
-	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{buildPendingClarifyTool()}, nil, obs)
+	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{buildPendingClarifyTool()}, nil, obs, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -960,7 +965,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestPendingEntryCA06LedgerErrorHonestR
 	t := s.T()
 	obs := fake.NewProvider()
 
-	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{buildFailingRegisterExpenseTool()}, nil, obs)
+	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{buildFailingRegisterExpenseTool()}, nil, obs, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -988,7 +993,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestPendingEntryNoInfraInResponse() {
 	t := s.T()
 	obs := fake.NewProvider()
 
-	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{buildPendingClarifyTool()}, nil, obs)
+	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{buildPendingClarifyTool()}, nil, obs, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -1016,7 +1021,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestPendingEntryCA12DoubleAsteriskProi
 	t := s.T()
 	obs := fake.NewProvider()
 
-	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{buildPendingClarifyTool()}, nil, obs)
+	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{buildPendingClarifyTool()}, nil, obs, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -1096,7 +1101,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestPendingEntryCA04MultipleCandidates
 		},
 	)
 
-	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{buildPendingClarifyTool(), classifyTool}, nil, obs)
+	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{buildPendingClarifyTool(), classifyTool}, nil, obs, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -1167,7 +1172,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestR2DataRelativaOntem() {
 		},
 	)
 
-	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{handle}, nil, obs)
+	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{handle}, nil, obs, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -1229,7 +1234,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestR5ReceitaDecimoTerceiro() {
 		},
 	)
 
-	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{handle}, nil, obs)
+	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{handle}, nil, obs, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -1292,7 +1297,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestR6ReceitaFreelancer() {
 		},
 	)
 
-	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{handle}, nil, obs)
+	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{handle}, nil, obs, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -1318,7 +1323,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestR7CategoriaIncertaPedeEsclarecimen
 	t := s.T()
 	obs := fake.NewProvider()
 
-	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{buildPendingClarifyTool()}, nil, obs)
+	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{buildPendingClarifyTool()}, nil, obs, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -1388,7 +1393,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestDiaDaSemanaTerca() {
 		},
 	)
 
-	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{handle}, nil, obs)
+	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{handle}, nil, obs, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -1412,7 +1417,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestSemanaMesPassadoRejeita() {
 	t := s.T()
 	obs := fake.NewProvider()
 
-	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{buildPendingClarifyTool()}, nil, obs)
+	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{buildPendingClarifyTool()}, nil, obs, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -1478,7 +1483,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestMultiItemRF16UmPorVez() {
 		},
 	)
 
-	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{handle}, nil, obs)
+	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{handle}, nil, obs, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -1507,7 +1512,7 @@ func (s *MecontrolaAgentIntegrationSuite) TestCancelamentoNaoEscreve() {
 	t := s.T()
 	obs := fake.NewProvider()
 
-	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{buildPendingClarifyTool()}, nil, obs)
+	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{buildPendingClarifyTool()}, nil, obs, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 

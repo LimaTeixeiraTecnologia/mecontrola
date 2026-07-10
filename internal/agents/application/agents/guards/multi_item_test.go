@@ -1,4 +1,4 @@
-package agents
+package guards
 
 import (
 	"context"
@@ -213,78 +213,57 @@ func (s *MultiItemGuardSuite) TestDetectMultipleMonetaryValues() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			matched := detectMultipleMonetaryValues(scenario.args.message)
+			matched := DetectMultipleMonetaryValues(scenario.args.message)
 			scenario.expect(matched)
 		})
 	}
 }
 
-type stubUnderlyingAgent struct {
-	executeCalled bool
-	result        agent.Result
-	err           error
+func (s *MultiItemGuardSuite) TestName() {
+	guard := NewMultiItemGuard()
+	s.Equal("multi_item", guard.Name())
 }
 
-func (a *stubUnderlyingAgent) ID() string           { return "stub-agent" }
-func (a *stubUnderlyingAgent) Instructions() string { return "" }
-func (a *stubUnderlyingAgent) Stream(ctx context.Context, in agent.Request) (agent.ResultStream, error) {
-	return nil, nil
-}
-
-func (a *stubUnderlyingAgent) Execute(ctx context.Context, in agent.Request) (agent.Result, error) {
-	a.executeCalled = true
-	return a.result, a.err
-}
-
-func (s *MultiItemGuardSuite) TestExecute_MultiItemGuard() {
+func (s *MultiItemGuardSuite) TestInspect_MultiItemGuard() {
 	type args struct {
 		messages []llm.Message
 	}
-	type dependencies struct {
-		underlying *stubUnderlyingAgent
-	}
 
 	scenarios := []struct {
-		name         string
-		args         args
-		dependencies dependencies
-		expect       func(underlying *stubUnderlyingAgent, output agent.Result, err error)
+		name   string
+		args   args
+		expect func(decision GuardDecision)
 	}{
 		{
-			name: "dois lancamentos reais bloqueiam determinísticamente sem chamar o agente subjacente",
+			name: "dois lancamentos reais bloqueiam determinísticamente antes do LLM",
 			args: args{messages: []llm.Message{
 				{Role: "system", Content: "instructions"},
 				{Role: "user", Content: "gastei 30 no ônibus e 15 no café"},
 			}},
-			dependencies: dependencies{underlying: &stubUnderlyingAgent{}},
-			expect: func(underlying *stubUnderlyingAgent, output agent.Result, err error) {
-				s.NoError(err)
-				s.False(underlying.executeCalled, "nao deve chamar o LLM subjacente quando multiplos valores sao detectados")
-				s.Equal(workflows.MultiItemOrientationMessage, output.Content)
-				s.Equal(agent.ToolOutcomeClarify, output.ToolOutcome)
-				s.Equal(agent.ExecutionModeSync, output.Mode)
+			expect: func(decision GuardDecision) {
+				s.True(decision.Handled)
+				s.Equal(workflows.MultiItemOrientationMessage, decision.Result.Content)
+				s.Equal(agent.ToolOutcomeClarify, decision.Result.ToolOutcome)
+				s.Equal(agent.ExecutionModeSync, decision.Result.Mode)
 			},
 		},
 		{
-			name: "valor unico delega normalmente ao agente subjacente",
+			name: "valor unico com separador de milhar BR nao trata e passa adiante",
 			args: args{messages: []llm.Message{
 				{Role: "system", Content: "instructions"},
 				{Role: "user", Content: "Recebi meu salário de R$ 13.874,40"},
 			}},
-			dependencies: dependencies{underlying: &stubUnderlyingAgent{result: agent.Result{Content: "ok"}}},
-			expect: func(underlying *stubUnderlyingAgent, output agent.Result, err error) {
-				s.NoError(err)
-				s.True(underlying.executeCalled, "deve delegar ao agente subjacente quando apenas um valor e detectado")
-				s.Equal("ok", output.Content)
+			expect: func(decision GuardDecision) {
+				s.False(decision.Handled)
 			},
 		},
 	}
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			guarded := WithMultiItemGuard(scenario.dependencies.underlying)
-			output, err := guarded.Execute(s.ctx, agent.Request{Messages: scenario.args.messages})
-			scenario.expect(scenario.dependencies.underlying, output, err)
+			guard := NewMultiItemGuard()
+			decision := guard.Inspect(s.ctx, agent.Request{Messages: scenario.args.messages})
+			scenario.expect(decision)
 		})
 	}
 }

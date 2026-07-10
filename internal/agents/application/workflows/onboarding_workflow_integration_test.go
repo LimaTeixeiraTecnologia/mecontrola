@@ -98,7 +98,7 @@ func (s *OnboardingWorkflowRealLLMSuite) SetupTest() {
 
 func (s *OnboardingWorkflowRealLLMSuite) TestGoalValueCombinedExtractionGate() {
 	obs := fake.NewProvider()
-	a := agents.BuildMeControlaAgent(s.provider, nil, nil, obs)
+	a := agents.BuildMeControlaAgent(s.provider, nil, nil, obs, 0)
 
 	type args struct {
 		resumeText  string
@@ -266,7 +266,7 @@ func (s *OnboardingWorkflowRealLLMSuite) TestGoalValueCombinedExtractionGate() {
 
 func (s *OnboardingWorkflowRealLLMSuite) TestMethodologyParsesConfirmPercentReais() {
 	obs := fake.NewProvider()
-	a := agents.BuildMeControlaAgent(s.provider, []tool.ToolHandle{}, nil, obs)
+	a := agents.BuildMeControlaAgent(s.provider, []tool.ToolHandle{}, nil, obs, 0)
 
 	const income int64 = 1350000
 

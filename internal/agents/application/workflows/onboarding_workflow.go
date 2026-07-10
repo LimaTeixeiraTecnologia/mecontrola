@@ -48,7 +48,7 @@ var categoryLabels = map[string]string{
 	"expense.liberdade_financeira": "🏦 Liberdade Financeira",
 }
 
-var _defaultDistributionBP = map[string]int{
+var defaultDistributionBP = map[string]int{
 	"expense.custo_fixo":           4000,
 	"expense.conhecimento":         1000,
 	"expense.prazeres":             1000,
@@ -209,7 +209,7 @@ func DecideDistribution(allocsBP map[string]int) error {
 func DecideAllocationsBP(kind allocationInputKind, valuesBySlug map[string]float64, incomeCents int64) (map[string]int, error) {
 	switch kind {
 	case allocationInputConfirm:
-		return maps.Clone(_defaultDistributionBP), nil
+		return maps.Clone(defaultDistributionBP), nil
 	case allocationInputPercent:
 		bp := make(map[string]int, len(canonicalSlugs))
 		totalPct := 0
@@ -424,32 +424,32 @@ var recurrenceSchema = map[string]any{
 	"additionalProperties": false,
 }
 
-const _welcomeGoalPrompt = "🎉 Bem-vindo ao MeControla! 🎉\n\n" +
+const welcomeGoalPrompt = "🎉 Bem-vindo ao MeControla! 🎉\n\n" +
 	"Estou aqui para te ajudar a organizar suas finanças e conquistar seus objetivos. 💪💰\n\n" +
 	"Vamos começar? Qual é o seu principal objetivo financeiro para este mês?\n" +
 	"(por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva; se quiser, já pode me contar o valor da meta, tipo \"comprar uma casa, meta de R$ 400.000,00\")"
 
-const _goalReprompt = "Não consegui identificar seu objetivo. Qual é o seu principal objetivo financeiro para este mês? Por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva. Se souber, pode me contar também o valor da meta — mas isso é totalmente opcional."
+const goalReprompt = "Não consegui identificar seu objetivo. Qual é o seu principal objetivo financeiro para este mês? Por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva. Se souber, pode me contar também o valor da meta — mas isso é totalmente opcional."
 
-const _goalValueReprompt = "Legal! E você já tem uma ideia de quanto (em R$) representa essa meta? Pode responder com um número, por exemplo \"R$ 400.000,00\" ou \"400 mil\" — se preferir não informar agora, é só responder \"não\" que a gente segue em frente."
+const goalValueReprompt = "Legal! E você já tem uma ideia de quanto (em R$) representa essa meta? Pode responder com um número, por exemplo \"R$ 400.000,00\" ou \"400 mil\" — se preferir não informar agora, é só responder \"não\" que a gente segue em frente."
 
-const _incomePrompt = "Perfeito! Agora me conta: qual é a sua renda mensal líquida em reais? (por exemplo: R$ 3.500,00)"
+const incomePrompt = "Perfeito! Agora me conta: qual é a sua renda mensal líquida em reais? (por exemplo: R$ 3.500,00)"
 
-const _incomeReprompt = "Não consegui identificar o valor. Qual é a sua renda mensal líquida em reais? Por exemplo: R$ 3.500,00."
+const incomeReprompt = "Não consegui identificar o valor. Qual é a sua renda mensal líquida em reais? Por exemplo: R$ 3.500,00."
 
-const _cardsReprompt = "Para adicionar o cartão, me diga o apelido, o banco emissor e o dia de vencimento da fatura (um número entre 1 e 31). Por exemplo: \"Nubank, vencimento dia 10\". Se preferir não adicionar agora, responda \"não\"."
+const cardsReprompt = "Para adicionar o cartão, me diga o apelido, o banco emissor e o dia de vencimento da fatura (um número entre 1 e 31). Por exemplo: \"Nubank, vencimento dia 10\". Se preferir não adicionar agora, responda \"não\"."
 
-const _summaryReprompt = "Sem problema! Quando estiver tudo certo, responda \"sim\" para eu ativar o seu orçamento."
+const summaryReprompt = "Sem problema! Quando estiver tudo certo, responda \"sim\" para eu ativar o seu orçamento."
 
-const _conclusionRecurrencePrompt = "🎉 Seu orçamento foi ativado com sucesso! Deseja que ele se repita automaticamente pelos próximos 12 meses? Responda \"sim\" ou \"não\"."
+const conclusionRecurrencePrompt = "🎉 Seu orçamento foi ativado com sucesso! Deseja que ele se repita automaticamente pelos próximos 12 meses? Responda \"sim\" ou \"não\"."
 
-const _allocationInputSystemPrompt = "Você classifica a resposta do usuário sobre a distribuição do orçamento em 5 categorias: custo_fixo, conhecimento, prazeres, metas, liberdade_financeira. " +
+const allocationInputSystemPrompt = "Você classifica a resposta do usuário sobre a distribuição do orçamento em 5 categorias: custo_fixo, conhecimento, prazeres, metas, liberdade_financeira. " +
 	"Defina action='confirm' quando o usuário aceitar a sugestão sem informar novos valores (ex.: sim, aceito, pode confirmar, ok). " +
 	"Defina action='percent' quando ele informar percentuais (números pequenos que somam cerca de 100). " +
 	"Defina action='reais' quando ele informar valores em reais (R$). " +
 	"Preencha cada categoria com o número informado pelo usuário; use 0 quando a categoria não for citada."
 
-const _goalWithValueSystemPrompt = "Extraia o objetivo financeiro principal do texto do usuário (campo goal, string concisa) e, se houver, o valor em reais associado a essa meta. " +
+const goalWithValueSystemPrompt = "Extraia o objetivo financeiro principal do texto do usuário (campo goal, string concisa) e, se houver, o valor em reais associado a essa meta. " +
 	"Defina hasAmount=true somente quando o texto mencionar explicitamente um valor monetário para a meta; caso contrário hasAmount=false e amountBRL=0. " +
 	"Converta o valor mencionado para um número em reais (amountBRL), sempre em ponto decimal, nunca com símbolo de moeda ou separador de milhar. Exemplos de conversão: " +
 	"\"R$ 400.000,00\" -> amountBRL=400000; " +
@@ -459,7 +459,7 @@ const _goalWithValueSystemPrompt = "Extraia o objetivo financeiro principal do t
 	"\"1,5 milhão\" -> amountBRL=1500000. " +
 	"Se o usuário não mencionar nenhum valor, ou disser que não sabe, ou recusar informar, defina hasAmount=false e amountBRL=0 — nunca invente um valor que não esteja no texto."
 
-const _goalValueSystemPrompt = "Extraia, se houver, o valor em reais que o usuário informou para a meta financeira dele. " +
+const goalValueSystemPrompt = "Extraia, se houver, o valor em reais que o usuário informou para a meta financeira dele. " +
 	"Defina hasAmount=true somente quando o texto mencionar explicitamente um valor monetário; caso contrário hasAmount=false e amountBRL=0. " +
 	"Converta o valor mencionado para um número em reais (amountBRL), sempre em ponto decimal, nunca com símbolo de moeda ou separador de milhar. Exemplos de conversão: " +
 	"\"R$ 400.000,00\" -> amountBRL=400000; " +
@@ -534,7 +534,7 @@ func BuildGoalStep(a agent.Agent) func(context.Context, OnboardingState) (workfl
 	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		if state.ResumeText == "" {
 			state.Phase = PhaseGoal
-			return suspendStep(state, _welcomeGoalPrompt), nil
+			return suspendStep(state, welcomeGoalPrompt), nil
 		}
 		resumeText := state.ResumeText
 		state.ResumeText = ""
@@ -542,7 +542,7 @@ func BuildGoalStep(a agent.Agent) func(context.Context, OnboardingState) (workfl
 		if state.Goal == "" {
 			extracted, err := a.Execute(ctx, agent.Request{
 				Messages: []llm.Message{
-					{Role: "system", Content: _goalWithValueSystemPrompt},
+					{Role: "system", Content: goalWithValueSystemPrompt},
 					{Role: "user", Content: resumeText},
 				},
 				Schema: &llm.Schema{Name: "goal_with_value_extract", Strict: true, Schema: goalWithValueSchema},
@@ -557,7 +557,7 @@ func BuildGoalStep(a agent.Agent) func(context.Context, OnboardingState) (workfl
 			goal, err := DecideGoal(extract.Goal)
 			if err != nil {
 				state.GoalValueAsked = true
-				return suspendStep(state, _goalReprompt), nil
+				return suspendStep(state, goalReprompt), nil
 			}
 			state.Goal = goal
 			if cents, ok := DecideGoalValueCents(extract.HasAmount, extract.AmountBRL); ok {
@@ -565,19 +565,19 @@ func BuildGoalStep(a agent.Agent) func(context.Context, OnboardingState) (workfl
 			}
 			if state.GoalValueCents == 0 && !state.GoalValueAsked {
 				state.GoalValueAsked = true
-				return suspendStep(state, _goalValueReprompt), nil
+				return suspendStep(state, goalValueReprompt), nil
 			}
 			return completeStep(state), nil
 		}
 
 		if !state.GoalValueAsked {
 			state.GoalValueAsked = true
-			return suspendStep(state, _goalValueReprompt), nil
+			return suspendStep(state, goalValueReprompt), nil
 		}
 
 		extracted, err := a.Execute(ctx, agent.Request{
 			Messages: []llm.Message{
-				{Role: "system", Content: _goalValueSystemPrompt},
+				{Role: "system", Content: goalValueSystemPrompt},
 				{Role: "user", Content: resumeText},
 			},
 			Schema: &llm.Schema{Name: "goal_value_extract", Strict: true, Schema: goalValueSchema},
@@ -600,7 +600,7 @@ func BuildIncomeStep(a agent.Agent) func(context.Context, OnboardingState) (work
 	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		if state.ResumeText == "" {
 			state.Phase = PhaseMonthlyIncome
-			return suspendStep(state, _incomePrompt), nil
+			return suspendStep(state, incomePrompt), nil
 		}
 		resumeText := state.ResumeText
 		state.ResumeText = ""
@@ -620,7 +620,7 @@ func BuildIncomeStep(a agent.Agent) func(context.Context, OnboardingState) (work
 		}
 		cents, err := DecideIncomeCents(extract.AmountBRL)
 		if err != nil {
-			return suspendStep(state, _incomeReprompt), nil
+			return suspendStep(state, incomeReprompt), nil
 		}
 		state.IncomeCents = cents
 		return completeStep(state), nil
@@ -659,7 +659,7 @@ func BuildCardsStep(a agent.Agent, cards interfaces.CardManager) func(context.Co
 		}
 		if extract.WantsCard {
 			if err := DecideCardEntry(extract.Nickname, extract.Bank, extract.DueDay); err != nil {
-				return suspendStep(state, _cardsReprompt), nil
+				return suspendStep(state, cardsReprompt), nil
 			}
 			userUUID, err := uuid.Parse(state.UserID)
 			if err != nil {
@@ -683,7 +683,7 @@ func BuildCardsStep(a agent.Agent, cards interfaces.CardManager) func(context.Co
 
 func BuildMethodologyStep(a agent.Agent, budgets interfaces.BudgetPlanner) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
-		preview, previewErr := budgets.SuggestAllocation(ctx, state.IncomeCents, allocationBPList(_defaultDistributionBP))
+		preview, previewErr := budgets.SuggestAllocation(ctx, state.IncomeCents, allocationBPList(defaultDistributionBP))
 		if previewErr != nil {
 			return failStep(state, fmt.Errorf("agents.onboarding.methodology: suggest_allocation: %w", previewErr))
 		}
@@ -695,7 +695,7 @@ func BuildMethodologyStep(a agent.Agent, budgets interfaces.BudgetPlanner) func(
 		state.ResumeText = ""
 		extracted, err := a.Execute(ctx, agent.Request{
 			Messages: []llm.Message{
-				{Role: "system", Content: _allocationInputSystemPrompt},
+				{Role: "system", Content: allocationInputSystemPrompt},
 				{Role: "user", Content: resumeText},
 			},
 			Schema: &llm.Schema{Name: "allocation_input", Strict: true, Schema: allocationInputSchema},
@@ -798,7 +798,7 @@ func BuildSummaryStep(a agent.Agent, budgets interfaces.BudgetPlanner) func(cont
 			return failStep(state, fmt.Errorf("agents.onboarding.summary: unmarshal: %w", err))
 		}
 		if !extract.Confirmed {
-			return suspendStep(state, _summaryReprompt), nil
+			return suspendStep(state, summaryReprompt), nil
 		}
 		return completeStep(state), nil
 	}
@@ -817,7 +817,7 @@ func BuildConclusionStep(a agent.Agent, budgets interfaces.BudgetPlanner, workin
 			if err := budgets.ActivateBudget(ctx, userUUID, competence); err != nil && !errors.Is(err, interfaces.ErrBudgetAlreadyActive) {
 				return failStep(state, fmt.Errorf("agents.onboarding.conclusion: activate_budget: %w", err))
 			}
-			return suspendStep(state, _conclusionRecurrencePrompt), nil
+			return suspendStep(state, conclusionRecurrencePrompt), nil
 		}
 		resumeText := state.ResumeText
 		state.ResumeText = ""

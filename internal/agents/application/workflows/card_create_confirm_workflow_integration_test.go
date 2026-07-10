@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -346,4 +347,83 @@ func (s *CardCreateConfirmWorkflowIntegrationSuite) TestInteg_TTLExpired_Cancels
 	s.Empty(reply)
 
 	s.Equal(0, s.countCardsByNickname(userID, nickname), "RF-04: confirmação expirada não deve criar cartão")
+}
+
+func (s *CardCreateConfirmWorkflowIntegrationSuite) TestInteg_Reaper_RunOrfaoEncerraFailedNuncaSuspended() {
+	userID := s.newUser()
+	engine, def, _ := s.buildEngineAndContinuer(s.cards)
+	nickname := "Orfao-" + uuid.NewString()[:8]
+
+	key := workflows.CardCreateKey(userID.String())
+	_, err := engine.Start(s.ctx, def, key, s.baseState(userID, nickname, "Nubank", 10))
+	s.Require().NoError(err)
+
+	_, execErr := s.db.ExecContext(s.ctx,
+		`UPDATE mecontrola.workflow_runs SET updated_at = now() - interval '20 minutes' WHERE workflow = $1 AND correlation_key = $2`,
+		workflows.CardCreateConfirmWorkflowID, key,
+	)
+	s.Require().NoError(execErr)
+
+	o11y := fake.NewProvider()
+	store := workflowpg.NewPostgresStore(o11y, s.db)
+	reaper := workflow.NewStaleSuspendedReaper(store, workflows.CardCreateConfirmWorkflowID, 15*time.Minute, 100, o11y)
+
+	reaped, reapErr := reaper.Reap(s.ctx)
+	s.Require().NoError(reapErr)
+	s.GreaterOrEqual(reaped, int64(1))
+
+	var status string
+	scanErr := s.db.QueryRowContext(s.ctx,
+		`SELECT status FROM mecontrola.workflow_runs WHERE workflow = $1 AND correlation_key = $2`,
+		workflows.CardCreateConfirmWorkflowID, key,
+	).Scan(&status)
+	s.Require().NoError(scanErr)
+	s.Equal("failed", status, "RF-46: reaper deve marcar run órfão como failed, nunca permanecer suspended")
+
+	s.Equal(0, s.countCardsByNickname(userID, nickname), "run órfão reapeado não deve criar cartão")
+}
+
+func (s *CardCreateConfirmWorkflowIntegrationSuite) TestInteg_ConcorrenciaConfirmacaoSimultanea_UmUnicoCartao() {
+	userID := s.newUser()
+	engine, def, _ := s.buildEngineAndContinuer(s.cards)
+	threadID := "peer-concurrent-" + uuid.NewString()
+	nickname := "Concorrente-" + uuid.NewString()[:8]
+
+	key := workflows.CardCreateKey(userID.String())
+	_, err := engine.Start(s.ctx, def, key, s.baseState(userID, nickname, "Nubank", 10))
+	s.Require().NoError(err)
+
+	const goroutines = 5
+	type result struct {
+		handled bool
+		err     error
+	}
+	results := make(chan result, goroutines)
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			_, _, localContinuer := s.buildEngineAndContinuer(s.cards)
+			wamid := "wamid-concurrent-" + uuid.NewString()
+			handled, _, contErr := localContinuer.Continue(s.ctx, userID.String(), threadID, "sim", wamid)
+			results <- result{handled: handled, err: contErr}
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	handledCount := 0
+	for r := range results {
+		if r.err != nil {
+			s.Contains(r.err.Error(), "version conflict", "RF-45: única classe de erro aceitável em concorrência é o CAS otimista do kernel — perdedor nunca reexecuta")
+			continue
+		}
+		if r.handled {
+			handledCount++
+		}
+	}
+
+	s.GreaterOrEqual(handledCount, 1, "ao menos uma goroutine deve concluir a confirmação")
+	s.Equal(1, s.countCardsByNickname(userID, nickname), "concorrência sobre a mesma confirmação deve produzir exatamente 1 cartão")
 }

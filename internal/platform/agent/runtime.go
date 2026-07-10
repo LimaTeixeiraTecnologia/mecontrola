@@ -15,8 +15,11 @@ import (
 )
 
 type runtimeMetrics struct {
-	runsTotal   observability.Counter
-	runDuration observability.Histogram
+	runsTotal          observability.Counter
+	runDuration        observability.Histogram
+	runTruncatedTotal  observability.Counter
+	runUpdateErrors    observability.Counter
+	messageAppendError observability.Counter
 }
 
 type agentRuntime struct {
@@ -68,8 +71,11 @@ func NewAgentRuntime(
 		hooks:      NoopHooks{},
 		o11y:       o11y,
 		metrics: runtimeMetrics{
-			runsTotal:   o11y.Metrics().Counter("agent_runs_total", "Total agent runs", "1"),
-			runDuration: o11y.Metrics().Histogram("agent_run_duration_seconds", "Agent run duration", "s"),
+			runsTotal:          o11y.Metrics().Counter("agent_runs_total", "Total agent runs", "1"),
+			runDuration:        o11y.Metrics().Histogram("agent_run_duration_seconds", "Agent run duration", "s"),
+			runTruncatedTotal:  o11y.Metrics().Counter("agent_run_truncated_total", "Total agent runs truncated by length", "1"),
+			runUpdateErrors:    o11y.Metrics().Counter("agent_run_update_errors_total", "Total RunStore.Update failures", "1"),
+			messageAppendError: o11y.Metrics().Counter("agent_message_append_errors_total", "Total MessageStore.Append failures", "1"),
 		},
 	}
 	for _, opt := range opts {
@@ -165,32 +171,22 @@ func (r *agentRuntime) logRunError(ctx context.Context, run Run, stage string, e
 }
 
 func (r *agentRuntime) finishRun(ctx context.Context, run Run, platformThreadID uuid.UUID, in InboundRequest, result Result, start time.Time) Outcome {
-	if err := r.messages.Append(ctx, platformThreadID, memory.Message{
+	r.appendMessage(ctx, platformThreadID, in, memory.Message{
 		ID:               uuid.New(),
 		PlatformThreadID: platformThreadID,
 		ResourceID:       in.ResourceID,
 		Role:             memory.RoleUser,
 		Content:          in.Message,
 		CreatedAt:        time.Now().UTC(),
-	}); err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.runtime.finish_run: append user message falhou",
-			observability.String("agent_id", in.AgentID),
-			observability.Error(err),
-		)
-	}
-	if err := r.messages.Append(ctx, platformThreadID, memory.Message{
+	})
+	r.appendMessage(ctx, platformThreadID, in, memory.Message{
 		ID:               uuid.New(),
 		PlatformThreadID: platformThreadID,
 		ResourceID:       in.ResourceID,
 		Role:             memory.RoleAssistant,
 		Content:          result.Content,
 		CreatedAt:        time.Now().UTC(),
-	}); err != nil {
-		r.o11y.Logger().Warn(ctx, "agent.runtime.finish_run: append assistant message falhou",
-			observability.String("agent_id", in.AgentID),
-			observability.Error(err),
-		)
-	}
+	})
 
 	toolOutcome := ToolOutcomeRouted
 	if result.ToolOutcome == ToolOutcomeUsecaseError {
@@ -201,12 +197,18 @@ func (r *agentRuntime) finishRun(ctx context.Context, run Run, platformThreadID 
 	if toolOutcome == ToolOutcomeUsecaseError || strings.TrimSpace(result.Content) == "" {
 		runStatus = RunStatusFailed
 		toolOutcome = ToolOutcomeUsecaseError
-		errStr = firstToolErrorContent(result.ToolCalls)
+		errStr = aggregateToolErrorContent(result.ToolCalls)
 	}
 	if runStatus == RunStatusSucceeded && r.writeToolGuardFailed(result.ToolCalls) {
 		runStatus = RunStatusFailed
 		toolOutcome = ToolOutcomeUsecaseError
-		errStr = firstToolErrorContent(result.ToolCalls)
+		errStr = aggregateToolErrorContent(result.ToolCalls)
+	}
+	if result.TruncatedByLength {
+		runStatus = RunStatusFailed
+		toolOutcome = ToolOutcomeTruncated
+		errStr = "resposta truncada por length"
+		r.metrics.runTruncatedTotal.Add(ctx, 1, observability.String("agent_id", run.AgentID))
 	}
 
 	if runStatus == RunStatusFailed {
@@ -229,13 +231,38 @@ func (r *agentRuntime) finishRun(ctx context.Context, run Run, platformThreadID 
 	}
 }
 
-func firstToolErrorContent(calls []ToolCallRecord) string {
+func (r *agentRuntime) appendMessage(ctx context.Context, platformThreadID uuid.UUID, in InboundRequest, msg memory.Message) {
+	if err := r.messages.Append(ctx, platformThreadID, msg); err != nil {
+		r.metrics.messageAppendError.Add(ctx, 1,
+			observability.String("agent_id", in.AgentID),
+			observability.String("role", msg.Role.String()),
+		)
+		r.o11y.Logger().Warn(ctx, "agent.runtime.finish_run: append message falhou",
+			observability.String("agent_id", in.AgentID),
+			observability.String("role", msg.Role.String()),
+			observability.Error(err),
+		)
+	}
+}
+
+const maxAggregatedToolErrors = 3
+
+func aggregateToolErrorContent(calls []ToolCallRecord) string {
+	var errs []string
 	for _, c := range calls {
-		if c.Outcome == ToolCallOutcomeError {
-			return c.Content
+		if c.Outcome != ToolCallOutcomeError {
+			continue
+		}
+		content := strings.TrimSpace(c.Content)
+		if content == "" {
+			continue
+		}
+		errs = append(errs, content)
+		if len(errs) >= maxAggregatedToolErrors {
+			break
 		}
 	}
-	return ""
+	return strings.Join(errs, " | ")
 }
 
 func (r *agentRuntime) recordRunFailure(ctx context.Context, run Run, errStr string) {
@@ -305,7 +332,19 @@ func (r *agentRuntime) closeRun(ctx context.Context, run Run, status RunStatus, 
 	run.Error = errStr
 	run.EndedAt = &now
 	run.DurationMs = time.Since(start).Milliseconds()
-	_ = r.runs.Update(ctx, run)
+
+	if err := r.runs.Update(ctx, run); err != nil {
+		r.metrics.runUpdateErrors.Add(ctx, 1, observability.String("agent_id", run.AgentID))
+		r.o11y.Logger().Error(ctx, "agent.runtime.close_run: run_store.update falhou",
+			observability.String("agent_id", run.AgentID),
+			observability.Error(err),
+		)
+		r.metrics.runDuration.Record(ctx, time.Since(start).Seconds(),
+			observability.String("agent_id", run.AgentID),
+		)
+		return
+	}
+
 	r.metrics.runsTotal.Add(ctx, 1,
 		observability.String("agent_id", run.AgentID),
 		observability.String("status", status.String()),

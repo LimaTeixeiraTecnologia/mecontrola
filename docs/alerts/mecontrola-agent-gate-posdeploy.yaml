@@ -1,0 +1,78 @@
+groups:
+  - name: mecontrola.agent.gate_posdeploy
+    interval: 1m
+    rules:
+      - alert: AgentRunTruncatedTotalIncreased
+        expr: increase(agent_run_truncated_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: platform
+          prd: prd-orquestracao-conversacional-confiavel
+        annotations:
+          summary: "Truncamento por length detectado no agente MeControla"
+          description: |
+            RF-23/RF-53: o runtime detectou finish_reason=length e marcou o run como
+            truncated (falha-segura). Qualquer ocorrencia apos deploy bloqueia a promocao
+            do gate pos-deploy (RF-53: nenhum novo alerta critico de truncamento).
+            agent_id: {{ $labels.agent_id }}
+            Runbook: docs/runbooks/mecontrola-agent-gate-posdeploy.md
+
+      - alert: AgentRunUpdateErrorsIncreased
+        expr: increase(agent_run_update_errors_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: platform
+          prd: prd-orquestracao-conversacional-confiavel
+        annotations:
+          summary: "Falha de RunStore.Update no agente MeControla"
+          description: |
+            RF-26/RF-53: fechamento de run falhou; o runtime NAO reporta sucesso quando
+            o update falha (ver regra de consistencia na techspec). Investigar conexao
+            com Postgres/platform_runs antes de promover a versao.
+            agent_id: {{ $labels.agent_id }}
+            Runbook: docs/runbooks/mecontrola-agent-gate-posdeploy.md
+
+      - alert: AgentMessageAppendErrorsIncreased
+        expr: increase(agent_message_append_errors_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          team: platform
+          prd: prd-orquestracao-conversacional-confiavel
+        annotations:
+          summary: "Falha de MessageStore.Append no agente MeControla"
+          description: |
+            RF-25/RF-53: mensagem (role={{ $labels.role }}) nao foi persistida.
+            agent_id: {{ $labels.agent_id }}
+            Runbook: docs/runbooks/mecontrola-agent-gate-posdeploy.md
+
+      - alert: AgentScorerExecutionFailureRateHigh
+        expr: sum(rate(scorer_runs_total{outcome=~"error|persist_error"}[15m])) by (scorer_id) > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          prd: prd-orquestracao-conversacional-confiavel
+        annotations:
+          summary: "Falha de execucao/persistencia de scorer"
+          description: |
+            RF-28: run sem scorer executado ou sem resultado persistido deve ser
+            observavel. scorer_id: {{ $labels.scorer_id }}, outcome: {{ $labels.outcome }}.
+            Runbook: docs/runbooks/mecontrola-agent-gate-posdeploy.md
+
+      - alert: AgentGuardChainNoDecisionsObserved
+        expr: absent(agent_guard_decisions_total)
+        for: 30m
+        labels:
+          severity: warning
+          team: platform
+          prd: prd-orquestracao-conversacional-confiavel
+        annotations:
+          summary: "Cadeia de guardas conversacionais sem decisoes observadas"
+          description: |
+            RF-06: nenhum handler da cadeia (guard_chain.go) emitiu metrica nos ultimos
+            30 minutos, apesar de trafego esperado. Pode indicar guardChainAgent nao
+            conectado ou substituido silenciosamente (regressao de RF-01/RF-54/RF-55).
+            Runbook: docs/runbooks/mecontrola-agent-gate-posdeploy.md

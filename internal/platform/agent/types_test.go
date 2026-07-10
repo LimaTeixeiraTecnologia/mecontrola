@@ -57,6 +57,7 @@ func (s *TypesTestSuite) TestToolOutcome_String() {
 	s.Equal("missingResolver", ToolOutcomeMissingResolver.String())
 	s.Equal("replay", ToolOutcomeReplay.String())
 	s.Equal("reconciled", ToolOutcomeReconciled.String())
+	s.Equal("truncated", ToolOutcomeTruncated.String())
 	s.Equal("unknown", ToolOutcome(0).String())
 }
 
@@ -64,6 +65,7 @@ func (s *TypesTestSuite) TestToolOutcome_IsValid() {
 	s.True(ToolOutcomeRouted.IsValid())
 	s.True(ToolOutcomeReplay.IsValid())
 	s.True(ToolOutcomeReconciled.IsValid())
+	s.True(ToolOutcomeTruncated.IsValid())
 	s.False(ToolOutcome(0).IsValid())
 }
 
@@ -78,6 +80,7 @@ func (s *TypesTestSuite) TestParseToolOutcome_Valid() {
 		{"missingResolver", ToolOutcomeMissingResolver},
 		{"replay", ToolOutcomeReplay},
 		{"reconciled", ToolOutcomeReconciled},
+		{"truncated", ToolOutcomeTruncated},
 	}
 	for _, c := range cases {
 		got, err := ParseToolOutcome(c.input)

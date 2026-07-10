@@ -234,7 +234,7 @@ func (a *agentImpl) invokeToolCall(ctx context.Context, toolMap map[string]tool.
 		tCtx = context.WithValue(tCtx, invocationItemSeqKey{}, seq)
 	}
 	result, verbatimText, invokeErr := h.Invoke(tCtx, argsBytes)
-	a.hooks.AfterTool(ctx, a.id, h.ID(), result, invokeErr)
+	a.hooks.AfterTool(ctx, a.id, h.ID(), argsBytes, result, invokeErr)
 	a.metrics.toolInvocations.Add(ctx, 1,
 		observability.String("agent_id", a.id),
 		observability.String("tool", h.ID()),

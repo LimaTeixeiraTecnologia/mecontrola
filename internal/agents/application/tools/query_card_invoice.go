@@ -2,12 +2,14 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
@@ -33,9 +35,15 @@ type QueryCardInvoiceOutput struct {
 	DueAt           time.Time                    `json:"dueAt"`
 	ItemsTotalCents int64                        `json:"itemsTotalCents"`
 	Items           []QueryCardInvoiceItemOutput `json:"items"`
+	Outcome         string                       `json:"outcome,omitempty"`
+	Message         string                       `json:"message,omitempty"`
 }
 
-func BuildQueryCardInvoiceTool(ledger interfaces.TransactionsLedger) tool.ToolHandle {
+func extractQueryCardInvoiceVerbatim(o QueryCardInvoiceOutput) (string, bool) {
+	return o.Message, o.Outcome == agent.ToolOutcomeClarify.String() && o.Message != ""
+}
+
+func BuildQueryCardInvoiceTool(ledger interfaces.TransactionsLedger, cards interfaces.CardManager) tool.ToolHandle {
 	in := llm.Schema{
 		Name:   "query_card_invoice_input",
 		Strict: true,
@@ -62,19 +70,38 @@ func BuildQueryCardInvoiceTool(ledger interfaces.TransactionsLedger) tool.ToolHa
 				"dueAt":           map[string]any{"type": "string"},
 				"itemsTotalCents": map[string]any{"type": "integer"},
 				"items":           map[string]any{"type": "array"},
+				"outcome":         map[string]any{"type": "string"},
+				"message":         map[string]any{"type": "string"},
 			},
-			"required":             []string{"id", "cardId", "refMonth", "closingAt", "dueAt", "itemsTotalCents", "items"},
+			"required":             []string{"id", "cardId", "refMonth", "closingAt", "dueAt", "itemsTotalCents", "items", "outcome", "message"},
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool("query_card_invoice", "Consulta a fatura de um cartão de crédito para o mês informado.", in, out, buildQueryCardInvoiceExec(ledger))
+	return tool.NewVerbatimTool("query_card_invoice", "Consulta a fatura de um cartão de crédito para o mês informado.", in, out, buildQueryCardInvoiceExec(ledger, cards), extractQueryCardInvoiceVerbatim)
 }
 
-func buildQueryCardInvoiceExec(ledger interfaces.TransactionsLedger) func(context.Context, QueryCardInvoiceInput) (QueryCardInvoiceOutput, error) {
+func buildQueryCardInvoiceExec(ledger interfaces.TransactionsLedger, cards interfaces.CardManager) func(context.Context, QueryCardInvoiceInput) (QueryCardInvoiceOutput, error) {
 	return func(ctx context.Context, in QueryCardInvoiceInput) (QueryCardInvoiceOutput, error) {
+		resourceID, _, _, ok := agent.InboundIdentityFromContext(ctx)
+		if !ok {
+			return QueryCardInvoiceOutput{}, fmt.Errorf("query_card_invoice: identidade não disponível no contexto")
+		}
+		userID, err := uuid.Parse(resourceID)
+		if err != nil {
+			return QueryCardInvoiceOutput{}, fmt.Errorf("query_card_invoice: userId inválido: %w", err)
+		}
 		cardID, err := uuid.Parse(in.CardID)
 		if err != nil {
 			return QueryCardInvoiceOutput{}, fmt.Errorf("query_card_invoice: cardId inválido: %w", err)
+		}
+		if _, getErr := cards.GetCard(ctx, cardID, userID); getErr != nil {
+			if errors.Is(getErr, interfaces.ErrCardNotFound) {
+				return QueryCardInvoiceOutput{
+					Outcome: agent.ToolOutcomeClarify.String(),
+					Message: cardNotFoundClarifyMessage,
+				}, nil
+			}
+			return QueryCardInvoiceOutput{}, fmt.Errorf("query_card_invoice: %w", getErr)
 		}
 		refMonth := in.RefMonth
 		if refMonth == "" {

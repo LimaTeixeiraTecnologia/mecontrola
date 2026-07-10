@@ -385,6 +385,173 @@ func (s *RuntimeTestSuite) TestExecute_OutcomeOutcomeField_UsecaseErrorOnEmptyCo
 	s.Equal(ToolOutcomeUsecaseError, runs.updated[0].Outcome)
 }
 
+func (s *RuntimeTestSuite) TestExecute_RF23_TruncatedByLength_FailsSafeWithToolOutcomeTruncated() {
+	threadID := uuid.New()
+
+	reg := NewAgentRegistry()
+	reg.Register(&fakeAgent{
+		id:           "agent-1",
+		instructions: "instr",
+		result: Result{
+			Content:           "resposta longa cortada no meio",
+			Mode:              ExecutionModeSync,
+			TruncatedByLength: true,
+		},
+	})
+
+	runs := &fakeRunStore{}
+	obs := fake.NewProvider()
+	rt := NewAgentRuntime(
+		reg,
+		&fakeThreadGateway{thread: memory.Thread{ID: threadID, ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		&fakeMessageStore{},
+		&fakeWorkingMemory{},
+		runs,
+		obs,
+	)
+
+	outcome, err := rt.Execute(s.ctx, InboundRequest{
+		AgentID:    "agent-1",
+		ResourceID: "res-1",
+		ThreadID:   "thr-1",
+		Message:    "como foi meu mes?",
+		MessageID:  "msg-1",
+	})
+
+	s.NoError(err)
+	s.Equal(RunStatusFailed, outcome.Status)
+	s.Equal(ToolOutcomeTruncated, outcome.Outcome)
+	s.Empty(outcome.Content)
+	s.False(outcome.Succeeded())
+
+	s.Require().Len(runs.updated, 1)
+	s.Equal(RunStatusFailed, runs.updated[0].Status)
+	s.Equal(ToolOutcomeTruncated, runs.updated[0].Outcome)
+
+	fakeMetrics, ok := obs.Metrics().(*fake.FakeMetrics)
+	s.Require().True(ok)
+	truncatedCounter := fakeMetrics.GetCounter("agent_run_truncated_total")
+	s.Require().NotNil(truncatedCounter)
+	s.Len(truncatedCounter.GetValues(), 1)
+}
+
+func (s *RuntimeTestSuite) TestExecute_RF26_RunStoreUpdateError_DoesNotReportSuccessMetric() {
+	threadID := uuid.New()
+
+	reg := NewAgentRegistry()
+	reg.Register(&fakeAgent{id: "agent-1", instructions: "instr", result: Result{Content: "ok", Mode: ExecutionModeSync}})
+
+	runs := &fakeRunStore{updateErr: errors.New("db unavailable")}
+	obs := fake.NewProvider()
+	rt := NewAgentRuntime(
+		reg,
+		&fakeThreadGateway{thread: memory.Thread{ID: threadID, ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		&fakeMessageStore{},
+		&fakeWorkingMemory{},
+		runs,
+		obs,
+	)
+
+	outcome, err := rt.Execute(s.ctx, InboundRequest{
+		AgentID:    "agent-1",
+		ResourceID: "res-1",
+		ThreadID:   "thr-1",
+		Message:    "hello",
+		MessageID:  "msg-1",
+	})
+
+	s.NoError(err)
+	s.Equal(RunStatusSucceeded, outcome.Status)
+
+	fakeMetrics, ok := obs.Metrics().(*fake.FakeMetrics)
+	s.Require().True(ok)
+
+	updateErrCounter := fakeMetrics.GetCounter("agent_run_update_errors_total")
+	s.Require().NotNil(updateErrCounter)
+	s.Len(updateErrCounter.GetValues(), 1)
+
+	runsTotalCounter := fakeMetrics.GetCounter("agent_runs_total")
+	if runsTotalCounter != nil {
+		s.Empty(runsTotalCounter.GetValues())
+	}
+}
+
+func (s *RuntimeTestSuite) TestExecute_RF25_MessageAppendError_EmitsMetricPerRole() {
+	threadID := uuid.New()
+
+	reg := NewAgentRegistry()
+	reg.Register(&fakeAgent{id: "agent-1", instructions: "instr", result: Result{Content: "ok", Mode: ExecutionModeSync}})
+
+	obs := fake.NewProvider()
+	rt := NewAgentRuntime(
+		reg,
+		&fakeThreadGateway{thread: memory.Thread{ID: threadID, ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		&failingMessageStore{err: errors.New("append failed")},
+		&fakeWorkingMemory{},
+		&fakeRunStore{},
+		obs,
+	)
+
+	outcome, err := rt.Execute(s.ctx, InboundRequest{
+		AgentID:    "agent-1",
+		ResourceID: "res-1",
+		ThreadID:   "thr-1",
+		Message:    "hello",
+		MessageID:  "msg-1",
+	})
+
+	s.NoError(err)
+	s.Equal(RunStatusSucceeded, outcome.Status)
+
+	fakeMetrics, ok := obs.Metrics().(*fake.FakeMetrics)
+	s.Require().True(ok)
+	appendErrCounter := fakeMetrics.GetCounter("agent_message_append_errors_total")
+	s.Require().NotNil(appendErrCounter)
+	s.Len(appendErrCounter.GetValues(), 2)
+}
+
+func (s *RuntimeTestSuite) TestExecute_RF27_AggregatesMultipleToolErrors() {
+	threadID := uuid.New()
+
+	reg := NewAgentRegistry()
+	reg.Register(&fakeAgent{
+		id:           "agent-1",
+		instructions: "instr",
+		result: Result{
+			Content: "",
+			Mode:    ExecutionModeSync,
+			ToolCalls: []ToolCallRecord{
+				{Tool: "register_expense", Outcome: ToolCallOutcomeError, Content: "erro 1"},
+				{Tool: "resolve_card", Outcome: ToolCallOutcomeError, Content: "erro 2"},
+			},
+		},
+	})
+
+	runs := &fakeRunStore{}
+	rt := NewAgentRuntime(
+		reg,
+		&fakeThreadGateway{thread: memory.Thread{ID: threadID, ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		&fakeMessageStore{},
+		&fakeWorkingMemory{},
+		runs,
+		s.obs,
+	)
+
+	outcome, err := rt.Execute(s.ctx, InboundRequest{
+		AgentID:    "agent-1",
+		ResourceID: "res-1",
+		ThreadID:   "thr-1",
+		Message:    "hello",
+		MessageID:  "msg-1",
+	})
+
+	s.NoError(err)
+	s.Equal(RunStatusFailed, outcome.Status)
+	s.Require().Len(runs.updated, 1)
+	s.Contains(runs.updated[0].Error, "erro 1")
+	s.Contains(runs.updated[0].Error, "erro 2")
+}
+
 func (s *RuntimeTestSuite) TestExecute_RF38_WriteToolGuard_FailsWhenWriteToolErrors() {
 	threadID := uuid.New()
 
@@ -619,6 +786,18 @@ func (f *fakeMessageStore) Append(_ context.Context, _ uuid.UUID, _ memory.Messa
 }
 
 func (f *fakeMessageStore) Recent(_ context.Context, _ uuid.UUID, _ int) ([]memory.Message, error) {
+	return nil, nil
+}
+
+type failingMessageStore struct {
+	err error
+}
+
+func (f *failingMessageStore) Append(_ context.Context, _ uuid.UUID, _ memory.Message) error {
+	return f.err
+}
+
+func (f *failingMessageStore) Recent(_ context.Context, _ uuid.UUID, _ int) ([]memory.Message, error) {
 	return nil, nil
 }
 

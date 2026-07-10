@@ -1,4 +1,4 @@
-package agents
+package guards
 
 import (
 	"context"
@@ -26,7 +26,7 @@ var (
 
 const moneyWordPlaceholder = "\x00MONEYWORD\x00"
 
-func detectMultipleMonetaryValues(message string) bool {
+func DetectMultipleMonetaryValues(message string) bool {
 	protectedTokens := multiItemMoneyWordRe.FindAllString(message, -1)
 	sanitized := multiItemMoneyWordRe.ReplaceAllString(message, moneyWordPlaceholder)
 	sanitized = multiItemUUIDRe.ReplaceAllString(sanitized, " ")
@@ -52,21 +52,26 @@ func lastUserMessageContent(messages []llm.Message) string {
 	return ""
 }
 
-type multiItemGuardAgent struct {
-	agent.Agent
+type multiItemGuard struct{}
+
+func NewMultiItemGuard() PreGuard {
+	return &multiItemGuard{}
 }
 
-func WithMultiItemGuard(a agent.Agent) agent.Agent {
-	return &multiItemGuardAgent{Agent: a}
+func (g *multiItemGuard) Name() string {
+	return "multi_item"
 }
 
-func (g *multiItemGuardAgent) Execute(ctx context.Context, in agent.Request) (agent.Result, error) {
-	if detectMultipleMonetaryValues(lastUserMessageContent(in.Messages)) {
-		return agent.Result{
+func (g *multiItemGuard) Inspect(_ context.Context, in agent.Request) GuardDecision {
+	if !DetectMultipleMonetaryValues(lastUserMessageContent(in.Messages)) {
+		return GuardDecision{}
+	}
+	return GuardDecision{
+		Handled: true,
+		Result: agent.Result{
 			Content:     workflows.MultiItemOrientationMessage,
 			Mode:        agent.ExecutionModeSync,
 			ToolOutcome: agent.ToolOutcomeClarify,
-		}, nil
+		},
 	}
-	return g.Agent.Execute(ctx, in)
 }

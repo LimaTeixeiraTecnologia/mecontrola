@@ -305,7 +305,7 @@ func (s *MecontrolaScorersSuite) TestFinancialToolCallAccuracyScorer_Covers22Too
 	}
 }
 
-func (s *MecontrolaScorersSuite) TestBuildMeControlaScorers_ReturnsThreeEntries() {
+func (s *MecontrolaScorersSuite) TestBuildMeControlaScorers_ReturnsAllEntries() {
 	type dependencies struct{}
 
 	scenarios := []struct {
@@ -314,10 +314,10 @@ func (s *MecontrolaScorersSuite) TestBuildMeControlaScorers_ReturnsThreeEntries(
 		expect       func(entries []scorer.ScorerEntry)
 	}{
 		{
-			name:         "deve retornar 3 scorers configurados",
+			name:         "deve retornar os 3 scorers atuais mais os intrinsecos comportamentais",
 			dependencies: dependencies{},
 			expect: func(entries []scorer.ScorerEntry) {
-				s.Len(entries, 3)
+				s.Len(entries, 11)
 			},
 		},
 	}

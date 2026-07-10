@@ -42,7 +42,7 @@ func (s *BudgetCreationExtractionRealLLMSuite) SetupSuite() {
 func (s *BudgetCreationExtractionRealLLMSuite) TestBudgetTotalExtractionGate() {
 	t := s.T()
 	obs := fake.NewProvider()
-	a := agents.BuildMeControlaAgent(s.provider, nil, nil, obs)
+	a := agents.BuildMeControlaAgent(s.provider, nil, nil, obs, 0)
 	planner := imocks.NewBudgetPlanner(t)
 	def := workflows.BuildBudgetCreationWorkflow(a, planner)
 
@@ -97,7 +97,7 @@ func (s *BudgetCreationExtractionRealLLMSuite) TestBudgetTotalExtractionGate() {
 func (s *BudgetCreationExtractionRealLLMSuite) TestBudgetDistributionExtractionGate() {
 	t := s.T()
 	obs := fake.NewProvider()
-	a := agents.BuildMeControlaAgent(s.provider, nil, nil, obs)
+	a := agents.BuildMeControlaAgent(s.provider, nil, nil, obs, 0)
 	planner := imocks.NewBudgetPlanner(t)
 	def := workflows.BuildBudgetCreationWorkflow(a, planner)
 

@@ -65,6 +65,48 @@ func (s *stubLedger) CreateRecurringTemplate(_ context.Context, _ interfaces.Raw
 	return interfaces.EntryRef{}, nil
 }
 
+type stubCardManager struct{}
+
+func (s *stubCardManager) CreateCard(_ context.Context, _ interfaces.NewCard) (interfaces.CardRef, error) {
+	return interfaces.CardRef{}, nil
+}
+
+func (s *stubCardManager) ListCards(_ context.Context, _ uuid.UUID) ([]interfaces.Card, error) {
+	return nil, nil
+}
+
+func (s *stubCardManager) GetCard(_ context.Context, _, _ uuid.UUID) (interfaces.Card, error) {
+	return interfaces.Card{}, interfaces.ErrCardNotFound
+}
+
+func (s *stubCardManager) ResolveCardByNickname(_ context.Context, _ uuid.UUID, _ string) (interfaces.Card, error) {
+	return interfaces.Card{}, interfaces.ErrCardNotFound
+}
+
+func (s *stubCardManager) CountCards(_ context.Context, _ uuid.UUID) (int64, error) {
+	return 0, nil
+}
+
+func (s *stubCardManager) BestPurchaseDay(_ context.Context, _ string, _ int) (interfaces.BestPurchaseDay, error) {
+	return interfaces.BestPurchaseDay{}, nil
+}
+
+func (s *stubCardManager) BankRecognized(_ context.Context, _ string) (bool, error) {
+	return false, nil
+}
+
+func (s *stubCardManager) UpdateCard(_ context.Context, _ interfaces.CardUpdate) (interfaces.Card, error) {
+	return interfaces.Card{}, nil
+}
+
+func (s *stubCardManager) SoftDeleteCard(_ context.Context, _, _ uuid.UUID) error {
+	return nil
+}
+
+func (s *stubCardManager) HasOpenInstallments(_ context.Context, _, _ uuid.UUID) (bool, error) {
+	return false, nil
+}
+
 type stubCategoriesReader struct {
 	rootID uuid.UUID
 	leafID uuid.UUID
@@ -141,7 +183,7 @@ func (s *RegisterExpenseIntegrationSuite) TestIdentityInjectedAndPendingOpened()
 	engine := workflow.NewEngine[workflows.PendingEntryState](store, obs)
 	def := workflows.BuildPendingEntryWorkflow(&stubLedger{createdID: uuid.New()}, nil, reader, nil)
 	registrar := usecases.NewRegisterAttempt(reader, &stubLedger{createdID: uuid.New()}, engine, def, obs)
-	handle := BuildRegisterExpenseTool(registrar)
+	handle := BuildRegisterExpenseTool(registrar, &stubCardManager{})
 
 	agentID := "agent-expense-" + uuid.NewString()
 	ag := &toolInvokingAgent{id: agentID, handle: handle}

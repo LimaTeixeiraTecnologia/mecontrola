@@ -91,7 +91,7 @@ func TestBuildRegisterExpenseToolDelegatesAndMapsOutput(t *testing.T) {
 		expenseResult: usecases.RegisterResult{ResourceID: testResourceID, Kind: "transaction", Outcome: agent.ToolOutcomeRouted},
 	}
 
-	handle := BuildRegisterExpenseTool(registrar)
+	handle := BuildRegisterExpenseTool(registrar, imocks.NewCardManager(t))
 	assert.Equal(t, "register_expense", handle.ID())
 	assert.NotEmpty(t, handle.Description())
 
@@ -125,7 +125,7 @@ func TestBuildRegisterExpenseToolReplay(t *testing.T) {
 		expenseResult: usecases.RegisterResult{ResourceID: testResourceID, Kind: "transaction", Outcome: agent.ToolOutcomeReplay},
 	}
 
-	handle := BuildRegisterExpenseTool(registrar)
+	handle := BuildRegisterExpenseTool(registrar, imocks.NewCardManager(t))
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "Almoço", PaymentMethod: "debit_card"})
 	out, _, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
 	require.NoError(t, err)
@@ -141,7 +141,7 @@ func TestBuildRegisterExpenseToolClarifyOmitsResource(t *testing.T) {
 		expenseResult: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify, Message: "Percebi mais de um lançamento na mesma mensagem."},
 	}
 
-	handle := BuildRegisterExpenseTool(registrar)
+	handle := BuildRegisterExpenseTool(registrar, imocks.NewCardManager(t))
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "algo ambíguo", PaymentMethod: "pix"})
 	out, verbatimText, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
 	require.NoError(t, err)
@@ -156,7 +156,7 @@ func TestBuildRegisterExpenseToolClarifyOmitsResource(t *testing.T) {
 
 func TestBuildRegisterExpenseToolInvalidUserID(t *testing.T) {
 	registrar := &fakeRegistrar{}
-	handle := BuildRegisterExpenseTool(registrar)
+	handle := BuildRegisterExpenseTool(registrar, imocks.NewCardManager(t))
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "Almoço", PaymentMethod: "debit_card"})
 	invalidCtx := agent.WithToolInvocationContext(context.Background(), "not-a-uuid", "wamid1", 0)
 	_, _, err := handle.Invoke(invalidCtx, argsJSON)
@@ -166,7 +166,7 @@ func TestBuildRegisterExpenseToolInvalidUserID(t *testing.T) {
 
 func TestBuildRegisterExpenseToolMissingIdentity(t *testing.T) {
 	registrar := &fakeRegistrar{}
-	handle := BuildRegisterExpenseTool(registrar)
+	handle := BuildRegisterExpenseTool(registrar, imocks.NewCardManager(t))
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "Almoço", PaymentMethod: "debit_card"})
 	_, _, err := handle.Invoke(context.Background(), argsJSON)
 	require.Error(t, err)
@@ -175,7 +175,7 @@ func TestBuildRegisterExpenseToolMissingIdentity(t *testing.T) {
 
 func TestBuildRegisterExpenseToolDelegateError(t *testing.T) {
 	registrar := &fakeRegistrar{expenseErr: errors.New("ledger error")}
-	handle := BuildRegisterExpenseTool(registrar)
+	handle := BuildRegisterExpenseTool(registrar, imocks.NewCardManager(t))
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "Almoço", PaymentMethod: "debit_card"})
 	_, _, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
 	require.Error(t, err)
@@ -224,7 +224,9 @@ func TestBuildRegisterExpenseToolCreditCardDelegatesCardIDAndInstallments(t *tes
 		expenseResult: usecases.RegisterResult{ResourceID: testResourceID, Kind: "transaction", Outcome: agent.ToolOutcomeRouted},
 	}
 
-	handle := BuildRegisterExpenseTool(registrar)
+	cards := imocks.NewCardManager(t)
+	cards.EXPECT().GetCard(mock.Anything, cardID, testUserID).Return(interfaces.Card{ID: cardID.String()}, nil).Once()
+	handle := BuildRegisterExpenseTool(registrar, cards)
 
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{
 		AmountCents:   30000,
@@ -255,7 +257,9 @@ func TestBuildRegisterExpenseToolCreditCardDefaultsInstallmentsToOne(t *testing.
 		expenseResult: usecases.RegisterResult{ResourceID: testResourceID, Kind: "transaction", Outcome: agent.ToolOutcomeRouted},
 	}
 
-	handle := BuildRegisterExpenseTool(registrar)
+	cards := imocks.NewCardManager(t)
+	cards.EXPECT().GetCard(mock.Anything, cardID, testUserID).Return(interfaces.Card{ID: cardID.String()}, nil).Once()
+	handle := BuildRegisterExpenseTool(registrar, cards)
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{
 		AmountCents:   30000,
 		Description:   "Compra à vista",
@@ -271,7 +275,7 @@ func TestBuildRegisterExpenseToolCreditCardDefaultsInstallmentsToOne(t *testing.
 
 func TestBuildRegisterExpenseToolInvalidCardID(t *testing.T) {
 	registrar := &fakeRegistrar{}
-	handle := BuildRegisterExpenseTool(registrar)
+	handle := BuildRegisterExpenseTool(registrar, imocks.NewCardManager(t))
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{
 		AmountCents:   30000,
 		Description:   "Compra",
@@ -281,6 +285,32 @@ func TestBuildRegisterExpenseToolInvalidCardID(t *testing.T) {
 	})
 	_, _, err := handle.Invoke(identityCtx("wamid3", 0), argsJSON)
 	require.Error(t, err)
+	assert.Equal(t, 0, registrar.expenseCalls)
+}
+
+func TestBuildRegisterExpenseToolCardNotFoundAsksClarify(t *testing.T) {
+	cardID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
+	registrar := &fakeRegistrar{}
+
+	cards := imocks.NewCardManager(t)
+	cards.EXPECT().GetCard(mock.Anything, cardID, testUserID).Return(interfaces.Card{}, interfaces.ErrCardNotFound).Once()
+	handle := BuildRegisterExpenseTool(registrar, cards)
+
+	argsJSON, _ := json.Marshal(RegisterExpenseInput{
+		AmountCents:   30000,
+		Description:   "Notebook",
+		PaymentMethod: "credit_card",
+		CardID:        cardID.String(),
+		Installments:  1,
+	})
+	out, verbatimText, err := handle.Invoke(identityCtx("wamid3", 0), argsJSON)
+	require.NoError(t, err)
+	assert.NotEmpty(t, verbatimText)
+
+	var result RegisterExpenseOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "clarify", result.Outcome)
+	assert.Empty(t, result.ResourceID)
 	assert.Equal(t, 0, registrar.expenseCalls)
 }
 
@@ -704,7 +734,7 @@ func TestRegisterExpenseOutput_OutcomeField_Routed(t *testing.T) {
 		expenseResult: usecases.RegisterResult{ResourceID: testResourceID, Kind: "transaction", Outcome: agent.ToolOutcomeRouted},
 	}
 
-	handle := BuildRegisterExpenseTool(registrar)
+	handle := BuildRegisterExpenseTool(registrar, imocks.NewCardManager(t))
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 1000, Description: "café", PaymentMethod: "debit_card"})
 	out, _, err := handle.Invoke(identityCtx("wamid1", 0), argsJSON)
 	require.NoError(t, err)
@@ -874,7 +904,7 @@ func TestRegisterExpenseOutput_OutcomeField_Reconciled(t *testing.T) {
 		expenseResult: usecases.RegisterResult{ResourceID: testResourceID, Kind: "transaction", Outcome: agent.ToolOutcomeReconciled},
 	}
 
-	handle := BuildRegisterExpenseTool(registrar)
+	handle := BuildRegisterExpenseTool(registrar, imocks.NewCardManager(t))
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{AmountCents: 5000, Description: "café", PaymentMethod: "pix"})
 	out, _, err := handle.Invoke(identityCtx("wamid-rec", 0), argsJSON)
 	require.NoError(t, err)
@@ -925,7 +955,7 @@ func TestBuildResolveCardToolNotFound(t *testing.T) {
 func TestBuildRegisterExpenseToolCeilingRejectsWithoutRegistrarCall(t *testing.T) {
 	registrar := &fakeRegistrar{}
 
-	handle := BuildRegisterExpenseTool(registrar)
+	handle := BuildRegisterExpenseTool(registrar, imocks.NewCardManager(t))
 	argsJSON, _ := json.Marshal(RegisterExpenseInput{
 		AmountCents:   maxEntryAmountCents + 1,
 		Description:   "compra absurda",

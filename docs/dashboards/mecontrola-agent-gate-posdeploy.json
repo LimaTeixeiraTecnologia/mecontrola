@@ -1,0 +1,306 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "9.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "iconColor": "rgba(255, 96, 96, 1)",
+        "name": "Deploys do agente",
+        "tags": ["deploy", "mecontrola-agent"],
+        "type": "tags"
+      }
+    ]
+  },
+  "description": "Gate pos-deploy do agente MeControla: truncamento, erros de persistencia de run/mensagem, decisoes da cadeia de guardas e scorers comportamentais. Comparacao antes/depois de deploy via anotacao de deploy (RF-43, RF-49..RF-53, ADR-005).",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Truncamento por length (agent_run_truncated_total) — alertar se > 0",
+      "description": "RF-23/RF-53: truncamento por finish_reason=length deve gerar run failed + fallback seguro; qualquer ocorrencia apos deploy e critica.",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(increase(agent_run_truncated_total{agent_id=~\"$agent_id\"}[15m]))",
+          "legendFormat": "truncated",
+          "refId": "A"
+        }
+      ],
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "id": 2,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Erros de RunStore.Update (agent_run_update_errors_total) — alertar se > 0",
+      "description": "RF-26/RF-53: falha de fechamento de run nao pode reportar sucesso silenciosamente.",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(increase(agent_run_update_errors_total{agent_id=~\"$agent_id\"}[15m]))",
+          "legendFormat": "update_errors",
+          "refId": "A"
+        }
+      ],
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Erros de MessageStore.Append (agent_message_append_errors_total) — alertar se > 0",
+      "description": "RF-25/RF-53: mensagem nao persistida deve ser observavel, nao apenas Warn silencioso.",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(increase(agent_message_append_errors_total{agent_id=~\"$agent_id\"}[15m])) by (role)",
+          "legendFormat": "{{role}}",
+          "refId": "A"
+        }
+      ],
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "id": 4,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" } },
+      "title": "Decisoes da cadeia de guardas (agent_guard_decisions_total)",
+      "description": "RF-06: cada handler expoe pass/handled; permite auditar qual guarda tratou a mensagem.",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(rate(agent_guard_decisions_total{agent_id=~\"$agent_id\"}[15m])) by (guard, decision)",
+          "legendFormat": "{{guard}}:{{decision}}",
+          "refId": "A"
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "max": 1,
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "id": 5,
+      "options": { "legend": { "calcs": ["lastNotNull", "mean"], "displayMode": "table", "placement": "bottom" } },
+      "title": "Execucoes dos scorers de continuidade (RF-29): tool-call-accuracy, completeness, categorization",
+      "description": "Prometheus expoe apenas taxa de execucao (scorer_runs_total, sem valor de score). O VALOR do score (media, margem +0.05 sobre baseline 0.304/0.149/0.565) e lido via consulta de agregacao sobre platform_scorer_results (internal/agents/application/postdeploy) — ver runbook docs/runbooks/mecontrola-agent-gate-posdeploy.md. Este painel monitora apenas se o scorer esta rodando (outcome=success) por versao/janela.",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(rate(scorer_runs_total{scorer_id=~\"tool-call-accuracy|completeness|categorization\",outcome=\"success\"}[15m])) by (scorer_id)",
+          "legendFormat": "{{scorer_id}} execucoes/s",
+          "refId": "A"
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "id": 6,
+      "options": { "legend": { "calcs": ["lastNotNull", "mean"], "displayMode": "table", "placement": "bottom" } },
+      "title": "Execucoes dos scorers comportamentais (RF-30)",
+      "description": "Taxa de execucao (outcome=success) de no_empty_answer, whatsapp_format, no_internal_terms, verbatim_required, no_duplicate_write, no_hallucination, required_args, month_reference_correctness. O VALOR do score e lido via consulta de agregacao sobre platform_scorer_results (runbook); queda do score abaixo da margem dispara criterio de alerta.",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(rate(scorer_runs_total{scorer_id=~\"no_empty_answer|whatsapp_format|no_internal_terms|verbatim_required|no_duplicate_write|no_hallucination|required_args|month_reference_correctness\",outcome=\"success\"}[15m])) by (scorer_id)",
+          "legendFormat": "{{scorer_id}}",
+          "refId": "A"
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "id": 7,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" } },
+      "title": "scorer_runs_total por outcome (falha de execucao do scorer)",
+      "description": "Run sem scorer executado deve ser observavel (RF-28). outcome != success indica falha de execucao do scorer, nao do agente.",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(rate(scorer_runs_total{outcome!=\"success\"}[15m])) by (scorer_id, outcome)",
+          "legendFormat": "{{scorer_id}}:{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "id": 8,
+      "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" } },
+      "title": "scorer_duration_seconds (p95 por scorer)",
+      "description": "Duracao p95 de execucao de cada scorer (nao e a metrica de RF-38 — ver painel 'agent_run_duration_seconds').",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "histogram_quantile(0.95, sum(rate(scorer_duration_seconds_bucket[15m])) by (le, scorer_id))",
+          "legendFormat": "p95 {{scorer_id}}",
+          "refId": "A"
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+      "id": 9,
+      "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" } },
+      "title": "agent_run_duration_seconds (p95 por versao do agente)",
+      "description": "RF-38: a avaliacao DEVE medir, por versao do agente, a duracao p95 dos runs. Fonte: histograma agent_run_duration_seconds{agent_id}, gravado em toda closeRun (Run.DurationMs, R-AGENT-WF-001.5).",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "histogram_quantile(0.95, sum(rate(agent_run_duration_seconds_bucket{agent_id=~\"$agent_id\"}[15m])) by (le, agent_id))",
+          "legendFormat": "p95 {{agent_id}}",
+          "refId": "A"
+        }
+      ],
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": ["mecontrola", "agent", "gate-posdeploy", "prd-orquestracao-conversacional-confiavel"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(agent_run_truncated_total, agent_id)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Agent ID",
+        "multi": true,
+        "name": "agent_id",
+        "options": [],
+        "query": { "query": "label_values(agent_run_truncated_total, agent_id)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "sort": 0,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "MeControla Agent — Gate Pos-Deploy e Observabilidade",
+  "uid": "mecontrola-agent-gate-posdeploy",
+  "version": 1
+}

@@ -61,6 +61,7 @@ type GherkinE2ESuite struct {
 	categoriesModule *categories.CategoriesModule
 	reader           agentsifaces.CategoriesReader
 	txLedger         agentsifaces.TransactionsLedger
+	cardManager      agentsifaces.CardManager
 	ledgerRepo       agentusecases.WriteLedgerRepository
 	idem             *agentusecases.IdempotentWrite
 
@@ -116,6 +117,20 @@ func (s *GherkinE2ESuite) SetupSuite() {
 		o11y,
 	)
 
+	s.cardManager = binding.NewCardManagerAdapter(
+		cardModule.CreateCardUC,
+		cardModule.ListCardsUC,
+		cardModule.GetCardUC,
+		cardModule.ResolveCardByNicknameUC,
+		cardModule.CountCardsUC,
+		cardModule.BestPurchaseDayUC,
+		cardModule.UpdateCardUC,
+		cardModule.SoftDeleteCardUC,
+		txModule.HasOpenInstallmentsUC,
+		cardModule.IsBankRecognizedUC,
+		o11y,
+	)
+
 	s.ledgerRepo = agentpersistence.NewWriteLedgerRepository(s.db, o11y)
 	s.idem = agentusecases.NewIdempotentWrite(s.ledgerRepo, o11y)
 
@@ -125,7 +140,7 @@ func (s *GherkinE2ESuite) SetupSuite() {
 	s.registerAttempt = agentusecases.NewRegisterAttempt(s.reader, s.txLedger, s.pendingEngine, s.pendingDef, o11y)
 
 	s.tools = []tool.ToolHandle{
-		agenttools.BuildRegisterExpenseTool(s.registerAttempt),
+		agenttools.BuildRegisterExpenseTool(s.registerAttempt, s.cardManager),
 		agenttools.BuildRegisterIncomeTool(s.registerAttempt),
 	}
 }
@@ -208,7 +223,7 @@ func (s *GherkinE2ESuite) countTransactions(userID uuid.UUID) int {
 }
 
 func (s *GherkinE2ESuite) runAgent(ctx context.Context, tools []tool.ToolHandle, message string) (agent.Result, error) {
-	a := BuildMeControlaAgent(s.provider, tools, nil, fake.NewProvider())
+	a := BuildMeControlaAgent(s.provider, tools, nil, fake.NewProvider(), 0)
 	execCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	return a.Execute(execCtx, agent.Request{
@@ -364,7 +379,7 @@ func (s *GherkinE2ESuite) TestG7_FalhaTransitoriaRetentaEPersisteUmaVez() {
 	registerAttempt := agentusecases.NewRegisterAttempt(s.reader, faultyLedger, engine, def, fake.NewProvider())
 
 	tools := []tool.ToolHandle{
-		agenttools.BuildRegisterExpenseTool(registerAttempt),
+		agenttools.BuildRegisterExpenseTool(registerAttempt, s.cardManager),
 	}
 
 	wamid := "wamid-g7-" + uuid.NewString()

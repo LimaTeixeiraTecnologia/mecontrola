@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-orquestracao-conversacional-confiavel/7.0_execution_report.md
+summary: Endurecimento de workflows (pending_entry, destructive_confirm, card_create_confirm, budget_creation, onboarding) com testes de integração testcontainers Postgres cobrindo RF-13/14/15/45/46.
+timestamp: 2026-07-09T18:01:57Z

@@ -101,16 +101,16 @@ func (_c *Hooks_BeforeTool_Call) Return(ctx context.Context) *Hooks_BeforeTool_C
 	return _c
 }
 
-func (_mock *Hooks) AfterTool(ctx context.Context, agentID, toolID string, resultBytes []byte, err error) {
-	_mock.Called(ctx, agentID, toolID, resultBytes, err)
+func (_mock *Hooks) AfterTool(ctx context.Context, agentID, toolID string, argsJSON, resultBytes []byte, err error) {
+	_mock.Called(ctx, agentID, toolID, argsJSON, resultBytes, err)
 }
 
 type Hooks_AfterTool_Call struct {
 	*mock.Call
 }
 
-func (_e *Hooks_Expecter) AfterTool(ctx any, agentID any, toolID any, resultBytes any, err any) *Hooks_AfterTool_Call {
-	return &Hooks_AfterTool_Call{Call: _e.mock.On("AfterTool", ctx, agentID, toolID, resultBytes, err)}
+func (_e *Hooks_Expecter) AfterTool(ctx any, agentID any, toolID any, argsJSON any, resultBytes any, err any) *Hooks_AfterTool_Call {
+	return &Hooks_AfterTool_Call{Call: _e.mock.On("AfterTool", ctx, agentID, toolID, argsJSON, resultBytes, err)}
 }
 
 func (_c *Hooks_AfterTool_Call) Return() *Hooks_AfterTool_Call {

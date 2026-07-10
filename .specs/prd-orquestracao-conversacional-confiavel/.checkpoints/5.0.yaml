@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-orquestracao-conversacional-confiavel/5.0_execution_report.md
+summary: Scorers comportamentais intrinsecos + captura de args em AfterTool implementados e validados
+timestamp: 2026-07-09T17:28:07Z

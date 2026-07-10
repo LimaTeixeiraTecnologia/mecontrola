@@ -127,6 +127,9 @@ func (a *cardManagerAdapter) GetCard(ctx context.Context, cardID, userID uuid.UU
 
 	out, err := a.getCard.Execute(ctx, cardinput.GetCard{ID: cardID, UserID: userID})
 	if err != nil {
+		if errors.Is(err, cardifaces.ErrCardNotFound) {
+			return agentsifaces.Card{}, agentsifaces.ErrCardNotFound
+		}
 		span.RecordError(err)
 		return agentsifaces.Card{}, fmt.Errorf("agents/binding/card_manager: obter cartão: %w", err)
 	}

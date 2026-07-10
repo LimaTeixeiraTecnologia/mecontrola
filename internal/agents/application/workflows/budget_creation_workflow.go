@@ -146,7 +146,7 @@ func budgetDistributionPrompt(totalCents int64) string {
 	b.WriteString(money.FromCents(totalCents).BRL())
 	b.WriteString(" entre as 5 categorias. Esta é a sugestão padrão:\n\n")
 	for _, slug := range canonicalSlugs {
-		bp := _defaultDistributionBP[slug]
+		bp := defaultDistributionBP[slug]
 		cents := totalCents * int64(bp) / 10000
 		fmt.Fprintf(&b, "%s: %s (%d%%)\n", categoryLabels[slug], money.FromCents(cents).BRL(), bp/100)
 	}
@@ -170,7 +170,7 @@ func handleBudgetDistributionSlot(ctx context.Context, state BudgetCreationState
 
 	extracted, err := a.Execute(ctx, agent.Request{
 		Messages: []llm.Message{
-			{Role: "system", Content: _allocationInputSystemPrompt},
+			{Role: "system", Content: allocationInputSystemPrompt},
 			{Role: "user", Content: resumeText},
 		},
 		Schema: &llm.Schema{Name: "allocation_input", Strict: true, Schema: allocationInputSchema},

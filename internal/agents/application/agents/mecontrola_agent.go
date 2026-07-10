@@ -3,6 +3,7 @@ package agents
 import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/agents/guards"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
@@ -10,7 +11,7 @@ import (
 
 const (
 	MecontrolaAgentID               = "mecontrola-agent"
-	mecontrolaAgentDefaultMaxTokens = 1536
+	mecontrolaAgentDefaultMaxTokens = 3072
 	registerExpenseToolID           = "register_expense"
 	registerIncomeToolID            = "register_income"
 
@@ -250,10 +251,14 @@ MENSAGENS DE AUSÊNCIA E ERRO EM CONSULTAS:
 FOLLOW-UP (RF-26/RF-27): aproveite o histórico da thread para responder follow-ups ("e a fatura?", "e as últimas transações?"). Sempre reinvoque a ferramenta correta para dados atualizados — nunca responda de memória.`
 )
 
-func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks agent.Hooks, o11y observability.Observability) agent.Agent {
+func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks agent.Hooks, o11y observability.Observability, maxTokens int) agent.Agent {
+	resolvedMaxTokens := maxTokens
+	if resolvedMaxTokens <= 0 {
+		resolvedMaxTokens = mecontrolaAgentDefaultMaxTokens
+	}
 	opts := []agent.AgentOption{
 		agent.WithMaxToolRounds(12),
-		agent.WithDefaultMaxTokens(mecontrolaAgentDefaultMaxTokens),
+		agent.WithDefaultMaxTokens(resolvedMaxTokens),
 	}
 	if len(tools) > 0 {
 		opts = append(opts, agent.WithTools(tools...))
@@ -268,10 +273,19 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 		o11y,
 		opts...,
 	)
+
+	var pre []guards.PreGuard
 	if hasEntryRegistrationTool(tools) {
-		return WithMultiItemGuard(built)
+		pre = append(pre, guards.NewMultiItemGuard())
 	}
-	return built
+	post := []guards.PostGuard{
+		guards.NewVerbatimRelayGuard(),
+		guards.NewEmptyAnswerGuard(),
+		guards.NewInternalTermsGuard(),
+		guards.NewSuccessWithoutToolGuard(),
+		guards.NewCardProvenanceGuard(),
+	}
+	return WithGuardChain(built, o11y, pre, post)
 }
 
 func hasEntryRegistrationTool(tools []tool.ToolHandle) bool {

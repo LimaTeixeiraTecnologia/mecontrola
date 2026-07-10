@@ -5,6 +5,7 @@ package workflows_test
 import (
 	"context"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -320,4 +321,73 @@ func (s *BudgetCreationWorkflowIntegrationSuite) TestInteg_ReaperEncerraRunOrfao
 	s.Equal("failed", status, "reaper deve marcar run orfao como failed")
 
 	s.Equal(0, s.countBudgets(userID, competence))
+}
+
+func (s *BudgetCreationWorkflowIntegrationSuite) TestInteg_MensagemRepetidaMesmoWamid_NaoDuplicaOrcamento() {
+	userID := s.newUser()
+	engine, def, continuer := s.buildEngineAndContinuer()
+	competence := "2026-10"
+
+	key := workflows.BudgetCreationKey(userID.String())
+	_, err := engine.Start(s.ctx, def, key, s.confirmState(userID, competence))
+	s.Require().NoError(err)
+
+	wamid := "wamid-integ-replay-" + uuid.NewString()
+
+	handled1, reply1, err1 := continuer.Continue(s.ctx, userID.String(), "sim", wamid)
+	s.Require().NoError(err1)
+	s.True(handled1)
+	s.Contains(reply1, "criado e ativado")
+	s.Equal(1, s.countBudgets(userID, competence))
+
+	handled2, reply2, err2 := continuer.Continue(s.ctx, userID.String(), "sim", wamid)
+	s.Require().NoError(err2)
+	s.False(handled2, "RF-14: sem run suspenso após conclusão, o segundo Continue com o mesmo wamid deve ser no-op")
+	s.Empty(reply2)
+
+	s.Equal(1, s.countBudgets(userID, competence), "RF-45: repetição do mesmo wamid não deve criar um segundo orçamento")
+}
+
+func (s *BudgetCreationWorkflowIntegrationSuite) TestInteg_ConcorrenciaConfirmacaoSimultanea_UmUnicoOrcamento() {
+	userID := s.newUser()
+	engine, def, _ := s.buildEngineAndContinuer()
+	competence := "2026-11"
+
+	key := workflows.BudgetCreationKey(userID.String())
+	_, err := engine.Start(s.ctx, def, key, s.confirmState(userID, competence))
+	s.Require().NoError(err)
+
+	const goroutines = 5
+	type result struct {
+		handled bool
+		err     error
+	}
+	results := make(chan result, goroutines)
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			_, _, localContinuer := s.buildEngineAndContinuer()
+			wamid := "wamid-concurrent-" + uuid.NewString()
+			handled, _, contErr := localContinuer.Continue(s.ctx, userID.String(), "sim", wamid)
+			results <- result{handled: handled, err: contErr}
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	handledCount := 0
+	for r := range results {
+		if r.err != nil {
+			s.Contains(r.err.Error(), "version conflict", "RF-45: única classe de erro aceitável em concorrência é o CAS otimista do kernel — perdedor nunca reexecuta")
+			continue
+		}
+		if r.handled {
+			handledCount++
+		}
+	}
+
+	s.GreaterOrEqual(handledCount, 1, "ao menos uma goroutine deve concluir a confirmação")
+	s.Equal(1, s.countBudgets(userID, competence), "concorrência sobre a mesma confirmação deve produzir exatamente 1 orçamento")
 }

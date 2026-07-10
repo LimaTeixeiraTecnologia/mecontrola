@@ -68,6 +68,15 @@ tasks:
       - mkdir -p {{.COVERAGE_DIR}}
       - RUN_REAL_LLM=1 go test -race -tags=integration -timeout=5m -v ./test/conformance/weather/...
 
+  golden:gate:
+    desc: |
+      Gate pre-deploy do golden set do agente mecontrola com LLM real via OpenRouter
+      (RF-39/RF-40/RF-41). Falha se qualquer categoria do golden ficar abaixo de 0.90.
+      Requer RUN_REAL_LLM=1 e OPENROUTER_API_KEY. Fora do gate de merge por-PR.
+    cmds:
+      - mkdir -p {{.COVERAGE_DIR}}
+      - RUN_REAL_LLM=1 go test -tags=integration -timeout=9m -v ./internal/agents/application/golden/...
+
   watch:
     desc: Reexecuta os testes unitarios ao alterar arquivos.
     watch: true

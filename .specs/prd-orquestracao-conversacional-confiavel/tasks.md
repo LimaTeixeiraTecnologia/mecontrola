@@ -12,14 +12,14 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Fechar dívida R5.26 (renome de identificadores `_`-prefixados) | pending | — | Com 2.0 | — |
-| 2.0 | Robustez do runtime: truncamento, falha-segura e observabilidade | pending | — | Com 1.0 | mastra, domain-modeling-production |
-| 3.0 | Cadeia de guardas conversacionais (Chain of Responsibility) | pending | 2.0 | Não | mastra, design-patterns-mandatory, domain-modeling-production |
-| 4.0 | Proveniência determinística de cardId | pending | 3.0 | Com 5.0 | mastra |
-| 5.0 | Scorers comportamentais + captura de args | pending | — | Com 4.0 | mastra |
-| 6.0 | Golden set + harness em dois níveis + gate pré-deploy | pending | 3.0, 4.0, 5.0 | — | mastra |
-| 7.0 | Endurecimento de workflows e pendências (integração) | pending | 2.0 | Com 4.0, 5.0 | mastra, postgresql-production-standards |
-| 8.0 | Gate pós-deploy + observabilidade + contrato de regressão | pending | 6.0, 7.0 | — | postgresql-production-standards, otel-grafana-dashboards |
+| 1.0 | Fechar dívida R5.26 (renome de identificadores `_`-prefixados) | done | — | Com 2.0 | — |
+| 2.0 | Robustez do runtime: truncamento, falha-segura e observabilidade | done | — | Com 1.0 | mastra, domain-modeling-production |
+| 3.0 | Cadeia de guardas conversacionais (Chain of Responsibility) | done | 2.0 | Não | mastra, design-patterns-mandatory, domain-modeling-production |
+| 4.0 | Proveniência determinística de cardId | done | 3.0 | Com 5.0 | mastra |
+| 5.0 | Scorers comportamentais + captura de args | done | — | Com 4.0 | mastra |
+| 6.0 | Golden set + harness em dois níveis + gate pré-deploy | done | 3.0, 4.0, 5.0 | — | mastra |
+| 7.0 | Endurecimento de workflows e pendências (integração) | done | 2.0 | Com 4.0, 5.0 | mastra, postgresql-production-standards |
+| 8.0 | Gate pós-deploy + observabilidade + contrato de regressão | done | 6.0, 7.0 | — | postgresql-production-standards, otel-grafana-dashboards |
 
 ## Dependências Críticas
 - Caminho crítico: **2.0 → 3.0 → {4.0, 5.0} → 6.0 → 8.0**.

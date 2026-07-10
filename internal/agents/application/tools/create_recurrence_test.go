@@ -8,8 +8,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	imocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 )
@@ -45,7 +48,7 @@ func recurrenceInput() CreateRecurrenceInput {
 func TestBuildCreateRecurrenceTool_OpensPendingNoSyncWrite_CA16(t *testing.T) {
 	registrar := &fakeRecurrenceRegistrar{result: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify, Message: "Confirma a criação desta recorrência?"}}
 
-	handle := BuildCreateRecurrenceTool(registrar)
+	handle := BuildCreateRecurrenceTool(registrar, imocks.NewCardManager(t))
 	assert.Equal(t, "create_recurrence", handle.ID())
 	assert.NotEmpty(t, handle.Description())
 
@@ -68,7 +71,7 @@ func TestBuildCreateRecurrenceTool_OpensPendingNoSyncWrite_CA16(t *testing.T) {
 func TestBuildCreateRecurrenceTool_MissingSubcategory_Errors(t *testing.T) {
 	registrar := &fakeRecurrenceRegistrar{result: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify}}
 
-	handle := BuildCreateRecurrenceTool(registrar)
+	handle := BuildCreateRecurrenceTool(registrar, imocks.NewCardManager(t))
 	in := recurrenceInput()
 	in.SubcategoryID = ""
 	argsJSON, _ := json.Marshal(in)
@@ -80,7 +83,7 @@ func TestBuildCreateRecurrenceTool_MissingSubcategory_Errors(t *testing.T) {
 func TestBuildCreateRecurrenceTool_InvalidUserID(t *testing.T) {
 	registrar := &fakeRecurrenceRegistrar{result: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify}}
 
-	handle := BuildCreateRecurrenceTool(registrar)
+	handle := BuildCreateRecurrenceTool(registrar, imocks.NewCardManager(t))
 	argsJSON, _ := json.Marshal(recurrenceInput())
 	invalidCtx := agent.WithToolInvocationContext(context.Background(), "not-a-uuid", "wamid-recur", 1)
 	_, _, err := handle.Invoke(invalidCtx, argsJSON)
@@ -90,8 +93,30 @@ func TestBuildCreateRecurrenceTool_InvalidUserID(t *testing.T) {
 func TestBuildCreateRecurrenceTool_RegistrarError(t *testing.T) {
 	registrar := &fakeRecurrenceRegistrar{err: errors.New("start error")}
 
-	handle := BuildCreateRecurrenceTool(registrar)
+	handle := BuildCreateRecurrenceTool(registrar, imocks.NewCardManager(t))
 	argsJSON, _ := json.Marshal(recurrenceInput())
 	_, _, err := handle.Invoke(identityCtx("wamid-recur", 1), argsJSON)
 	require.Error(t, err)
+}
+
+func TestBuildCreateRecurrenceTool_CardNotFoundAsksClarify(t *testing.T) {
+	cardID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
+	registrar := &fakeRecurrenceRegistrar{}
+
+	cards := imocks.NewCardManager(t)
+	cards.EXPECT().GetCard(mock.Anything, cardID, testUserID).Return(interfaces.Card{}, interfaces.ErrCardNotFound).Once()
+	handle := BuildCreateRecurrenceTool(registrar, cards)
+
+	in := recurrenceInput()
+	in.CardID = cardID.String()
+	argsJSON, _ := json.Marshal(in)
+	out, verbatimText, err := handle.Invoke(identityCtx("wamid-recur", 1), argsJSON)
+	require.NoError(t, err)
+	assert.NotEmpty(t, verbatimText)
+
+	var result CreateRecurrenceOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "clarify", result.Outcome)
+	assert.Empty(t, result.ResourceID)
+	assert.False(t, registrar.called)
 }

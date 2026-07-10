@@ -123,8 +123,10 @@ func TestQueryCardInvoiceTool_Success(t *testing.T) {
 			{ID: testItemID, InvoiceID: testInvoiceID, RefMonth: "2026-01", InstallmentIndex: 1, AmountCents: 5000},
 		},
 	}, nil).Once()
+	cards := imocks.NewCardManager(t)
+	cards.EXPECT().GetCard(mock.Anything, testCardID, testUserID).Return(interfaces.Card{ID: testCardID.String()}, nil).Once()
 
-	h := BuildQueryCardInvoiceTool(ledger)
+	h := BuildQueryCardInvoiceTool(ledger, cards)
 	assert.Equal(t, "query_card_invoice", h.ID())
 
 	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(QueryCardInvoiceInput{CardID: testCardID.String(), RefMonth: "2026-01"}))
@@ -145,8 +147,10 @@ func TestQueryCardInvoiceTool_DefaultRefMonth(t *testing.T) {
 		CardID:   testCardID,
 		RefMonth: time.Now().Format("2006-01"),
 	}, nil).Once()
+	cards := imocks.NewCardManager(t)
+	cards.EXPECT().GetCard(mock.Anything, testCardID, testUserID).Return(interfaces.Card{ID: testCardID.String()}, nil).Once()
 
-	h := BuildQueryCardInvoiceTool(ledger)
+	h := BuildQueryCardInvoiceTool(ledger, cards)
 	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(QueryCardInvoiceInput{CardID: testCardID.String()}))
 	require.NoError(t, err)
 	require.NotEmpty(t, out)
@@ -154,7 +158,8 @@ func TestQueryCardInvoiceTool_DefaultRefMonth(t *testing.T) {
 
 func TestQueryCardInvoiceTool_InvalidCardID(t *testing.T) {
 	ledger := imocks.NewTransactionsLedger(t)
-	h := BuildQueryCardInvoiceTool(ledger)
+	cards := imocks.NewCardManager(t)
+	h := BuildQueryCardInvoiceTool(ledger, cards)
 	_, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(QueryCardInvoiceInput{CardID: "bad"}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cardId inválido")
@@ -163,11 +168,29 @@ func TestQueryCardInvoiceTool_InvalidCardID(t *testing.T) {
 func TestQueryCardInvoiceTool_BindingError(t *testing.T) {
 	ledger := imocks.NewTransactionsLedger(t)
 	ledger.EXPECT().GetCardInvoice(mock.Anything, testCardID, "2026-01").Return(interfaces.CardInvoice{}, errBinding).Once()
+	cards := imocks.NewCardManager(t)
+	cards.EXPECT().GetCard(mock.Anything, testCardID, testUserID).Return(interfaces.Card{ID: testCardID.String()}, nil).Once()
 
-	h := BuildQueryCardInvoiceTool(ledger)
+	h := BuildQueryCardInvoiceTool(ledger, cards)
 	_, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(QueryCardInvoiceInput{CardID: testCardID.String(), RefMonth: "2026-01"}))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errBinding)
+}
+
+func TestQueryCardInvoiceTool_CardNotFound(t *testing.T) {
+	ledger := imocks.NewTransactionsLedger(t)
+	cards := imocks.NewCardManager(t)
+	cards.EXPECT().GetCard(mock.Anything, testCardID, testUserID).Return(interfaces.Card{}, interfaces.ErrCardNotFound).Once()
+
+	h := BuildQueryCardInvoiceTool(ledger, cards)
+	out, verbatimText, err := h.Invoke(identityCtx("w1", 0), mustMarshal(QueryCardInvoiceInput{CardID: testCardID.String(), RefMonth: "2026-01"}))
+	require.NoError(t, err)
+	assert.NotEmpty(t, verbatimText)
+
+	var res QueryCardInvoiceOutput
+	require.NoError(t, json.Unmarshal(out, &res))
+	assert.Equal(t, "clarify", res.Outcome)
+	assert.Empty(t, res.ID)
 }
 
 func TestBestPurchaseDayTool_Success(t *testing.T) {

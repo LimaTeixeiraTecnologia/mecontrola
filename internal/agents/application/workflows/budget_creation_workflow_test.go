@@ -417,8 +417,8 @@ func (s *BudgetCreationWorkflowSuite) TestHandleBudgetConfirmSlot() {
 }
 
 func cloneDefaultBP() map[string]int {
-	out := make(map[string]int, len(_defaultDistributionBP))
-	for k, v := range _defaultDistributionBP {
+	out := make(map[string]int, len(defaultDistributionBP))
+	for k, v := range defaultDistributionBP {
 		out[k] = v
 	}
 	return out

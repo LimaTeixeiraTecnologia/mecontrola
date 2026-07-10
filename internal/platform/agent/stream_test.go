@@ -125,7 +125,7 @@ func (h *recordingHooks) BeforeTool(ctx context.Context, _, _ string) context.Co
 	return ctx
 }
 
-func (h *recordingHooks) AfterTool(_ context.Context, _, _ string, _ []byte, _ error) {}
+func (h *recordingHooks) AfterTool(_ context.Context, _, _ string, _, _ []byte, _ error) {}
 
 func (h *recordingHooks) beforeCount() int {
 	h.mu.Lock()

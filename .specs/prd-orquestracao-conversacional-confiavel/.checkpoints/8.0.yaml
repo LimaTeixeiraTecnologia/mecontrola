@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-orquestracao-conversacional-confiavel/8.0_execution_report.md
+summary: Gate pos-deploy dois niveis (amostra minima N>=100/>=14d + margem +0.05) computavel por consulta Postgres, dashboards/alertas Grafana e contrato de regressao executavel (tools/workflows/scorers) verificados via go/ast contra o wiring real; 1 achado medium corrigido na propria revisao.
+timestamp: 2026-07-09T19:31:58Z

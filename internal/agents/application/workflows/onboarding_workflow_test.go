@@ -203,14 +203,14 @@ func (s *OnboardingWorkflowSuite) TestGoalValuePrompts_ContainMonetaryFormatExam
 		"1,5 milhão",
 	}
 	for _, example := range formatExamples {
-		s.Contains(_goalWithValueSystemPrompt, example)
-		s.Contains(_goalValueSystemPrompt, example)
+		s.Contains(goalWithValueSystemPrompt, example)
+		s.Contains(goalValueSystemPrompt, example)
 	}
 }
 
 func (s *OnboardingWorkflowSuite) TestGoalValueReprompt_InvitesOptionalValueWithoutBlocking() {
-	s.NotEmpty(_goalValueReprompt)
-	s.Contains(strings.ToLower(_goalValueReprompt), "não")
+	s.NotEmpty(goalValueReprompt)
+	s.Contains(strings.ToLower(goalValueReprompt), "não")
 }
 
 func (s *OnboardingWorkflowSuite) TestOnboardingState_MergePatch_PreservesGoalValueFields() {
@@ -509,7 +509,7 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
 				s.NotNil(out.Suspend)
-				s.Equal(_welcomeGoalPrompt, out.Suspend.Prompt)
+				s.Equal(welcomeGoalPrompt, out.Suspend.Prompt)
 				s.Contains(out.Suspend.Prompt, "Vamos começar?")
 				s.Contains(out.Suspend.Prompt, "objetivo")
 				s.Contains(out.Suspend.Prompt, "valor da meta")
@@ -553,7 +553,7 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
-				s.Equal(_goalValueReprompt, out.Suspend.Prompt)
+				s.Equal(goalValueReprompt, out.Suspend.Prompt)
 				s.Equal("quitar minhas dividas", out.State.Goal)
 				s.Equal(int64(0), out.State.GoalValueCents)
 				s.True(out.State.GoalValueAsked)
@@ -574,7 +574,7 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
-				s.Equal(_goalReprompt, out.Suspend.Prompt)
+				s.Equal(goalReprompt, out.Suspend.Prompt)
 				s.Empty(out.State.Goal)
 				s.True(out.State.GoalValueAsked)
 			},
@@ -645,7 +645,7 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
-				s.Equal(_goalValueReprompt, out.Suspend.Prompt)
+				s.Equal(goalValueReprompt, out.Suspend.Prompt)
 				s.Equal("viajar", out.State.Goal)
 				s.Equal(int64(0), out.State.GoalValueCents)
 				s.True(out.State.GoalValueAsked)
@@ -666,7 +666,7 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
-				s.Equal(_goalReprompt, out.Suspend.Prompt)
+				s.Equal(goalReprompt, out.Suspend.Prompt)
 				s.Empty(out.State.Goal)
 				s.True(out.State.GoalValueAsked)
 			},
@@ -828,7 +828,7 @@ func (s *OnboardingWorkflowSuite) TestBuildIncomeStep() {
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
-				s.Equal(_incomePrompt, out.Suspend.Prompt)
+				s.Equal(incomePrompt, out.Suspend.Prompt)
 				s.Equal(PhaseMonthlyIncome, out.State.Phase)
 			},
 		},
@@ -882,7 +882,7 @@ func (s *OnboardingWorkflowSuite) TestBuildMethodologyStep() {
 				budgetsMock: func() *interfacemocks.BudgetPlanner {
 					s.budgetsMock.EXPECT().
 						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
-						Return(suggestReturn(1350000, _defaultDistributionBP), nil).Once()
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
 					return s.budgetsMock
 				}(),
 			},
@@ -909,7 +909,7 @@ func (s *OnboardingWorkflowSuite) TestBuildMethodologyStep() {
 				budgetsMock: func() *interfacemocks.BudgetPlanner {
 					s.budgetsMock.EXPECT().
 						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
-						Return(suggestReturn(1350000, _defaultDistributionBP), nil).Once()
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
 					return s.budgetsMock
 				}(),
 			},
@@ -937,7 +937,7 @@ func (s *OnboardingWorkflowSuite) TestBuildMethodologyStep() {
 				budgetsMock: func() *interfacemocks.BudgetPlanner {
 					s.budgetsMock.EXPECT().
 						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
-						Return(suggestReturn(1350000, _defaultDistributionBP), nil).Once()
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
 					return s.budgetsMock
 				}(),
 			},
@@ -964,7 +964,7 @@ func (s *OnboardingWorkflowSuite) TestBuildMethodologyStep() {
 				budgetsMock: func() *interfacemocks.BudgetPlanner {
 					s.budgetsMock.EXPECT().
 						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
-						Return(suggestReturn(1350000, _defaultDistributionBP), nil).Once()
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
 					return s.budgetsMock
 				}(),
 			},
@@ -998,7 +998,7 @@ func (s *OnboardingWorkflowSuite) TestBuildSummaryStep() {
 	}
 	validState := OnboardingState{
 		UserID: "u1", Goal: "economizar", IncomeCents: 1350000,
-		Allocations: _defaultDistributionBP,
+		Allocations: defaultDistributionBP,
 	}
 	scenarios := []struct {
 		name         string
@@ -1014,7 +1014,7 @@ func (s *OnboardingWorkflowSuite) TestBuildSummaryStep() {
 				budgetsMock: func() *interfacemocks.BudgetPlanner {
 					s.budgetsMock.EXPECT().
 						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
-						Return(suggestReturn(1350000, _defaultDistributionBP), nil).Once()
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
 					return s.budgetsMock
 				}(),
 			},
@@ -1061,7 +1061,7 @@ func (s *OnboardingWorkflowSuite) TestBuildSummaryStep() {
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
-				s.Equal(_summaryReprompt, out.Suspend.Prompt)
+				s.Equal(summaryReprompt, out.Suspend.Prompt)
 				s.Empty(out.State.ResumeText)
 			},
 		},
@@ -1102,7 +1102,7 @@ func (s *OnboardingWorkflowSuite) TestBuildDistributionStep() {
 	baseState := OnboardingState{
 		UserID:      "11111111-1111-1111-1111-111111111111",
 		IncomeCents: 1350000,
-		Allocations: _defaultDistributionBP,
+		Allocations: defaultDistributionBP,
 	}
 	scenarios := []struct {
 		name         string
@@ -1194,7 +1194,7 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_ActivateAlreadyActiveI
 
 	s.NoError(err)
 	s.Equal(workflow.StepStatusSuspended, out.Status)
-	s.Equal(_conclusionRecurrencePrompt, out.Suspend.Prompt)
+	s.Equal(conclusionRecurrencePrompt, out.Suspend.Prompt)
 }
 
 func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_AffirmativeCreatesRecurrence() {
@@ -1381,7 +1381,7 @@ func (s *OnboardingWorkflowSuite) TestWrapStepWithMessages_NoPeerID_NoAppend() {
 }
 
 func (s *OnboardingWorkflowSuite) TestWelcomeGoalPromptHasNoThirdPersonLeak() {
-	s.NotContains(_welcomeGoalPrompt, "o usuário")
-	s.NotContains(_welcomeGoalPrompt, "peça")
-	s.True(strings.Contains(_welcomeGoalPrompt, "Vamos começar?"))
+	s.NotContains(welcomeGoalPrompt, "o usuário")
+	s.NotContains(welcomeGoalPrompt, "peça")
+	s.True(strings.Contains(welcomeGoalPrompt, "Vamos começar?"))
 }

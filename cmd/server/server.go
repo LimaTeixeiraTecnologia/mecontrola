@@ -234,6 +234,7 @@ func Run() error {
 		WhatsAppGateway:    onboardingModule.WhatsAppGateway,
 		WelcomeDedup:       onboardingpostgres.NewWelcomeDedupRepository(o11y, db),
 		InboundTimeout:     cfg.AgentConfig.InboundTimeout,
+		AgentMaxTokens:     cfg.AgentConfig.MecontrolaMaxTokens,
 	})
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo agents: %w", err)

@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-orquestracao-conversacional-confiavel/6.0_execution_report.md
+summary: Golden set (34 casos, 13 categorias) + harness determinístico (CI por-PR) + harness real-LLM (tag integration + RUN_REAL_LLM) implementados; gate pré-deploy >= 0.90 por categoria validado de fato contra OpenRouter com ratio 1.0000 em todas as 13 categorias
+timestamp: 2026-07-09T19:02:59Z

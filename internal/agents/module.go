@@ -94,6 +94,7 @@ type Deps struct {
 	WhatsAppGateway    whatsAppGateway
 	WelcomeDedup       consumers.WelcomeDedupStore
 	InboundTimeout     time.Duration
+	AgentMaxTokens     int
 }
 
 type whatsAppInboundPayload struct {
@@ -134,7 +135,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	scorerResultStore := scorerpostgres.NewResultStore(deps.DB)
 	scorerEntries := agentscorers.BuildMeControlaScorers(provider)
 	scorerRunner := scorer.NewScorerRunner(scorerEntries, scorerResultStore, deps.O11y)
-	scoringHooks := agentapplication.NewScoringHooks(scorerRunner)
+	scoringHooks := agentapplication.NewScoringHooks(scorerRunner, deps.O11y)
 
 	writeLedgerRepo := persistence.NewWriteLedgerRepository(deps.DB, deps.O11y)
 	idempotentWrite := usecases.NewIdempotentWrite(writeLedgerRepo, deps.O11y)
@@ -203,14 +204,14 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	workingMem := memorypostgres.NewWorkingMemoryRepository(deps.DB, deps.O11y)
 	semanticRecall := memorypostgres.NewEmbeddingRepository(deps.DB, deps.O11y)
 
-	onboardingAgent := agentapplication.BuildMeControlaAgent(provider, nil, scoringHooks, deps.O11y)
+	onboardingAgent := agentapplication.BuildMeControlaAgent(provider, nil, scoringHooks, deps.O11y, deps.AgentMaxTokens)
 	confirmDef := workflows.BuildDestructiveConfirmWorkflow(txLedger, cardManager, categoriesReader, recurrenceManager)
 	cardCreateDef := workflows.BuildCardCreateConfirmWorkflow(idemAdapter, cardManager)
-	budgetCreationAgent := agentapplication.BuildMeControlaAgent(provider, nil, scoringHooks, deps.O11y)
+	budgetCreationAgent := agentapplication.BuildMeControlaAgent(provider, nil, scoringHooks, deps.O11y, deps.AgentMaxTokens)
 	budgetCreationDef := workflows.BuildBudgetCreationWorkflow(budgetCreationAgent, budgetPlanner)
 
 	financialTools := buildFinancialTools(txLedger, cardManager, budgetPlanner, categoriesReader, recurrenceManager, confirmEngine, confirmDef, registerAttempt, cardCreateEngine, cardCreateDef, budgetCreationEngine, budgetCreationDef)
-	meControlaAgent := agentapplication.BuildMeControlaAgent(provider, financialTools, scoringHooks, deps.O11y)
+	meControlaAgent := agentapplication.BuildMeControlaAgent(provider, financialTools, scoringHooks, deps.O11y, deps.AgentMaxTokens)
 
 	registry := agent.NewAgentRegistry()
 	registry.Register(meControlaAgent)
@@ -315,7 +316,7 @@ func buildFinancialTools(
 	budgetCreationDef workflow.Definition[workflows.BudgetCreationState],
 ) []tool.ToolHandle {
 	return []tool.ToolHandle{
-		agenttools.BuildRegisterExpenseTool(registerAttempt),
+		agenttools.BuildRegisterExpenseTool(registerAttempt, cards),
 		agenttools.BuildRegisterIncomeTool(registerAttempt),
 		agenttools.BuildQueryMonthTool(ledger),
 		agenttools.BuildQueryPlanTool(planner),
@@ -331,11 +332,11 @@ func buildFinancialTools(
 		agenttools.BuildResolveCardTool(cards),
 		agenttools.BuildCountCardsTool(cards),
 		agenttools.BuildBestPurchaseDayTool(cards),
-		agenttools.BuildQueryCardInvoiceTool(ledger),
+		agenttools.BuildQueryCardInvoiceTool(ledger, cards),
 		agenttools.BuildGetTransactionTool(ledger),
 		agenttools.BuildSearchTransactionsTool(ledger),
 		agenttools.BuildListRecurrencesTool(recurrences),
-		agenttools.BuildCreateRecurrenceTool(registerAttempt),
+		agenttools.BuildCreateRecurrenceTool(registerAttempt, cards),
 		agenttools.BuildSuggestAllocationTool(planner),
 		agenttools.BuildListCategoriesTool(reader),
 		agenttools.BuildCreateCardTool(cardCreateEngine, cardCreateDef, cards),

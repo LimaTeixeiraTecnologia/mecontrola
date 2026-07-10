@@ -178,13 +178,14 @@ type WhatsAppConfig struct {
 }
 
 type AgentConfig struct {
-	OpenRouterBaseURL string        `mapstructure:"OPENROUTER_BASE_URL"`
-	OpenRouterAPIKey  string        `mapstructure:"OPENROUTER_API_KEY"`
-	PrimaryModel      string        `mapstructure:"AGENT_LLM_PRIMARY_MODEL"`
-	EmbedModel        string        `mapstructure:"AGENT_LLM_EMBED_MODEL"`
-	MaxTokens         int           `mapstructure:"AGENT_LLM_MAX_TOKENS"`
-	Temperature       float64       `mapstructure:"AGENT_LLM_TEMPERATURE"`
-	InboundTimeout    time.Duration `mapstructure:"AGENT_INBOUND_TIMEOUT"`
+	OpenRouterBaseURL   string        `mapstructure:"OPENROUTER_BASE_URL"`
+	OpenRouterAPIKey    string        `mapstructure:"OPENROUTER_API_KEY"`
+	PrimaryModel        string        `mapstructure:"AGENT_LLM_PRIMARY_MODEL"`
+	EmbedModel          string        `mapstructure:"AGENT_LLM_EMBED_MODEL"`
+	MaxTokens           int           `mapstructure:"AGENT_LLM_MAX_TOKENS"`
+	Temperature         float64       `mapstructure:"AGENT_LLM_TEMPERATURE"`
+	InboundTimeout      time.Duration `mapstructure:"AGENT_INBOUND_TIMEOUT"`
+	MecontrolaMaxTokens int           `mapstructure:"AGENT_MECONTROLA_MAX_TOKENS"`
 }
 
 type KiwifyConfig struct {
@@ -544,6 +545,7 @@ func (l *configLoader) envKeys() []string {
 		"AGENT_LLM_MAX_TOKENS",
 		"AGENT_LLM_TEMPERATURE",
 		"AGENT_INBOUND_TIMEOUT",
+		"AGENT_MECONTROLA_MAX_TOKENS",
 		"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_SCHEDULE",
 		"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_BATCH",
 		"IDENTITY_AUTH_EVENTS_RETENTION_DAYS",
@@ -1047,6 +1049,9 @@ func (c *Config) validateProductionAgent() []string {
 	if c.AgentConfig.MaxTokens <= 0 || c.AgentConfig.MaxTokens > 4096 {
 		errs = append(errs, "AGENT_LLM_MAX_TOKENS deve estar no intervalo (0..4096] em production")
 	}
+	if c.AgentConfig.MecontrolaMaxTokens <= 0 || c.AgentConfig.MecontrolaMaxTokens > 8192 {
+		errs = append(errs, "AGENT_MECONTROLA_MAX_TOKENS deve estar no intervalo (0..8192] em production")
+	}
 	return errs
 }
 
@@ -1344,6 +1349,7 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("AGENT_LLM_MAX_TOKENS", 1536)
 	l.v.SetDefault("AGENT_LLM_TEMPERATURE", 0)
 	l.v.SetDefault("AGENT_INBOUND_TIMEOUT", 90*time.Second)
+	l.v.SetDefault("AGENT_MECONTROLA_MAX_TOKENS", 3072)
 }
 
 func (c *Config) validateWorkflowKernel() []string {

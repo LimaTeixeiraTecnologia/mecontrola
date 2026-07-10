@@ -2,10 +2,12 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
@@ -33,7 +35,7 @@ type CreateRecurrenceOutput struct {
 	Message    string `json:"message"`
 }
 
-func BuildCreateRecurrenceTool(registrar recurrenceRegistrar) tool.ToolHandle {
+func BuildCreateRecurrenceTool(registrar recurrenceRegistrar, cards interfaces.CardManager) tool.ToolHandle {
 	in := llm.Schema{
 		Name:   "create_recurrence_input",
 		Strict: true,
@@ -71,14 +73,14 @@ func BuildCreateRecurrenceTool(registrar recurrenceRegistrar) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewVerbatimTool("create_recurrence", "Solicita a criação de um template de lançamento recorrente; a persistência só ocorre após confirmação explícita do usuário.", in, out, buildCreateRecurrenceExec(registrar), extractCreateRecurrenceVerbatim)
+	return tool.NewVerbatimTool("create_recurrence", "Solicita a criação de um template de lançamento recorrente; a persistência só ocorre após confirmação explícita do usuário.", in, out, buildCreateRecurrenceExec(registrar, cards), extractCreateRecurrenceVerbatim)
 }
 
 func extractCreateRecurrenceVerbatim(o CreateRecurrenceOutput) (string, bool) {
 	return o.Message, o.Outcome == agent.ToolOutcomeClarify.String() && o.Message != ""
 }
 
-func buildCreateRecurrenceExec(registrar recurrenceRegistrar) func(context.Context, CreateRecurrenceInput) (CreateRecurrenceOutput, error) {
+func buildCreateRecurrenceExec(registrar recurrenceRegistrar, cards interfaces.CardManager) func(context.Context, CreateRecurrenceInput) (CreateRecurrenceOutput, error) {
 	return func(ctx context.Context, in CreateRecurrenceInput) (CreateRecurrenceOutput, error) {
 		resourceID, threadID, wamid, itemSeq, ok := agent.InboundExecutionFromContext(ctx)
 		if !ok {
@@ -101,6 +103,15 @@ func buildCreateRecurrenceExec(registrar recurrenceRegistrar) func(context.Conte
 			parsed, parseErr := uuid.Parse(in.CardID)
 			if parseErr != nil {
 				return CreateRecurrenceOutput{}, fmt.Errorf("create_recurrence: cardId inválido: %w", parseErr)
+			}
+			if _, getErr := cards.GetCard(ctx, parsed, userID); getErr != nil {
+				if errors.Is(getErr, interfaces.ErrCardNotFound) {
+					return CreateRecurrenceOutput{
+						Outcome: agent.ToolOutcomeClarify.String(),
+						Message: cardNotFoundClarifyMessage,
+					}, nil
+				}
+				return CreateRecurrenceOutput{}, fmt.Errorf("create_recurrence: %w", getErr)
 			}
 			cardID = &parsed
 		}

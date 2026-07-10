@@ -69,7 +69,7 @@ func (h *e2eSpyHooks) BeforeTool(ctx context.Context, _, toolID string) context.
 	return ctx
 }
 
-func (h *e2eSpyHooks) AfterTool(_ context.Context, _, toolID string, resultBytes []byte, err error) {
+func (h *e2eSpyHooks) AfterTool(_ context.Context, _, toolID string, _, resultBytes []byte, err error) {
 	if err != nil {
 		h.errs++
 	}
@@ -88,6 +88,48 @@ type e2eStubCardLookup struct {
 
 func (l *e2eStubCardLookup) GetForUser(_ context.Context, _, _ uuid.UUID) (valueobjects.CardBillingSnapshot, error) {
 	return l.snapshot, nil
+}
+
+type e2eStubCardManager struct{}
+
+func (m *e2eStubCardManager) CreateCard(_ context.Context, _ agentsifaces.NewCard) (agentsifaces.CardRef, error) {
+	return agentsifaces.CardRef{}, nil
+}
+
+func (m *e2eStubCardManager) ListCards(_ context.Context, _ uuid.UUID) ([]agentsifaces.Card, error) {
+	return nil, nil
+}
+
+func (m *e2eStubCardManager) GetCard(_ context.Context, _, _ uuid.UUID) (agentsifaces.Card, error) {
+	return agentsifaces.Card{}, agentsifaces.ErrCardNotFound
+}
+
+func (m *e2eStubCardManager) ResolveCardByNickname(_ context.Context, _ uuid.UUID, _ string) (agentsifaces.Card, error) {
+	return agentsifaces.Card{}, agentsifaces.ErrCardNotFound
+}
+
+func (m *e2eStubCardManager) CountCards(_ context.Context, _ uuid.UUID) (int64, error) {
+	return 0, nil
+}
+
+func (m *e2eStubCardManager) BestPurchaseDay(_ context.Context, _ string, _ int) (agentsifaces.BestPurchaseDay, error) {
+	return agentsifaces.BestPurchaseDay{}, nil
+}
+
+func (m *e2eStubCardManager) BankRecognized(_ context.Context, _ string) (bool, error) {
+	return false, nil
+}
+
+func (m *e2eStubCardManager) UpdateCard(_ context.Context, _ agentsifaces.CardUpdate) (agentsifaces.Card, error) {
+	return agentsifaces.Card{}, nil
+}
+
+func (m *e2eStubCardManager) SoftDeleteCard(_ context.Context, _, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *e2eStubCardManager) HasOpenInstallments(_ context.Context, _, _ uuid.UUID) (bool, error) {
+	return false, nil
 }
 
 type e2eStubCategoryGate struct{ version int64 }
@@ -236,7 +278,7 @@ func (s *MeControlaAgentE2ESuite) SetupSuite() {
 	registerAttempt := agentusecases.NewRegisterAttempt(reader, s.adapter, s.pendingEngine, s.pendingDef, o11y)
 
 	s.tools = []tool.ToolHandle{
-		agenttools.BuildRegisterExpenseTool(registerAttempt),
+		agenttools.BuildRegisterExpenseTool(registerAttempt, &e2eStubCardManager{}),
 		agenttools.BuildQueryMonthTool(s.adapter),
 	}
 }
@@ -289,7 +331,7 @@ func (s *MeControlaAgentE2ESuite) findLedgerRow() (wamid string, itemSeq int, op
 
 func (s *MeControlaAgentE2ESuite) TestE2E1_RegistrarDespesaViaLLMPersisteNoBanco() {
 	hooks := &e2eSpyHooks{t: s.T()}
-	a := BuildMeControlaAgent(s.provider, s.tools, hooks, fake.NewProvider())
+	a := BuildMeControlaAgent(s.provider, s.tools, hooks, fake.NewProvider(), 0)
 
 	ctx, cancel := context.WithTimeout(s.authedCtx(), 90*time.Second)
 	defer cancel()

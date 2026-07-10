@@ -143,7 +143,7 @@ func isTransientLLMError(err error) bool {
 func runHarnessScenario(t *testing.T, ctx context.Context, provider llm.Provider, s harnessScenario) scorer.ScoreResult {
 	t.Helper()
 	obs := fake.NewProvider()
-	a := agents.BuildMeControlaAgent(provider, s.tools, nil, obs)
+	a := agents.BuildMeControlaAgent(provider, s.tools, nil, obs, 0)
 
 	var result agent.Result
 	var err error
@@ -347,7 +347,7 @@ func TestRealLLM_EP01_AntiSimulation_RegisterExpenseDoesNotFakeSuccess(t *testin
 		},
 	)
 
-	a := agents.BuildMeControlaAgent(provider, []tool.ToolHandle{failingTool}, nil, obs)
+	a := agents.BuildMeControlaAgent(provider, []tool.ToolHandle{failingTool}, nil, obs, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -394,7 +394,7 @@ func TestRealLLM_EP05_RunPersistsRoleTool(t *testing.T) {
 		},
 	)
 
-	a := agents.BuildMeControlaAgent(provider, []tool.ToolHandle{queryTool}, nil, obs)
+	a := agents.BuildMeControlaAgent(provider, []tool.ToolHandle{queryTool}, nil, obs, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 

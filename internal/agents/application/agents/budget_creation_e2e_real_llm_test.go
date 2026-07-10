@@ -171,7 +171,7 @@ func (s *BudgetCreationE2ERealLLMSuite) TestCreateBudgetRoutingGate() {
 				createBudgetTool := agenttools.BuildCreateBudgetTool(engine, def)
 				tools := []tool.ToolHandle{createBudgetTool}
 
-				a := BuildMeControlaAgent(s.provider, tools, nil, obs)
+				a := BuildMeControlaAgent(s.provider, tools, nil, obs, 0)
 				ctx := budgetE2EInboundCtx(userID, sc.message, "wamid-route-"+uuid.NewString())
 				ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 
@@ -291,7 +291,7 @@ func (s *BudgetCreationE2ERealLLMSuite) TestRetrospectivaCompositionGate() {
 					agenttools.BuildQueryMonthTool(ledgerMock),
 				}
 
-				a := BuildMeControlaAgent(s.provider, tools, nil, obs)
+				a := BuildMeControlaAgent(s.provider, tools, nil, obs, 0)
 				ctx := budgetE2EInboundCtx(userID, sc.message, "wamid-retro-"+uuid.NewString())
 				ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 
@@ -334,7 +334,7 @@ func (s *BudgetCreationE2ERealLLMSuite) TestFailurePersistenceMessageSpecific() 
 	def := fakeBudgetE2EDef()
 	tools := []tool.ToolHandle{agenttools.BuildCreateBudgetTool(engine, def)}
 
-	a := BuildMeControlaAgent(s.provider, tools, nil, obs)
+	a := BuildMeControlaAgent(s.provider, tools, nil, obs, 0)
 	userID := uuid.New()
 	ctx := budgetE2EInboundCtx(userID, "quero criar um orçamento para este mês", "wamid-fail-"+uuid.NewString())
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)

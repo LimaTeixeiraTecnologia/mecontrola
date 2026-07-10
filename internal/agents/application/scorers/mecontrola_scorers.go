@@ -174,5 +174,13 @@ func BuildMeControlaScorers(provider llm.Provider) []scorer.ScorerEntry {
 		scorer.NewScorerEntry(NewFinancialToolCallAccuracyScorer(), scorer.AlwaysSample()),
 		scorer.NewScorerEntry(NewFinancialCompletenessScorer(), scorer.AlwaysSample()),
 		scorer.NewScorerEntry(NewCategorizationScorer(provider), scorer.AlwaysSample()),
+		scorer.NewScorerEntry(NewNoEmptyAnswerScorer(), scorer.AlwaysSample()),
+		scorer.NewScorerEntry(NewWhatsAppFormatScorer(), scorer.AlwaysSample()),
+		scorer.NewScorerEntry(NewNoInternalTermsScorer(), scorer.AlwaysSample()),
+		scorer.NewScorerEntry(NewVerbatimRequiredScorer(), scorer.AlwaysSample()),
+		scorer.NewScorerEntry(NewNoDuplicateWriteScorer(), scorer.AlwaysSample()),
+		scorer.NewScorerEntry(NewNoHallucinationScorer(), scorer.AlwaysSample()),
+		scorer.NewScorerEntry(NewRequiredArgsScorer(), scorer.AlwaysSample()),
+		scorer.NewScorerEntry(NewMonthReferenceCorrectnessScorer(), scorer.AlwaysSample()),
 	}
 }

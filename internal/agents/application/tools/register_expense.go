@@ -2,15 +2,19 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
+
+const cardNotFoundClarifyMessage = "❌ Não encontrei esse cartão. Pode me dizer o apelido do cartão (ex.: nubank) para eu localizar o certo?"
 
 type RegisterExpenseInput struct {
 	AmountCents     int64  `json:"amountCents"`
@@ -32,7 +36,7 @@ type RegisterExpenseOutput struct {
 	Message    string `json:"message"`
 }
 
-func BuildRegisterExpenseTool(registrar entryRegistrar) tool.ToolHandle {
+func BuildRegisterExpenseTool(registrar entryRegistrar, cards interfaces.CardManager) tool.ToolHandle {
 	in := llm.Schema{
 		Name:   "register_expense_input",
 		Strict: true,
@@ -69,14 +73,14 @@ func BuildRegisterExpenseTool(registrar entryRegistrar) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewVerbatimTool("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário; a categoria é resolvida automaticamente por busca textual do campo description (nunca parafraseie o termo do usuário). Para compra no cartão de crédito, use paymentMethod=credit_card com cardId (obtido via resolve_card) e installments (1 para à vista, 2..24 para parcelada).", in, out, buildRegisterExpenseExec(registrar), extractRegisterExpenseVerbatim)
+	return tool.NewVerbatimTool("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário; a categoria é resolvida automaticamente por busca textual do campo description (nunca parafraseie o termo do usuário). Para compra no cartão de crédito, use paymentMethod=credit_card com cardId (obtido via resolve_card) e installments (1 para à vista, 2..24 para parcelada).", in, out, buildRegisterExpenseExec(registrar, cards), extractRegisterExpenseVerbatim)
 }
 
 func extractRegisterExpenseVerbatim(o RegisterExpenseOutput) (string, bool) {
 	return o.Message, o.Outcome == agent.ToolOutcomeClarify.String() && o.Message != ""
 }
 
-func buildRegisterExpenseExec(registrar entryRegistrar) func(context.Context, RegisterExpenseInput) (RegisterExpenseOutput, error) {
+func buildRegisterExpenseExec(registrar entryRegistrar, cards interfaces.CardManager) func(context.Context, RegisterExpenseInput) (RegisterExpenseOutput, error) {
 	return func(ctx context.Context, in RegisterExpenseInput) (RegisterExpenseOutput, error) {
 		resourceID, threadID, wamid, itemSeq, ok := agent.InboundExecutionFromContext(ctx)
 		if !ok {
@@ -91,6 +95,15 @@ func buildRegisterExpenseExec(registrar entryRegistrar) func(context.Context, Re
 			parsed, parseErr := uuid.Parse(in.CardID)
 			if parseErr != nil {
 				return RegisterExpenseOutput{}, fmt.Errorf("register_expense: cardId inválido: %w", parseErr)
+			}
+			if _, getErr := cards.GetCard(ctx, parsed, userID); getErr != nil {
+				if errors.Is(getErr, interfaces.ErrCardNotFound) {
+					return RegisterExpenseOutput{
+						Outcome: agent.ToolOutcomeClarify.String(),
+						Message: cardNotFoundClarifyMessage,
+					}, nil
+				}
+				return RegisterExpenseOutput{}, fmt.Errorf("register_expense: %w", getErr)
 			}
 			cardID = &parsed
 		}

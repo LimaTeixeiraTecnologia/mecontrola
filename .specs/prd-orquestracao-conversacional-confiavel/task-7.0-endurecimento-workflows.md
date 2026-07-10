@@ -23,13 +23,13 @@ cancelamento, mensagem repetida, WAMID duplicado, concorrência e replay idempot
 
 ## Subtarefas
 
-- [ ] 7.1 Integration (`//go:build integration`, testcontainers Postgres) de retomada pós-deploy +
+- [x] 7.1 Integration (`//go:build integration`, testcontainers Postgres) de retomada pós-deploy +
   merge-patch antes do parse para pending entry.
-- [ ] 7.2 Casos de expiração, cancelamento, mensagem repetida e WAMID duplicado (efeito único) por
+- [x] 7.2 Casos de expiração, cancelamento, mensagem repetida e WAMID duplicado (efeito único) por
   workflow (pending, destructive-confirm, card-create, budget-creation, onboarding).
-- [ ] 7.3 Concorrência/replay idempotente (`IdempotentWriter` + WriteLedger) → um efeito válido; texto
+- [x] 7.3 Concorrência/replay idempotente (`IdempotentWriter` + WriteLedger) → um efeito válido; texto
   determinístico.
-- [ ] 7.4 Confirmar que reapers levam runs concluídos a `Succeeded`/`Failed` (nunca `Suspended` órfão).
+- [x] 7.4 Confirmar que reapers levam runs concluídos a `Succeeded`/`Failed` (nunca `Suspended` órfão).
 
 ## Detalhes de Implementação
 
@@ -60,8 +60,8 @@ contrato dos workflows; apenas endurecer cobertura (usa o runtime robusto de 2.0
 
 ## Testes da Tarefa
 
-- [ ] Testes unitários: decisões puras de confirmação/idempotência já cobertas; complementar gaps.
-- [ ] Testes de integração: retomada pós-deploy, expiração, cancelamento, WAMID duplicado, concorrência,
+- [x] Testes unitários: decisões puras de confirmação/idempotência já cobertas; complementar gaps.
+- [x] Testes de integração: retomada pós-deploy, expiração, cancelamento, WAMID duplicado, concorrência,
   replay por workflow (testcontainers Postgres).
 
 <critical>SEMPRE CRIAR E EXECUTAR TESTES DA TAREFA ANTES DE CONSIDERAR A TAREFA COMO `done`</critical>

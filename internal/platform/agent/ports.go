@@ -155,5 +155,5 @@ type Hooks interface {
 	BeforeExecute(ctx context.Context, agentID string, in Request) context.Context
 	AfterExecute(ctx context.Context, agentID string, result Result, err error)
 	BeforeTool(ctx context.Context, agentID, toolID string) context.Context
-	AfterTool(ctx context.Context, agentID, toolID string, resultBytes []byte, err error)
+	AfterTool(ctx context.Context, agentID, toolID string, argsJSON, resultBytes []byte, err error)
 }

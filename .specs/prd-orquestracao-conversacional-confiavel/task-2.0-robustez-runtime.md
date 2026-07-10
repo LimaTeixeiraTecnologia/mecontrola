@@ -27,16 +27,16 @@ teto de tokens fica configurável, e os gaps de persistência hoje silenciosos p
 
 ## Subtarefas
 
-- [ ] 2.1 `types.go`: adicionar `ToolOutcomeTruncated` (+ `String()="truncated"`, `IsValid`, caso em
+- [x] 2.1 `types.go`: adicionar `ToolOutcomeTruncated` (+ `String()="truncated"`, `IsValid`, caso em
   `ParseToolOutcome`).
-- [ ] 2.2 `runtime.go`: consultar `result.TruncatedByLength` no bloco de decisão de status; marcar
+- [x] 2.2 `runtime.go`: consultar `result.TruncatedByLength` no bloco de decisão de status; marcar
   Failed + `ToolOutcomeTruncated` + `errStr`; emitir `agent_run_truncated_total{agent_id}`.
-- [ ] 2.3 `runtime.go`: observar `MessageStore.Append` (métrica por `role`) e `RunStore.Update` (erro +
+- [x] 2.3 `runtime.go`: observar `MessageStore.Append` (métrica por `role`) e `RunStore.Update` (erro +
   métrica; não emitir `agent_runs_total` de sucesso quando o Update falhar).
-- [ ] 2.4 `runtime.go`: agregar múltiplos erros de tool em `errStr` de forma bounded e sanitizada.
-- [ ] 2.5 Wiring/`mecontrola_agent.go`: resolver `AGENT_MECONTROLA_MAX_TOKENS` (default 3072) →
+- [x] 2.4 `runtime.go`: agregar múltiplos erros de tool em `errStr` de forma bounded e sanitizada.
+- [x] 2.5 Wiring/`mecontrola_agent.go`: resolver `AGENT_MECONTROLA_MAX_TOKENS` (default 3072) →
   `WithDefaultMaxTokens`.
-- [ ] 2.6 Fallback seguro: texto curto determinístico em PT-BR para falha/truncamento/vazio.
+- [x] 2.6 Fallback seguro: texto curto determinístico em PT-BR para falha/truncamento/vazio.
 
 ## Detalhes de Implementação
 
@@ -67,9 +67,9 @@ público nem o kernel de workflow.
 
 ## Testes da Tarefa
 
-- [ ] Testes unitários: truncamento → Failed + `ToolOutcomeTruncated` + fallback; `Update` falho não
+- [x] Testes unitários: truncamento → Failed + `ToolOutcomeTruncated` + fallback; `Update` falho não
   reporta sucesso; `Append` falho emite métrica; agregação de múltiplos erros de tool; parse do enum.
-- [ ] Testes de integração: não aplicável nesta tarefa (coberto em 7.0/8.0).
+- [x] Testes de integração: não aplicável nesta tarefa (coberto em 7.0/8.0).
 
 <critical>SEMPRE CRIAR E EXECUTAR TESTES DA TAREFA ANTES DE CONSIDERAR A TAREFA COMO `done`</critical>
 

@@ -14,4 +14,4 @@ func (NoopHooks) BeforeTool(ctx context.Context, _, _ string) context.Context {
 	return ctx
 }
 
-func (NoopHooks) AfterTool(_ context.Context, _, _ string, _ []byte, _ error) {}
+func (NoopHooks) AfterTool(_ context.Context, _, _ string, _, _ []byte, _ error) {}

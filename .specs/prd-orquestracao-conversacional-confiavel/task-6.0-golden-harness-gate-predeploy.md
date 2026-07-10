@@ -26,13 +26,15 @@ real-LLM ≥ 0,90 por categoria como gate pré-deploy bloqueante.
 
 ## Subtarefas
 
-- [ ] 6.1 Fixtures do golden em `internal/agents/application/golden/` (sintéticos + incidentes
+- [x] 6.1 Fixtures do golden em `internal/agents/application/golden/` (sintéticos + incidentes
   anonimizados), com o schema de caso (input/expectedTool/expectedArgs/expectedOutcome/responseProperty).
-- [ ] 6.2 Harness determinístico (CI): asserts puros de guards/scorers sobre `RunSample` fixos + casos
+- [x] 6.2 Harness determinístico (CI): asserts puros de guards/scorers sobre `RunSample` fixos + casos
   golden que não exigem LLM.
-- [ ] 6.3 Harness real-LLM (`//go:build realllm`): dirige `BuildMeControlaAgent` com OpenRouter,
-  computando ratio por categoria com invariante semântico (não keyword estreita).
-- [ ] 6.4 Gate: falhar quando qualquer categoria ficar < 0,90; integrar ao passo pré-deploy.
+- [x] 6.3 Harness real-LLM (`//go:build integration` + `RUN_REAL_LLM` — divergência do nome `realllm`
+  documentada no execution report; segue o padrão real já usado no projeto): dirige `BuildMeControlaAgent`
+  com OpenRouter, computando ratio por categoria com invariante semântico (não keyword estreita).
+- [x] 6.4 Gate: falhar quando qualquer categoria ficar < 0,90; integrar ao passo pré-deploy via
+  `task test:golden:gate`.
 
 ## Detalhes de Implementação
 
