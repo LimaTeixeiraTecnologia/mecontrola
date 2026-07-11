@@ -153,17 +153,6 @@ func (k reviewAwaitKind) IsValid() bool {
 	return k >= reviewAwaitDistribution && k <= reviewAwaitConfirm
 }
 
-func parseReviewAwaitKind(s string) (reviewAwaitKind, error) {
-	switch s {
-	case "distribution":
-		return reviewAwaitDistribution, nil
-	case "confirm":
-		return reviewAwaitConfirm, nil
-	default:
-		return 0, fmt.Errorf("%w: %q", errInvalidReviewAwaitKind, s)
-	}
-}
-
 type allocationInputKind int
 
 const (

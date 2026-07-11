@@ -701,48 +701,6 @@ func (s *OnboardingWorkflowSuite) TestOnboardingPhase_IsValid_ZeroValue() {
 	s.Equal("unknown", zero.String())
 }
 
-func (s *OnboardingWorkflowSuite) TestParseReviewAwaitKind() {
-	type args struct {
-		s string
-	}
-	scenarios := []struct {
-		name   string
-		args   args
-		expect func(kind reviewAwaitKind, err error)
-	}{
-		{
-			name: "deve parsear distribution",
-			args: args{s: "distribution"},
-			expect: func(kind reviewAwaitKind, err error) {
-				s.NoError(err)
-				s.Equal(reviewAwaitDistribution, kind)
-			},
-		},
-		{
-			name: "deve parsear confirm",
-			args: args{s: "confirm"},
-			expect: func(kind reviewAwaitKind, err error) {
-				s.NoError(err)
-				s.Equal(reviewAwaitConfirm, kind)
-			},
-		},
-		{
-			name: "deve retornar erro para valor invalido",
-			args: args{s: "invalid"},
-			expect: func(kind reviewAwaitKind, err error) {
-				s.Error(err)
-				s.Equal(reviewAwaitKind(0), kind)
-			},
-		},
-	}
-	for _, scenario := range scenarios {
-		s.Run(scenario.name, func() {
-			kind, err := parseReviewAwaitKind(scenario.args.s)
-			scenario.expect(kind, err)
-		})
-	}
-}
-
 func (s *OnboardingWorkflowSuite) TestReviewAwaitKind_IsValid_ZeroValue() {
 	var zero reviewAwaitKind
 	s.False(zero.IsValid())
