@@ -483,13 +483,35 @@ docker compose --env-file .env \
   -c "SELECT COUNT(*) AS total_tables FROM information_schema.tables WHERE table_schema = 'mecontrola';"
 ```
 
-Resultado esperado: `version = 4`, `dirty = false`, `total_tables = 50`.
+Resultado esperado: `version = 8`, `dirty = false` e a contagem de tabelas do schema `mecontrola` maior que zero (todas recriadas).
 
 ### Cenário B — VPS (produção via SSH)
 
 Procedimento completo para recriar o schema em produção, do zero, sem parar o Postgres. Execute da máquina local.
 
-#### 1. Parar server e worker
+#### Caminho recomendado — comando único
+
+Um único comando faz todo o fluxo de forma orquestrada (pede confirmação, pois é destrutivo e não faz backup):
+
+```bash
+task vps:db:reset
+```
+
+Ele executa, em ordem:
+
+1. Escala `server-1/2` e `worker-1/2` para `0` réplicas.
+2. `DROP SCHEMA IF EXISTS mecontrola CASCADE; CREATE SCHEMA mecontrola; DROP TABLE IF EXISTS schema_migrations;` no Postgres da VPS.
+3. Força o serviço Swarm `mecontrola_migrate` (`docker service update --force`), que já possui o secret `DB_PASSWORD` e `ENVIRONMENT=production`, e aguarda o task ficar `Complete`.
+4. Escala `server-1/2` e `worker-1/2` de volta para `1` réplica.
+5. Valida (`schema_migrations` + contagem de tabelas).
+
+> O host padrão é `187.77.45.48` (usuário `root`); sobrescreva com `VPS_HOST=... VPS_USER=... task vps:db:reset` se necessário. `migrate-down` é bloqueado em produção, por isso o wipe usa `DROP SCHEMA`, e a reaplicação usa apenas `migrate` (`Up()`).
+
+Caso prefira executar passo a passo (depuração ou controle fino), siga o **caminho manual** abaixo.
+
+#### Caminho manual
+
+##### 1. Parar server e worker
 
 ```bash
 ssh root@187.77.45.48 "docker service scale \
@@ -499,7 +521,7 @@ ssh root@187.77.45.48 "docker service scale \
   mecontrola_worker-2=0"
 ```
 
-#### 2. Dropar e recriar o schema `mecontrola`
+##### 2. Dropar e recriar o schema `mecontrola`
 
 ```bash
 ssh root@187.77.45.48 "
@@ -514,7 +536,7 @@ ssh root@187.77.45.48 "
 
 > `DROP TABLE IF EXISTS schema_migrations` é seguro aqui porque a tabela fica dentro do schema `mecontrola` e já foi removida pelo `CASCADE`. O comando extra garante que o migrator comece do zero caso a tabela esteja em outro lugar.
 
-#### 3. Aplicar todas as migrations via serviço Swarm
+##### 3. Aplicar todas as migrations via serviço Swarm
 
 O serviço `mecontrola_migrate` já possui todas as secrets e variáveis de ambiente necessárias:
 
@@ -532,7 +554,7 @@ ssh root@187.77.45.48 "docker service logs mecontrola_migrate --tail 20"
 
 Você deve ver `migrations applied`.
 
-#### 4. Validar migrations
+##### 4. Validar migrations
 
 ```bash
 ssh root@187.77.45.48 "
@@ -543,9 +565,9 @@ ssh root@187.77.45.48 "
 "
 ```
 
-Resultado esperado: `version = 4`, `dirty = false`, `total_tables = 50`.
+Resultado esperado: `version = 8`, `dirty = false` e a contagem de tabelas do schema `mecontrola` maior que zero (todas recriadas).
 
-#### 5. Escalar server e worker de volta
+##### 5. Escalar server e worker de volta
 
 ```bash
 ssh root@187.77.45.48 "docker service scale \
@@ -555,7 +577,7 @@ ssh root@187.77.45.48 "docker service scale \
   mecontrola_worker-2=1"
 ```
 
-#### 6. Validar health
+##### 6. Validar health
 
 ```bash
 curl -sf http://187.77.45.48/health
@@ -626,7 +648,7 @@ docker compose --env-file .env \
   -c "SELECT COUNT(*) AS total_tables FROM information_schema.tables WHERE table_schema = 'mecontrola';"
 ```
 
-Resultado esperado: `version = 4`, `dirty = false`, `total_tables = 50`.
+Resultado esperado: `version = 8`, `dirty = false` e a contagem de tabelas do schema `mecontrola` maior que zero (todas recriadas).
 
 ### Cenário D — VPS com pausa para DBeaver (sem backup)
 
@@ -700,7 +722,7 @@ Com o túnel ainda aberto, atualize o DBeaver e verifique:
 task vps:db:validate
 ```
 
-Resultado esperado: `version = 4`, `dirty = false`, `total_tables = 50`.
+Resultado esperado: `version = 8`, `dirty = false` e a contagem de tabelas do schema `mecontrola` maior que zero (todas recriadas).
 
 #### 6. Escalar server e worker de volta
 

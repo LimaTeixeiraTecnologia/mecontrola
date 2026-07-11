@@ -145,15 +145,11 @@ tasks:
           df -h / | tail -1
         ENDSSH
 
-  vps:db:drop:
-    desc: Zera o banco na VPS (drop schema mecontrola e schema_migrations). Destrutivo, manual e sem backup.
+  vps:db:_wipe:
+    internal: true
     vars:
       VPS_HOST: '{{.VPS_HOST | default (env "VPS_HOST") | default "187.77.45.48"}}'
       VPS_USER: '{{.VPS_USER | default (env "VPS_USER") | default "root"}}'
-    prompt: |
-      ATENCAO: esta acao destroi todos os dados do banco na VPS ({{.VPS_HOST}}).
-      Nenhum backup sera feito. Os servicos server/worker serao escalados para zero.
-      Continuar?
     cmds:
       - |
         echo "==> Escalando servicos para zero na VPS ({{.VPS_HOST}})..."
@@ -171,6 +167,21 @@ tasks:
             -c 'DROP SCHEMA IF EXISTS mecontrola CASCADE;' \
             -c 'CREATE SCHEMA mecontrola;' \
             -c 'DROP TABLE IF EXISTS schema_migrations;'"
+
+  vps:db:drop:
+    desc: Zera o banco na VPS (drop schema mecontrola e schema_migrations). Destrutivo, manual e sem backup.
+    vars:
+      VPS_HOST: '{{.VPS_HOST | default (env "VPS_HOST") | default "187.77.45.48"}}'
+      VPS_USER: '{{.VPS_USER | default (env "VPS_USER") | default "root"}}'
+    prompt: |
+      ATENCAO: esta acao destroi todos os dados do banco na VPS ({{.VPS_HOST}}).
+      Nenhum backup sera feito. Os servicos server/worker serao escalados para zero.
+      Continuar?
+    cmds:
+      - task: vps:db:_wipe
+        vars:
+          VPS_HOST: '{{.VPS_HOST}}'
+          VPS_USER: '{{.VPS_USER}}'
       - |
         echo ""
         echo "==> Banco zerado na VPS ({{.VPS_HOST}})."
@@ -178,10 +189,74 @@ tasks:
         echo "      1. Conecte o DBeaver pelo tunel:"
         echo "         ssh -N -L 15432:127.0.0.1:15432 {{.VPS_USER}}@{{.VPS_HOST}}"
         echo "      2. Verifique que o schema mecontrola esta vazio."
-        echo "      3. Aplique as migrations com:"
-        echo "         task swarm:prod:migrate IMAGE_TAG=<tag>"
+        echo "      3. Reaplique as migrations forcando o servico Swarm:"
+        echo "         ssh {{.VPS_USER}}@{{.VPS_HOST}} 'docker service update --force mecontrola_migrate'"
         echo "      4. Valide com:"
         echo "         task vps:db:validate"
+        echo "    (ou faca tudo de uma vez com: task vps:db:reset)"
+
+  vps:db:scale-up:
+    desc: Escala server/worker de volta para 1 replica na VPS.
+    vars:
+      VPS_HOST: '{{.VPS_HOST | default (env "VPS_HOST") | default "187.77.45.48"}}'
+      VPS_USER: '{{.VPS_USER | default (env "VPS_USER") | default "root"}}'
+    cmds:
+      - |
+        echo "==> Escalando server/worker de volta na VPS ({{.VPS_HOST}})..."
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "set -euo pipefail; \
+          docker service scale \
+            mecontrola_server-1=1 \
+            mecontrola_server-2=1 \
+            mecontrola_worker-1=1 \
+            mecontrola_worker-2=1"
+
+  vps:db:reset:
+    desc: Reset destrutivo COMPLETO do banco na VPS — scale->0, dropa schema, reaplica TODAS as migrations, scale->1 e valida. Sem backup.
+    vars:
+      VPS_HOST: '{{.VPS_HOST | default (env "VPS_HOST") | default "187.77.45.48"}}'
+      VPS_USER: '{{.VPS_USER | default (env "VPS_USER") | default "root"}}'
+    prompt: |
+      ATENCAO: reset DESTRUTIVO e IRREVERSIVEL do banco na VPS ({{.VPS_HOST}}).
+      Todos os dados serao apagados. NENHUM backup sera feito.
+      Fluxo: scale->0 | DROP SCHEMA | migrate | scale->1.
+      Continuar?
+    cmds:
+      - task: vps:db:_wipe
+        vars:
+          VPS_HOST: '{{.VPS_HOST}}'
+          VPS_USER: '{{.VPS_USER}}'
+      - |
+        echo "==> Aplicando migrations via servico mecontrola_migrate ({{.VPS_HOST}})..."
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "docker service update --force mecontrola_migrate >/dev/null 2>&1 || true"
+      - |
+        echo "==> Aguardando o task de migrate concluir (Complete)..."
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} 'set -euo pipefail; \
+          for i in $(seq 1 40); do \
+            STATE=$(docker service ps mecontrola_migrate --no-trunc --format "{{ "{{" }}.CurrentState{{ "}}" }}" | head -1); \
+            echo "  migrate: $STATE"; \
+            case "$STATE" in \
+              Complete*) exit 0;; \
+              Failed*|Rejected*|Shutdown*) echo "migrate falhou: $STATE"; exit 1;; \
+            esac; \
+            sleep 3; \
+          done; \
+          echo "timeout aguardando migrate"; exit 1'
+      - |
+        echo "==> Log do migrate (esperado: migrations applied):"
+        ssh {{.VPS_USER}}@{{.VPS_HOST}} "docker service logs mecontrola_migrate --tail 20"
+      - task: vps:db:scale-up
+        vars:
+          VPS_HOST: '{{.VPS_HOST}}'
+          VPS_USER: '{{.VPS_USER}}'
+      - task: vps:db:validate
+        vars:
+          VPS_HOST: '{{.VPS_HOST}}'
+          VPS_USER: '{{.VPS_USER}}'
+      - |
+        echo ""
+        echo "==> Reset concluido na VPS ({{.VPS_HOST}})."
+        echo "    Esperado: version = 8, dirty = false e todas as tabelas recriadas."
+        echo "    Confirme a saude dos servicos com: task vps:health"
 
   vps:db:validate:
     desc: Valida migrations na VPS (schema_migrations e contagem de tabelas).
