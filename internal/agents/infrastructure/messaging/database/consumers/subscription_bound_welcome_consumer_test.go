@@ -114,10 +114,10 @@ func (s *SubscriptionBoundWelcomeConsumerSuite) TestHandle() {
 		expect  func(d dependencies, err error)
 	}{
 		{
-			name:    "envia welcome quando dedup insere e onboarding inicia",
+			name:    "envia mensagem combinada de boas-vindas e objetivo em unica mensagem",
 			payload: s.validPayload(),
 			deps: dependencies{
-				starter: &mockWelcomeStarter{result: usecases.OnboardingResult{Handled: true, Message: "🎉 Bem-vindo"}},
+				starter: &mockWelcomeStarter{result: usecases.OnboardingResult{Handled: true, Message: expectedWelcomeCombinedMessage}},
 				dedup:   &mockWelcomeDedup{inserted: true},
 				sender:  &recordingSender{},
 			},
@@ -125,7 +125,10 @@ func (s *SubscriptionBoundWelcomeConsumerSuite) TestHandle() {
 				s.NoError(err)
 				s.Equal(1, d.sender.calls)
 				s.Equal("+5511986896322", d.sender.toE1)
-				s.Contains(d.sender.text, "Bem-vindo")
+				s.Contains(d.sender.text, "🎉 Bem-vindo ao MeControla! 🎉")
+				s.Contains(d.sender.text, "Vamos começar?")
+				s.Contains(d.sender.text, "objetivo financeiro")
+				s.Equal(expectedWelcomeCombinedMessage, d.sender.text)
 				s.Equal("user-1", d.starter.gotUser)
 				s.Equal(0, d.dedup.deleteCalls)
 			},
@@ -134,7 +137,7 @@ func (s *SubscriptionBoundWelcomeConsumerSuite) TestHandle() {
 			name:    "nao reenvia quando dedup ja processou o event_id",
 			payload: s.validPayload(),
 			deps: dependencies{
-				starter: &mockWelcomeStarter{result: usecases.OnboardingResult{Handled: true, Message: "🎉 Bem-vindo"}},
+				starter: &mockWelcomeStarter{result: usecases.OnboardingResult{Handled: true, Message: expectedWelcomeCombinedMessage}},
 				dedup:   &mockWelcomeDedup{inserted: false},
 				sender:  &recordingSender{},
 			},
@@ -163,7 +166,7 @@ func (s *SubscriptionBoundWelcomeConsumerSuite) TestHandle() {
 			name:    "compensa dedup quando envio falha",
 			payload: s.validPayload(),
 			deps: dependencies{
-				starter: &mockWelcomeStarter{result: usecases.OnboardingResult{Handled: true, Message: "🎉 Bem-vindo"}},
+				starter: &mockWelcomeStarter{result: usecases.OnboardingResult{Handled: true, Message: expectedWelcomeCombinedMessage}},
 				dedup:   &mockWelcomeDedup{inserted: true},
 				sender:  &recordingSender{err: errors.New("meta 500")},
 			},
@@ -186,6 +189,20 @@ func (s *SubscriptionBoundWelcomeConsumerSuite) TestHandle() {
 				s.Error(err)
 				s.Equal(0, d.sender.calls)
 				s.Equal(1, d.dedup.deleteCalls)
+			},
+		},
+		{
+			name:    "mensagem vazia apos normalizacao nao envia",
+			payload: s.validPayload(),
+			deps: dependencies{
+				starter: &mockWelcomeStarter{result: usecases.OnboardingResult{Handled: true, Message: "   "}},
+				dedup:   &mockWelcomeDedup{inserted: true},
+				sender:  &recordingSender{},
+			},
+			expect: func(d dependencies, err error) {
+				s.NoError(err)
+				s.Equal(1, d.starter.calls)
+				s.Equal(0, d.sender.calls)
 			},
 		},
 		{

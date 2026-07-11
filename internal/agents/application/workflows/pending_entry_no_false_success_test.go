@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 
@@ -11,6 +12,10 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
+
+func getFalseSuccessCounter(obs *fake.Provider) *fake.FakeCounter {
+	return obs.Metrics().(*fake.FakeMetrics).GetCounter(pendingEntryFalseSuccessMetric)
+}
 
 func (s *PendingEntryWorkflowSuite) resumePayloadWithID(text, messageID string) []byte {
 	b, _ := json.Marshal(map[string]string{"resumeText": text, "incomingMessageId": messageID})
@@ -41,7 +46,7 @@ func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_DirectWrite_EmptyRes
 func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_IdempotentWrite_EmptyResource_FailsTypedKeepsActive_RF10() {
 	state := s.newState(AwaitingSlotConfirmation)
 	k := s.key("thr-confirm-idem-empty")
-	def := BuildPendingEntryWorkflow(s.ledger, nil, nil, &fakeIdempotentWriter{
+	def := BuildPendingEntryWorkflowWithObservability(s.ledger, nil, nil, &fakeIdempotentWriter{
 		results: []struct {
 			id      uuid.UUID
 			outcome agent.ToolOutcome
@@ -49,7 +54,7 @@ func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_IdempotentWrite_Empt
 		}{
 			{id: uuid.Nil, outcome: agent.ToolOutcomeRouted, err: nil},
 		},
-	})
+	}, nil)
 
 	s.ledger.EXPECT().
 		CreateTransaction(mock.Anything, mock.Anything).
@@ -85,6 +90,60 @@ func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_Accept_SetsProcessed
 	s.NoError(err)
 	s.Equal(PendingStatusCompleted, result.State.Status)
 	s.Equal("wamid-confirm-002", result.State.ProcessedMessageID)
+}
+
+func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_DirectWrite_EmptyResource_RecordsFalseSuccessMetric() {
+	obs := fake.NewProvider()
+	engine := workflow.NewEngine[PendingEntryState](s.store, obs)
+	def := BuildPendingEntryWorkflowWithObservability(s.ledger, nil, nil, nil, obs)
+	state := s.newState(AwaitingSlotConfirmation)
+	k := s.key("thr-confirm-direct-empty-metric")
+
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.Anything).
+		Return(ifaces.EntryRef{ID: uuid.Nil}, nil).
+		Once()
+
+	_, err := engine.Start(s.ctx, def, k, state)
+	s.Require().NoError(err)
+
+	_, err = engine.Resume(s.ctx, def, k, s.resumePayload("sim"))
+	s.ErrorIs(err, ErrWriteAcceptedWithoutResource)
+
+	counter := getFalseSuccessCounter(obs)
+	s.Require().NotNil(counter)
+	values := counter.GetValues()
+	s.Require().Len(values, 1)
+	s.Equal(int64(1), values[0].Value)
+	s.Require().Len(values[0].Fields, 2)
+	s.Equal("workflow", values[0].Fields[0].Key)
+	s.Equal(PendingEntryWorkflowID, values[0].Fields[0].StringValue())
+	s.Equal("step", values[0].Fields[1].Key)
+	s.Equal(stepPendingEntryID, values[0].Fields[1].StringValue())
+}
+
+func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_DirectWrite_Success_DoesNotRecordFalseSuccessMetric() {
+	obs := fake.NewProvider()
+	engine := workflow.NewEngine[PendingEntryState](s.store, obs)
+	def := BuildPendingEntryWorkflowWithObservability(s.ledger, nil, nil, nil, obs)
+	state := s.newState(AwaitingSlotConfirmation)
+	k := s.key("thr-confirm-direct-success-metric")
+
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.Anything).
+		Return(ifaces.EntryRef{ID: uuid.New(), Kind: ifaces.EntryKindTransaction}, nil).
+		Once()
+
+	_, err := engine.Start(s.ctx, def, k, state)
+	s.Require().NoError(err)
+
+	result, err := engine.Resume(s.ctx, def, k, s.resumePayload("sim"))
+	s.NoError(err)
+	s.Equal(PendingStatusCompleted, result.State.Status)
+
+	counter := getFalseSuccessCounter(obs)
+	s.Require().NotNil(counter)
+	s.Empty(counter.GetValues())
 }
 
 func (s *PendingEntryWorkflowSuite) TestShouldExpireAfterFailedWrite() {

@@ -4,11 +4,13 @@ package workflows_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -17,6 +19,8 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	interfacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
+	agentpkg "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
+	agentmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/httpclient"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
@@ -614,4 +618,97 @@ func (s *OnboardingWorkflowRealLLMSuite) TestCardExtractionGate() {
 	ratio := float64(hits) / float64(total)
 	s.T().Logf("gate real-LLM onboarding_card modelo=%q hits=%d total=%d ratio=%.4f", s.model, hits, total, ratio)
 	require.GreaterOrEqual(s.T(), ratio, 0.90, "gate de merge RF-42 (card): ratio %.4f abaixo de 0.90 em %q", ratio, s.model)
+}
+
+func TestCardFlow_Integration(t *testing.T) {
+	const userID = "11111111-1111-1111-1111-111111111111"
+	userUUID := uuid.MustParse(userID)
+
+	t.Run("banco unico preenche apelido e cria cartao valido", func(t *testing.T) {
+		agentMock := agentmocks.NewAgent(t)
+		payload, _ := json.Marshal(map[string]any{
+			"wantsCard": true,
+			"nickname":  "",
+			"bank":      "Santander",
+			"dueDay":    1,
+		})
+		agentMock.EXPECT().
+			Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+			Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+
+		cardsMock := interfacemocks.NewCardManager(t)
+		cardsMock.EXPECT().
+			CreateCard(mock.Anything, interfaces.NewCard{UserID: userUUID, Nickname: "Santander", Bank: "Santander", DueDay: 1}).
+			Return(interfaces.CardRef{}, nil).Once()
+		cardsMock.EXPECT().
+			ListCards(mock.Anything, userUUID).
+			Return([]interfaces.Card{{Nickname: "Santander"}}, nil).Once()
+
+		step := workflows.BuildCardsStep(agentMock, cardsMock)
+		out, err := step(context.Background(), workflows.OnboardingState{
+			UserID:     userID,
+			Phase:      workflows.PhaseCards,
+			ResumeText: "Santander, vencimento dia 1",
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, workflow.StepStatusSuspended, out.Status)
+		require.NotNil(t, out.Suspend)
+		require.Contains(t, out.Suspend.Prompt, "OUTRO 💳")
+		require.False(t, out.State.CardsDone)
+	})
+
+	t.Run("recusa sem cartao existente conclui etapa sem criar cartao", func(t *testing.T) {
+		agentMock := agentmocks.NewAgent(t)
+		payload, _ := json.Marshal(map[string]any{
+			"wantsCard": false,
+			"nickname":  "",
+			"bank":      "",
+			"dueDay":    0,
+		})
+		agentMock.EXPECT().
+			Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+			Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+
+		cardsMock := interfacemocks.NewCardManager(t)
+
+		step := workflows.BuildCardsStep(agentMock, cardsMock)
+		out, err := step(context.Background(), workflows.OnboardingState{
+			UserID:     userID,
+			Phase:      workflows.PhaseCards,
+			ResumeText: "não",
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, workflow.StepStatusCompleted, out.Status)
+		require.True(t, out.State.CardsDone)
+	})
+
+	t.Run("cartao incompleto sem nome nao cria cartao e mantem workflow suspenso", func(t *testing.T) {
+		agentMock := agentmocks.NewAgent(t)
+		payload, _ := json.Marshal(map[string]any{
+			"wantsCard": true,
+			"nickname":  "",
+			"bank":      "",
+			"dueDay":    10,
+		})
+		agentMock.EXPECT().
+			Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+			Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+
+		cardsMock := interfacemocks.NewCardManager(t)
+
+		step := workflows.BuildCardsStep(agentMock, cardsMock)
+		out, err := step(context.Background(), workflows.OnboardingState{
+			UserID:     userID,
+			Phase:      workflows.PhaseCards,
+			ResumeText: "vencimento dia 10",
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, workflow.StepStatusSuspended, out.Status)
+		require.NotNil(t, out.Suspend)
+		require.Contains(t, out.Suspend.Prompt, "💳")
+		require.False(t, out.State.CardsDone)
+	})
 }

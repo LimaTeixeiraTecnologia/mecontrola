@@ -77,7 +77,7 @@ func BuildQueryCardInvoiceTool(ledger interfaces.TransactionsLedger, cards inter
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewVerbatimTool("query_card_invoice", "Consulta a fatura de um cartão de crédito para o mês informado.", in, out, buildQueryCardInvoiceExec(ledger, cards), extractQueryCardInvoiceVerbatim)
+	return tool.NewVerbatimTool("query_card_invoice", "Consulta a fatura de um 💳 de crédito para o mês informado.", in, out, buildQueryCardInvoiceExec(ledger, cards), extractQueryCardInvoiceVerbatim)
 }
 
 func buildQueryCardInvoiceExec(ledger interfaces.TransactionsLedger, cards interfaces.CardManager) func(context.Context, QueryCardInvoiceInput) (QueryCardInvoiceOutput, error) {

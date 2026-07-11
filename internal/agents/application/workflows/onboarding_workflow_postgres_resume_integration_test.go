@@ -80,14 +80,7 @@ func (s *OnboardingWorkflowPostgresResumeIntegrationSuite) TestInteg_RetomadaPos
 	s.True(startResult.Handled)
 	s.NotEmpty(startResult.Message, "RF-15: estado de espera persistido antes de pedir a primeira pergunta")
 
-	triggerAgent := agentmocks.NewAgent(s.T())
-	_, triggerResolver := s.buildResolver(triggerAgent)
-
-	triggerResult, triggerErr := triggerResolver.Execute(s.ctx, userID.String(), peer, "vamos começar")
-	s.Require().NoError(triggerErr)
-	s.True(triggerResult.Handled, "RF-03/D-07: resposta à boas-vindas é apenas gatilho de avanço para o passo de meta")
-	s.NotEmpty(triggerResult.Message, "passo de meta deve suspender com sua própria pergunta")
-
+	postDeployAgent := agentmocks.NewAgent(s.T())
 	extract := struct {
 		Goal      string  `json:"goal"`
 		HasAmount bool    `json:"hasAmount"`
@@ -95,8 +88,6 @@ func (s *OnboardingWorkflowPostgresResumeIntegrationSuite) TestInteg_RetomadaPos
 	}{Goal: "comprar um carro", HasAmount: true, AmountBRL: 50000}
 	rawJSON, marshalErr := json.Marshal(extract)
 	s.Require().NoError(marshalErr)
-
-	postDeployAgent := agentmocks.NewAgent(s.T())
 	postDeployAgent.EXPECT().
 		Execute(mock.Anything, mock.Anything).
 		Return(agentResultRawJSON(rawJSON), nil).

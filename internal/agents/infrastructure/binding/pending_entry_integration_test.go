@@ -50,7 +50,7 @@ func (s *PendingEntryIntegrationSuite) SetupSuite() {
 	s.store = workflowpg.NewPostgresStore(obs, db)
 	s.engine = workflow.NewEngine[workflows.PendingEntryState](s.store, obs)
 	s.ledger = &integNoopLedger{}
-	s.def = workflows.BuildPendingEntryWorkflow(s.ledger, nil, nil, nil)
+	s.def = workflows.BuildPendingEntryWorkflowWithObservability(s.ledger, nil, nil, nil, nil)
 	s.userID = uuid.New()
 }
 
@@ -79,7 +79,7 @@ func (s *PendingEntryIntegrationSuite) buildEngineWithRealIdempotency() (
 	ledger := &countingLedger{}
 	idemAdapter := pendingEntryIdemAdapter{uc: idem}
 
-	def := workflows.BuildPendingEntryWorkflow(ledger, nil, nil, idemAdapter)
+	def := workflows.BuildPendingEntryWorkflowWithObservability(ledger, nil, nil, idemAdapter, nil)
 	return engine, def, ledger
 }
 

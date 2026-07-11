@@ -48,9 +48,10 @@ func (o ToolCallOutcome) IsValid() bool {
 }
 
 type ToolCallRecord struct {
-	Tool    string
-	Outcome ToolCallOutcome
-	Content string
+	Tool          string
+	Outcome       ToolCallOutcome
+	Content       string
+	ArgumentsJSON map[string]any
 }
 
 type Result struct {

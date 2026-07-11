@@ -383,7 +383,7 @@ func buildPendingClarifyTool() tool.ToolHandle {
 func chainGatedRegistrar(cat agentsifaces.CategoriesReader, ledger agentsifaces.TransactionsLedger, obs *fake.Provider) (*agentusecases.RegisterAttempt, *harnessStore) {
 	store := newHarnessStore()
 	engine := workflow.NewEngine[workflows.PendingEntryState](store, obs)
-	def := workflows.BuildPendingEntryWorkflow(ledger, nil, cat, nil)
+	def := workflows.BuildPendingEntryWorkflowWithObservability(ledger, nil, cat, nil, nil)
 	return agentusecases.NewRegisterAttempt(cat, ledger, engine, def, obs), store
 }
 
@@ -1317,6 +1317,76 @@ func (s *MecontrolaAgentIntegrationSuite) TestR6ReceitaFreelancer() {
 	if capturedAmount > 0 {
 		require.Equal(t, int64(20000), capturedAmount, "R6 M-01: valor deve ser R$ 200,00 (20000 centavos)")
 	}
+}
+
+func (s *MecontrolaAgentIntegrationSuite) TestR8ReceitaSalarioSeparadorMilhar_NaoDisparaMultiItem() {
+	t := s.T()
+	obs := fake.NewProvider()
+
+	var incomeToolCalled bool
+	var capturedAmount int64
+	var capturedDescription string
+	in := llm.Schema{
+		Name:   "register_income_input",
+		Strict: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"amountCents": map[string]any{"type": "integer"},
+				"description": map[string]any{"type": "string"},
+				"occurredAt":  map[string]any{"type": "string"},
+			},
+			"required":             []string{"amountCents", "description"},
+			"additionalProperties": false,
+		},
+	}
+	out := llm.Schema{
+		Name:   "register_income_output",
+		Strict: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"outcome": map[string]any{"type": "string"},
+			},
+			"required":             []string{"outcome"},
+			"additionalProperties": false,
+		},
+	}
+	type incomeInput struct {
+		AmountCents int64  `json:"amountCents"`
+		Description string `json:"description"`
+		OccurredAt  string `json:"occurredAt"`
+	}
+	handle := tool.NewTool[incomeInput, map[string]any]("register_income", "Registra um lançamento de receita.", in, out,
+		func(_ context.Context, inp incomeInput) (map[string]any, error) {
+			incomeToolCalled = true
+			capturedAmount = inp.AmountCents
+			capturedDescription = inp.Description
+			return map[string]any{"outcome": "clarify"}, nil
+		},
+	)
+
+	a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{handle}, nil, obs, 0)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	result, err := a.Execute(ctx, agent.Request{
+		AgentID: MecontrolaAgentID,
+		Messages: []llm.Message{
+			{Role: "user", Content: "Recebi R$ 13.874,40 de salário"},
+		},
+		MaxTokens: 512,
+	})
+
+	require.NoError(t, err)
+	require.NotEmpty(t, result.Content)
+	t.Logf("RF-37 resposta: %s | incomeToolCalled=%v amount=%d description=%q", result.Content, incomeToolCalled, capturedAmount, capturedDescription)
+
+	require.True(t, incomeToolCalled, "RF-37 M-01: deve chamar register_income para receita simples")
+	require.Equal(t, int64(1387440), capturedAmount, "RF-37 M-01: valor deve ser R$ 13.874,40 (1387440 centavos)")
+	require.Equal(t, "salário", capturedDescription, "RF-21/RF-37: descrição deve ser o termo literal do usuário")
+	require.NotContains(t, strings.ToLower(result.Content), "mais de um lançamento", "RF-37: valor com separador de milhar não pode virar falso multi-lançamento")
+	require.NotContains(t, result.Content, "**", "RF-37 RF-23: sem duplo asterisco")
 }
 
 func (s *MecontrolaAgentIntegrationSuite) TestR7CategoriaIncertaPedeEsclarecimento() {

@@ -84,8 +84,22 @@ func PendingEntryKey(resourceID, threadID string) string {
 	return resourceID + ":" + threadID + ":" + PendingEntryWorkflowID
 }
 
-func BuildPendingEntryWorkflow(ledger interfaces.TransactionsLedger, cards cardNicknameSolver, cats categoryValidator, idem IdempotentWriter) workflow.Definition[PendingEntryState] {
-	step := workflow.NewStepFunc(stepPendingEntryID, makePendingEntryStep(ledger, cards, cats, idem))
+const pendingEntryFalseSuccessMetric = "agents_pending_entry_false_success_total"
+
+type pendingEntryMetrics struct {
+	falseSuccess observability.Counter
+}
+
+func BuildPendingEntryWorkflowWithObservability(ledger interfaces.TransactionsLedger, cards cardNicknameSolver, cats categoryValidator, idem IdempotentWriter, o11y observability.Observability) workflow.Definition[PendingEntryState] {
+	var metrics pendingEntryMetrics
+	if o11y != nil {
+		metrics.falseSuccess = o11y.Metrics().Counter(
+			pendingEntryFalseSuccessMetric,
+			"Confirmacao positiva sem transacao ativa no workflow pending-entry",
+			"1",
+		)
+	}
+	step := workflow.NewStepFunc(stepPendingEntryID, makePendingEntryStep(ledger, cards, cats, idem, &metrics))
 	return workflow.Definition[PendingEntryState]{
 		ID:          PendingEntryWorkflowID,
 		Root:        step,
@@ -98,7 +112,7 @@ func BuildPendingEntryReaper(store workflow.Store, o11y observability.Observabil
 	return workflow.NewStaleSuspendedReaper(store, PendingEntryWorkflowID, PendingEntryStaleAfter, PendingEntryReaperBatch, o11y)
 }
 
-func makePendingEntryStep(ledger interfaces.TransactionsLedger, cards cardNicknameSolver, cats categoryValidator, idem IdempotentWriter) func(context.Context, PendingEntryState) (workflow.StepOutput[PendingEntryState], error) {
+func makePendingEntryStep(ledger interfaces.TransactionsLedger, cards cardNicknameSolver, cats categoryValidator, idem IdempotentWriter, metrics *pendingEntryMetrics) func(context.Context, PendingEntryState) (workflow.StepOutput[PendingEntryState], error) {
 	return func(ctx context.Context, state PendingEntryState) (workflow.StepOutput[PendingEntryState], error) {
 		if state.ResumeText == "" {
 			state.SuspendedAt = time.Now().UTC()
@@ -122,7 +136,7 @@ func makePendingEntryStep(ledger interfaces.TransactionsLedger, cards cardNickna
 		case AwaitingSlotCard:
 			return handleCardSlotResume(ctx, state, msg, now, cards)
 		case AwaitingSlotConfirmation:
-			return handleConfirmationResume(ctx, state, msg, now, ledger, cats, idem)
+			return handleConfirmationResume(ctx, state, msg, now, ledger, cats, idem, metrics)
 		default:
 			return handleSlotResume(state, msg, now)
 		}
@@ -178,7 +192,7 @@ func handleCardSlotResume(ctx context.Context, state PendingEntryState, msg Pend
 
 	if state.RepromptCount >= maxReprompts {
 		state.Status = PendingStatusCancelled
-		state.ResponseText = "Não consegui identificar o cartão. O registro foi cancelado."
+		state.ResponseText = "Não consegui identificar o 💳. O registro foi cancelado."
 		state.ResumeText = ""
 		return workflow.StepOutput[PendingEntryState]{State: state, Status: workflow.StepStatusCompleted}, nil
 	}
@@ -360,7 +374,7 @@ func handleSlotResume(state PendingEntryState, msg PendingMessage, now time.Time
 	}
 }
 
-func handleConfirmationResume(ctx context.Context, state PendingEntryState, msg PendingMessage, now time.Time, ledger interfaces.TransactionsLedger, cats categoryValidator, idem IdempotentWriter) (workflow.StepOutput[PendingEntryState], error) {
+func handleConfirmationResume(ctx context.Context, state PendingEntryState, msg PendingMessage, now time.Time, ledger interfaces.TransactionsLedger, cats categoryValidator, idem IdempotentWriter, metrics *pendingEntryMetrics) (workflow.StepOutput[PendingEntryState], error) {
 	decision, err := DecideConfirmation(state, msg, now)
 	if err != nil {
 		return workflow.StepOutput[PendingEntryState]{}, fmt.Errorf("workflows.pending_entry: decide confirmation: %w", err)
@@ -369,7 +383,7 @@ func handleConfirmationResume(ctx context.Context, state PendingEntryState, msg 
 	switch decision.Action {
 	case ConfirmActionAccept:
 		state.ProcessedMessageID = state.IncomingMessageID
-		return executeWrite(ctx, state, ledger, cats, idem)
+		return executeWrite(ctx, state, ledger, cats, idem, metrics)
 
 	case ConfirmActionCancel:
 		state.Status = PendingStatusCancelled
@@ -453,7 +467,7 @@ func SeedExpireAfterFailedWrite(state PendingEntryState, msg PendingMessage) Pen
 	return state
 }
 
-func executeWrite(ctx context.Context, state PendingEntryState, ledger interfaces.TransactionsLedger, cats categoryValidator, idem IdempotentWriter) (workflow.StepOutput[PendingEntryState], error) {
+func executeWrite(ctx context.Context, state PendingEntryState, ledger interfaces.TransactionsLedger, cats categoryValidator, idem IdempotentWriter, metrics *pendingEntryMetrics) (workflow.StepOutput[PendingEntryState], error) {
 	state, ok, override, err := validateCategoryForWrite(ctx, state, cats)
 	if err != nil {
 		return workflow.StepOutput[PendingEntryState]{State: state, Status: workflow.StepStatusFailed}, fmt.Errorf("workflows.pending_entry: validate_category: %w", err)
@@ -466,9 +480,9 @@ func executeWrite(ctx context.Context, state PendingEntryState, ledger interface
 	}
 	state.ResumeText = ""
 	if idem != nil {
-		return executeWithIdempotency(ctx, state, ledger, idem)
+		return executeWithIdempotency(ctx, state, ledger, idem, metrics)
 	}
-	return executeDirectWrite(ctx, state, ledger)
+	return executeDirectWrite(ctx, state, ledger, metrics)
 }
 
 func validateCategoryForWrite(ctx context.Context, state PendingEntryState, cats categoryValidator) (PendingEntryState, bool, *workflow.StepOutput[PendingEntryState], error) {
@@ -541,7 +555,7 @@ func isCategoryBusinessRejection(err error) bool {
 	return false
 }
 
-func executeWithIdempotency(ctx context.Context, state PendingEntryState, ledger interfaces.TransactionsLedger, idem IdempotentWriter) (workflow.StepOutput[PendingEntryState], error) {
+func executeWithIdempotency(ctx context.Context, state PendingEntryState, ledger interfaces.TransactionsLedger, idem IdempotentWriter, metrics *pendingEntryMetrics) (workflow.StepOutput[PendingEntryState], error) {
 	writeFn := IdempotentWriteFn(func(c context.Context) (uuid.UUID, bool, error) {
 		ref, err := callLedger(c, state, ledger)
 		if err != nil {
@@ -573,16 +587,18 @@ func executeWithIdempotency(ctx context.Context, state PendingEntryState, ledger
 	}
 	pendingStatus, stepStatus, postErr := DecidePostWrite(outcome, resourceID)
 	if postErr != nil {
+		recordFalseSuccessIfNeeded(ctx, metrics, postErr)
 		state.Status = pendingStatus
 		state.ResponseText = "Não consegui registrar. Tente novamente em breve."
 		return workflow.StepOutput[PendingEntryState]{State: state, Status: stepStatus}, fmt.Errorf("workflows.pending_entry: idempotent_write: %w", postErr)
 	}
 	state.Status = pendingStatus
+	state.ResourceID = resourceID
 	state.ResponseText = buildWriteSuccessText(state)
 	return workflow.StepOutput[PendingEntryState]{State: state, Status: stepStatus}, nil
 }
 
-func executeDirectWrite(ctx context.Context, state PendingEntryState, ledger interfaces.TransactionsLedger) (workflow.StepOutput[PendingEntryState], error) {
+func executeDirectWrite(ctx context.Context, state PendingEntryState, ledger interfaces.TransactionsLedger, metrics *pendingEntryMetrics) (workflow.StepOutput[PendingEntryState], error) {
 	var (
 		ref      interfaces.EntryRef
 		writeErr error
@@ -605,13 +621,27 @@ func executeDirectWrite(ctx context.Context, state PendingEntryState, ledger int
 	}
 	pendingStatus, stepStatus, postErr := DecidePostWrite(agent.ToolOutcomeRouted, ref.ID)
 	if postErr != nil {
+		recordFalseSuccessIfNeeded(ctx, metrics, postErr)
 		state.Status = pendingStatus
 		state.ResponseText = "Não consegui registrar. Tente novamente em breve."
 		return workflow.StepOutput[PendingEntryState]{State: state, Status: stepStatus}, fmt.Errorf("workflows.pending_entry: direct_write: %w", postErr)
 	}
 	state.Status = pendingStatus
+	state.ResourceID = ref.ID
 	state.ResponseText = buildWriteSuccessText(state)
 	return workflow.StepOutput[PendingEntryState]{State: state, Status: stepStatus}, nil
+}
+
+func recordFalseSuccessIfNeeded(ctx context.Context, metrics *pendingEntryMetrics, postErr error) {
+	if metrics == nil || metrics.falseSuccess == nil {
+		return
+	}
+	if errors.Is(postErr, ErrWriteAcceptedWithoutResource) {
+		metrics.falseSuccess.Increment(ctx,
+			observability.String("workflow", PendingEntryWorkflowID),
+			observability.String("step", stepPendingEntryID),
+		)
+	}
 }
 
 func callLedger(ctx context.Context, state PendingEntryState, ledger interfaces.TransactionsLedger) (interfaces.EntryRef, error) {
@@ -856,7 +886,7 @@ func buildSlotPrompt(state PendingEntryState) string {
 	case AwaitingSlotPaymentMethod:
 		return "Como você pagou? Ex.: dinheiro, pix, débito, crédito, boleto, vale-refeição"
 	case AwaitingSlotCard:
-		return "Qual cartão foi utilizado?"
+		return "Qual 💳 foi utilizado?"
 	case AwaitingSlotDate:
 		return "Qual foi a data do lançamento?"
 	case AwaitingSlotConfirmation:
@@ -878,7 +908,7 @@ func buildSlotReprompt(state PendingEntryState) string {
 	case AwaitingSlotPaymentMethod:
 		return "Não reconheci a forma de pagamento. Como você pagou? Ex.: dinheiro, pix, débito, crédito, boleto, vale-refeição"
 	case AwaitingSlotCard:
-		return "Não reconheci o cartão. Qual cartão foi utilizado?"
+		return "Não reconheci o 💳. Qual 💳 foi utilizado?"
 	case AwaitingSlotDate:
 		return "Não reconheci a data. Qual foi a data do lançamento?"
 	default:

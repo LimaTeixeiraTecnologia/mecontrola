@@ -136,7 +136,7 @@ func (s *GherkinE2ESuite) SetupSuite() {
 
 	store := workflowpg.NewPostgresStore(o11y, s.db)
 	s.pendingEngine = workflow.NewEngine[workflows.PendingEntryState](store, o11y)
-	s.pendingDef = workflows.BuildPendingEntryWorkflow(s.txLedger, nil, s.reader, gherkinIdemAdapter{uc: s.idem})
+	s.pendingDef = workflows.BuildPendingEntryWorkflowWithObservability(s.txLedger, nil, s.reader, gherkinIdemAdapter{uc: s.idem}, nil)
 	s.registerAttempt = agentusecases.NewRegisterAttempt(s.reader, s.txLedger, s.pendingEngine, s.pendingDef, o11y)
 
 	s.tools = []tool.ToolHandle{
@@ -373,7 +373,7 @@ func (s *GherkinE2ESuite) TestG7_FalhaTransitoriaRetentaEPersisteUmaVez() {
 		forceErr:           &net.OpError{Op: "write", Err: errors.New("connection reset by peer")},
 	}
 
-	def := workflows.BuildPendingEntryWorkflow(faultyLedger, nil, s.reader, gherkinIdemAdapter{uc: s.idem})
+	def := workflows.BuildPendingEntryWorkflowWithObservability(faultyLedger, nil, s.reader, gherkinIdemAdapter{uc: s.idem}, nil)
 	store := workflowpg.NewPostgresStore(fake.NewProvider(), s.db)
 	engine := workflow.NewEngine[workflows.PendingEntryState](store, fake.NewProvider())
 	registerAttempt := agentusecases.NewRegisterAttempt(s.reader, faultyLedger, engine, def, fake.NewProvider())
@@ -431,4 +431,69 @@ func (s *GherkinE2ESuite) TestG9_FormaDePagamentoObrigatoriaParaDespesaNaoParaRe
 
 	incomeLower := strings.ToLower(incomeResult.Content)
 	s.Require().NotContains(incomeLower, "como você pagou", "G9 RF-32: receita não deve perguntar forma de pagamento")
+}
+
+func (s *GherkinE2ESuite) TestG10_PixSemCartaoPersisteAposConfirmacao() {
+	userID := s.newUser(s.T())
+	wamid := "wamid-g10-" + uuid.NewString()
+	ctx := s.authedCtx(userID, wamid)
+
+	result, err := s.runAgent(ctx, s.tools, "gastei R$ 50,00 no supermercado no pix")
+	s.Require().NoError(err)
+	s.T().Logf("G10 resposta inicial: %s", result.Content)
+
+	lower := strings.ToLower(result.Content)
+	s.Require().NotContains(lower, "qual 💳", "G10 RF-16: pix não deve perguntar qual 💳 foi utilizado")
+	s.Require().NotContains(lower, "qual 💳", "G10 RF-16: pix não deve perguntar qual 💳 foi utilizado")
+	s.Require().NotContains(lower, "💳 cadastrados", "G10 RF-16: pix não deve listar 💳")
+	s.Require().Contains(lower, "confirma", "G10 RF-17: deve pedir confirmação antes de persistir")
+
+	runResult, confirmErr := s.confirmPending(userID, "sim", wamid+"-confirm")
+	s.Require().NoError(confirmErr)
+	s.Equal(workflows.PendingStatusCompleted, runResult.State.Status)
+
+	direction, amountCents, categoryPath, paymentMethod, found := s.findTransaction(userID)
+	s.Require().True(found, "G10 RF-18: transação deve estar persistida após confirmação")
+	s.Equal(0, direction, "G10 RF-18: direction=despesa (0) para pix")
+	s.Equal(int64(5000), amountCents, "G10 RF-18: valor deve ser 5000 centavos")
+	s.Equal("pix", paymentMethod, "G10 RF-18: forma de pagamento deve ser pix")
+	s.Contains(categoryPath, "Supermercado", "G10 RF-18: categoria deve conter Supermercado")
+}
+
+func (s *GherkinE2ESuite) TestG11_ReceitaSalarioSeparadorMilharPersisteDescricaoLiteral() {
+	userID := s.newUser(s.T())
+	wamid := "wamid-g11-" + uuid.NewString()
+	ctx := s.authedCtx(userID, wamid)
+
+	result, err := s.runAgent(ctx, s.tools, "Recebi R$ 13.874,40 de salário")
+	s.Require().NoError(err)
+	s.T().Logf("G11 resposta inicial: %s", result.Content)
+
+	s.Require().NotContains(result.Content, "um de cada vez",
+		"G11 RF-20: valor BRL com separador de milhar não deve disparar orientação de múltiplos lançamentos")
+
+	lower := strings.ToLower(result.Content)
+	s.Require().Contains(lower, "confirma", "G11 RF-22: deve iniciar confirmação mínima para receita única")
+
+	runResult, confirmErr := s.confirmPending(userID, "sim", wamid+"-confirm")
+	s.Require().NoError(confirmErr)
+	s.Equal(workflows.PendingStatusCompleted, runResult.State.Status)
+
+	direction, amountCents, categoryPath, _, found := s.findTransaction(userID)
+	s.Require().True(found, "G11 RF-23: transação de receita deve estar persistida após confirmação")
+	s.Equal(1, direction, "G11 RF-23: direction=income (1) para salário")
+	s.Equal(int64(1387440), amountCents, "G11 RF-23: valor deve ser 1387440 centavos")
+	s.Contains(categoryPath, "Salário", "G11 RF-23: categoria deve estar sob a raiz Salário")
+
+	var description string
+	err = s.db.QueryRowContext(s.ctx, `
+		SELECT description
+		  FROM mecontrola.transactions
+		 WHERE user_id = $1 AND deleted_at IS NULL
+		 ORDER BY created_at DESC
+		 LIMIT 1`,
+		userID,
+	).Scan(&description)
+	s.Require().NoError(err)
+	s.Equal("salário", description, "G11 RF-21: descrição literal deve ser 'salário' sem paráfrase")
 }

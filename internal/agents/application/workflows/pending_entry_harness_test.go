@@ -362,7 +362,7 @@ func newPEHarness(t *testing.T, obs observability.Observability, userID uuid.UUI
 	t.Helper()
 	store := newHarnessStore()
 	eng := workflow.NewEngine[PendingEntryState](store, obs)
-	def := BuildPendingEntryWorkflow(ledger, cards, cats, newHFakeIdempotentWriter())
+	def := BuildPendingEntryWorkflowWithObservability(ledger, cards, cats, newHFakeIdempotentWriter(), nil)
 	return &pendingEntryHarness{
 		t:      t,
 		engine: eng,
@@ -1352,7 +1352,7 @@ func (s *PendingEntryHarnessSuite) TestG7_08_ExpiracaoDePendencia() {
 	ledger := &hFakeTxLedger{}
 	store := newHarnessStore()
 	eng := workflow.NewEngine[PendingEntryState](store, s.obs)
-	def := BuildPendingEntryWorkflow(ledger, nil, nil, newHFakeIdempotentWriter())
+	def := BuildPendingEntryWorkflowWithObservability(ledger, nil, nil, newHFakeIdempotentWriter(), nil)
 	key := fmt.Sprintf("%s:thread-001:%s", s.userID, PendingEntryWorkflowID)
 
 	state := hNewExpenseState(s.userID, AwaitingSlotCategory, 20000, "supermercado", "debito", nil)
@@ -1418,7 +1418,7 @@ func (s *PendingEntryHarnessSuite) TestG7_14_RespostaAmbiguaSegundaVezCancela() 
 	ledger := &hFakeTxLedger{}
 	store := newHarnessStore()
 	eng := workflow.NewEngine[PendingEntryState](store, s.obs)
-	def := BuildPendingEntryWorkflow(ledger, nil, nil, newHFakeIdempotentWriter())
+	def := BuildPendingEntryWorkflowWithObservability(ledger, nil, nil, newHFakeIdempotentWriter(), nil)
 	key := fmt.Sprintf("%s:thread-001:%s", s.userID, PendingEntryWorkflowID)
 
 	state := hNewExpenseState(s.userID, AwaitingSlotCategory, 20000, "loja", "pix", nil)
@@ -1481,7 +1481,7 @@ func (s *PendingEntryHarnessSuite) TestIdempotentWriter_ReplayNaoFaz2oInsert() {
 	idem := newHFakeIdempotentWriter()
 	store := newHarnessStore()
 	eng := workflow.NewEngine[PendingEntryState](store, s.obs)
-	def := BuildPendingEntryWorkflow(ledger, nil, cats, idem)
+	def := BuildPendingEntryWorkflowWithObservability(ledger, nil, cats, idem, nil)
 	key := fmt.Sprintf("%s:thread-001:%s", s.userID, PendingEntryWorkflowID)
 
 	candidato := hSingleCandidate(hCustoFixoRootID, "custo-fixo", hFarmaciaSubID, "medicamentos-e-farmacia", "Custo Fixo > Medicamentos e Farmácia")
@@ -1515,7 +1515,7 @@ func (s *PendingEntryHarnessSuite) TestIdempotentWriter_ReplayNaoFaz2oInsert() {
 	idem2 := idem
 	store2 := newHarnessStore()
 	eng2 := workflow.NewEngine[PendingEntryState](store2, s.obs)
-	def2 := BuildPendingEntryWorkflow(ledger, nil, cats, idem2)
+	def2 := BuildPendingEntryWorkflowWithObservability(ledger, nil, cats, idem2, nil)
 	key2 := fmt.Sprintf("%s:thread-002:%s", s.userID, PendingEntryWorkflowID)
 
 	state2 := state

@@ -196,7 +196,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	pendingEntryEngine := workflow.NewEngine[workflows.PendingEntryState](workflowStore, deps.O11y)
 	cardCreateEngine := workflow.NewEngine[workflows.CardCreateState](workflowStore, deps.O11y)
 	budgetCreationEngine := workflow.NewEngine[workflows.BudgetCreationState](workflowStore, deps.O11y)
-	pendingEntryDef := workflows.BuildPendingEntryWorkflow(txLedger, cardManager, categoriesReader, idemAdapter)
+	pendingEntryDef := workflows.BuildPendingEntryWorkflowWithObservability(txLedger, cardManager, categoriesReader, idemAdapter, deps.O11y)
 	registerAttempt := usecases.NewRegisterAttempt(categoriesReader, txLedger, pendingEntryEngine, pendingEntryDef, deps.O11y)
 
 	threadGateway := memorypostgres.NewThreadRepository(deps.DB, deps.O11y)

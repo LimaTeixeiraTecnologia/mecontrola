@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-onboarding-sem-friccao-ate-primeiro-lancamento/9.0_execution_report.md
+summary: Runbook de rollout sem feature flag, checklist de validacao pos-deploy, SLO, queries SQL e procedimento de rollback criados em docs/runbooks/onboarding-rollout-checklist.md; build, regression contract e evidence validator passam.
+timestamp: 2026-07-11T15:56:36Z

@@ -44,7 +44,7 @@ func (g *successWithoutToolGuard) Name() string {
 }
 
 func (g *successWithoutToolGuard) Inspect(_ context.Context, _ agent.Request, out agent.Result) GuardDecision {
-	if expectedVerbatimText(out.ToolCalls) != "" {
+	if ExpectedVerbatimText(out.ToolCalls) != "" {
 		return GuardDecision{}
 	}
 	if !containsSuccessMarker(out.Content) {

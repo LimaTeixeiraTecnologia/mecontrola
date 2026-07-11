@@ -157,7 +157,7 @@ func (s *CardCreateConfirmContinuerSuite) TestContinue() {
 							Status: workflow.RunStatusSucceeded,
 							State: workflows.CardCreateState{
 								Status:       workflows.CardCreateStatusCompleted,
-								ResponseText: "✅ Cartão *Nu* cadastrado com sucesso.",
+								ResponseText: "✅ 💳 *Nu* cadastrado com sucesso.",
 							},
 						}, nil).Once()
 					return s.engineMock
@@ -166,7 +166,7 @@ func (s *CardCreateConfirmContinuerSuite) TestContinue() {
 			expect: func(handled bool, reply string, err error) {
 				s.NoError(err)
 				s.True(handled)
-				s.Equal("✅ Cartão *Nu* cadastrado com sucesso.", reply)
+				s.Equal("✅ 💳 *Nu* cadastrado com sucesso.", reply)
 			},
 		},
 		{
@@ -224,7 +224,7 @@ func (s *CardCreateConfirmContinuerSuite) TestContinue_AbreEFechaRunAuditavel() 
 			Status: workflow.RunStatusSucceeded,
 			State: workflows.CardCreateState{
 				Status:       workflows.CardCreateStatusCompleted,
-				ResponseText: "✅ Cartão cadastrado com sucesso.",
+				ResponseText: "✅ 💳 cadastrado com sucesso.",
 			},
 		}, nil).Once()
 
@@ -261,7 +261,7 @@ func (s *CardCreateConfirmContinuerSuite) TestContinue_FalhaAoFecharRunObservaSe
 			Status: workflow.RunStatusSucceeded,
 			State: workflows.CardCreateState{
 				Status:       workflows.CardCreateStatusCompleted,
-				ResponseText: "✅ Cartão cadastrado com sucesso.",
+				ResponseText: "✅ 💳 cadastrado com sucesso.",
 			},
 		}, nil).Once()
 
@@ -270,7 +270,7 @@ func (s *CardCreateConfirmContinuerSuite) TestContinue_FalhaAoFecharRunObservaSe
 
 	s.NoError(err)
 	s.True(handled)
-	s.Equal("✅ Cartão cadastrado com sucesso.", reply)
+	s.Equal("✅ 💳 cadastrado com sucesso.", reply)
 
 	counter := s.obs.Metrics().(*fake.FakeMetrics).GetCounter("agents_run_update_errors_total")
 	s.Require().NotNil(counter)

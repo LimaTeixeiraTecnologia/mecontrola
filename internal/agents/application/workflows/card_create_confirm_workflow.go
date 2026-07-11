@@ -57,12 +57,12 @@ func buildCardCreateEvalStep(idem IdempotentWriter, cards interfaces.CardManager
 		case CardConfirmCancel:
 			state.Status = CardCreateStatusCancelled
 			state.Awaiting = AwaitingNone
-			state.ResponseText = "🚫 Cadastro de cartão cancelado conforme solicitado."
+			state.ResponseText = "🚫 Cadastro de 💳 cancelado conforme solicitado."
 			return workflow.StepOutput[CardCreateState]{State: state, Status: workflow.StepStatusCompleted}, nil
 		case CardConfirmReprompt:
 			state.ConfirmReprompt++
 			state.ResumeText = ""
-			state.ResponseText = "Não entendi. Por favor, responda apenas *sim* ou *não* para confirmar o cadastro do cartão."
+			state.ResponseText = "Não entendi. Por favor, responda apenas *sim* ou *não* para confirmar o cadastro do 💳."
 			return workflow.StepOutput[CardCreateState]{
 				State:  state,
 				Status: workflow.StepStatusSuspended,
@@ -84,14 +84,14 @@ func buildCardCreateEvalStep(idem IdempotentWriter, cards interfaces.CardManager
 		default:
 			state.Status = CardCreateStatusCancelled
 			state.Awaiting = AwaitingNone
-			state.ResponseText = "🚫 Cadastro de cartão cancelado: resposta não reconhecida."
+			state.ResponseText = "🚫 Cadastro de 💳 cancelado: resposta não reconhecida."
 			return workflow.StepOutput[CardCreateState]{State: state, Status: workflow.StepStatusCompleted}, nil
 		}
 	}
 }
 
 func buildCardCreateQuestion(state CardCreateState) string {
-	base := fmt.Sprintf("⚠️ Confirma o cadastro do cartão *%s* (%s), vencimento dia %d?", state.Nickname, state.Bank, state.DueDay)
+	base := fmt.Sprintf("⚠️ Confirma o cadastro do 💳 *%s* (%s), vencimento dia %d?", state.Nickname, state.Bank, state.DueDay)
 	if state.ClosingDayProvided {
 		base = fmt.Sprintf("%s Fechamento dia %d.", base, state.ClosingDay)
 	}
@@ -129,7 +129,7 @@ func executeCreateCard(ctx context.Context, state CardCreateState, idem Idempote
 		}
 		select {
 		case <-ctx.Done():
-			state.ResponseText = "Não consegui cadastrar o cartão. Tente novamente em breve."
+			state.ResponseText = "Não consegui cadastrar o 💳. Tente novamente em breve."
 			return workflow.StepOutput[CardCreateState]{State: state, Status: workflow.StepStatusFailed}, ctx.Err()
 		case <-time.After(backoffWithJitter(attempt)):
 		}
@@ -142,7 +142,7 @@ func executeCreateCard(ctx context.Context, state CardCreateState, idem Idempote
 			state.ResponseText = cardCreateDomainErrorMessage(idemErr)
 			return workflow.StepOutput[CardCreateState]{State: state, Status: workflow.StepStatusCompleted}, nil
 		}
-		state.ResponseText = "Não consegui cadastrar o cartão. Tente novamente em breve."
+		state.ResponseText = "Não consegui cadastrar o 💳. Tente novamente em breve."
 		return workflow.StepOutput[CardCreateState]{State: state, Status: workflow.StepStatusFailed}, fmt.Errorf("workflows.card_create_confirm: idempotent_write: %w", idemErr)
 	}
 
@@ -150,9 +150,9 @@ func executeCreateCard(ctx context.Context, state CardCreateState, idem Idempote
 	state.Awaiting = AwaitingNone
 	state.ProcessedMessageID = state.MessageID
 	if outcome == agent.ToolOutcomeReplay {
-		state.ResponseText = fmt.Sprintf("✅ Cartão *%s* já estava cadastrado.", state.Nickname)
+		state.ResponseText = fmt.Sprintf("✅ 💳 *%s* já estava cadastrado.", state.Nickname)
 	} else {
-		state.ResponseText = fmt.Sprintf("✅ Cartão *%s* cadastrado com sucesso.", state.Nickname)
+		state.ResponseText = fmt.Sprintf("✅ 💳 *%s* cadastrado com sucesso.", state.Nickname)
 	}
 	return workflow.StepOutput[CardCreateState]{State: state, Status: workflow.StepStatusCompleted}, nil
 }
@@ -176,16 +176,16 @@ func isCardCreateDomainError(err error) bool {
 func cardCreateDomainErrorMessage(err error) string {
 	switch {
 	case errors.Is(err, carddomain.ErrNicknameConflict):
-		return "❌ Já existe um cartão com esse apelido. Escolha outro apelido para cadastrar."
+		return "❌ Já existe um 💳 com esse apelido. Escolha outro apelido para cadastrar."
 	case errors.Is(err, carddomain.ErrInvalidNickname):
-		return "❌ O apelido do cartão precisa ter entre 1 e 32 caracteres."
+		return "❌ O apelido do 💳 precisa ter entre 1 e 32 caracteres."
 	case errors.Is(err, carddomain.ErrInvalidDueDay):
 		return "❌ O dia de vencimento precisa estar entre 1 e 31."
 	case errors.Is(err, carddomain.ErrInvalidClosingDay):
 		return "❌ O dia de fechamento precisa estar entre 1 e 31."
 	case errors.Is(err, carddomain.ErrInvalidBank):
-		return "❌ Informe um banco válido para o cartão."
+		return "❌ Informe um banco válido para o 💳."
 	default:
-		return "❌ Não foi possível cadastrar o cartão."
+		return "❌ Não foi possível cadastrar o 💳."
 	}
 }

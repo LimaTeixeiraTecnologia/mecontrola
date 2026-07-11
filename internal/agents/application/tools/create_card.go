@@ -67,7 +67,7 @@ func BuildCreateCardTool(engine wf.Engine[workflows.CardCreateState], def wf.Def
 		},
 	}
 	exec := buildCreateCardExec(engine, def, cards)
-	return tool.NewTool[CreateCardInput, CreateCardOutput]("create_card", "Cadastra um novo cartão de crédito pela conversa. Requer confirmação humana explícita antes de criar.", in, out, exec)
+	return tool.NewTool[CreateCardInput, CreateCardOutput]("create_card", "Cadastra um novo 💳 de crédito pela conversa. Requer confirmação humana explícita antes de criar.", in, out, exec)
 }
 
 func buildCreateCardExec(engine wf.Engine[workflows.CardCreateState], def wf.Definition[workflows.CardCreateState], cards interfaces.CardManager) func(context.Context, CreateCardInput) (CreateCardOutput, error) {
@@ -108,7 +108,7 @@ func buildCreateCardExec(engine wf.Engine[workflows.CardCreateState], def wf.Def
 		case in.ClosingDay == nil:
 			return CreateCardOutput{
 				Outcome:       createCardOutcomeNeedsClosing,
-				ClarifyPrompt: "Não reconheço esse banco na minha lista. Qual é o dia de fechamento da fatura desse cartão?",
+				ClarifyPrompt: "Não reconheço esse banco na minha lista. Qual é o dia de fechamento da fatura desse 💳?",
 			}, nil
 		default:
 			closingDay = *in.ClosingDay
@@ -149,19 +149,19 @@ func buildCreateCardExec(engine wf.Engine[workflows.CardCreateState], def wf.Def
 
 func createCardMissingSlot(in CreateCardInput) (string, bool) {
 	if strings.TrimSpace(in.Nickname) == "" {
-		return "Qual apelido você quer dar para esse cartão?", true
+		return "Qual apelido você quer dar para esse 💳?", true
 	}
 	if strings.TrimSpace(in.Bank) == "" {
-		return "Qual é o banco desse cartão?", true
+		return "Qual é o banco desse 💳?", true
 	}
 	if in.DueDay <= 0 {
-		return "Qual é o dia de vencimento da fatura desse cartão?", true
+		return "Qual é o dia de vencimento da fatura desse 💳?", true
 	}
 	return "", false
 }
 
 func createCardConfirmationPrompt(state workflows.CardCreateState) string {
-	base := fmt.Sprintf("⚠️ Confirma o cadastro do cartão *%s* (%s), vencimento dia %d?", state.Nickname, state.Bank, state.DueDay)
+	base := fmt.Sprintf("⚠️ Confirma o cadastro do 💳 *%s* (%s), vencimento dia %d?", state.Nickname, state.Bank, state.DueDay)
 	if state.ClosingDayProvided {
 		base = fmt.Sprintf("%s Fechamento dia %d.", base, state.ClosingDay)
 	}

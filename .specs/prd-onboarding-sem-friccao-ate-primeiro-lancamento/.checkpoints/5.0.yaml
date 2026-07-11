@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-onboarding-sem-friccao-ate-primeiro-lancamento/5.0_execution_report.md
+summary: Corrigido e completado o teste de integracao do consumer WhatsApp, cobrindo retomada de onboarding, prioridade de pending-entry e fluxo de cartao sem loop.
+timestamp: 2026-07-11T15:02:57Z

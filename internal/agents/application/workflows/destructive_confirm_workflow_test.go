@@ -254,7 +254,7 @@ func (s *DestructiveConfirmSuite) TestDeleteCard_Confirm_CallsSoftDelete() {
 		Operation:   OpDeleteCard,
 		TargetRef:   cardID.String(),
 		TargetKind:  "card",
-		ImpactNote:  "Cartão será removido.",
+		ImpactNote:  "💳 será removido.",
 		SuspendedAt: time.Now().UTC(),
 	}
 	_, err := s.engine.Start(s.ctx, s.def, s.key, state)
@@ -648,7 +648,7 @@ func (s *DestructiveConfirmSuite) TestOpUpdateCard_Confirm_CallsUpdateCard() {
 	s.NoError(err)
 	s.True(handled)
 	s.Contains(response, "✅")
-	s.Contains(response, "Cartão atualizado")
+	s.Contains(response, "💳 atualizado")
 }
 
 func (s *DestructiveConfirmSuite) TestOpUpdateRecurrence_Cancel_NoEffect() {

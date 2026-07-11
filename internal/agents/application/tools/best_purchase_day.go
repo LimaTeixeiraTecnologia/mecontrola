@@ -46,7 +46,7 @@ func BuildBestPurchaseDayTool(cards interfaces.CardManager) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool("best_purchase_day", "Calcula o melhor dia para fazer compras em um cartão dado o banco e o dia de vencimento.", in, out, buildBestPurchaseDayExec(cards))
+	return tool.NewTool("best_purchase_day", "Calcula o melhor dia para fazer compras em um 💳 dado o banco e o dia de vencimento.", in, out, buildBestPurchaseDayExec(cards))
 }
 
 func buildBestPurchaseDayExec(cards interfaces.CardManager) func(context.Context, BestPurchaseDayInput) (BestPurchaseDayOutput, error) {

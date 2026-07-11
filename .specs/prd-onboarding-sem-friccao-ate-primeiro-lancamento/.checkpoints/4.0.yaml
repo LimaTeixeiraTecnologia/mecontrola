@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-onboarding-sem-friccao-ate-primeiro-lancamento/4.0_execution_report.md
+summary: Reforçadas regressões de pending-entry para pix sem cartão e receita simples com testes unitários e integração.
+timestamp: 2026-07-11T15:04:43Z

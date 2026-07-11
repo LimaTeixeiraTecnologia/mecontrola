@@ -6,6 +6,7 @@
   `internal/agents/infrastructure/persistence/postdeploy/` (leitura Postgres)
 - Dashboard: `docs/dashboards/mecontrola-agent-gate-posdeploy.json`
 - Alertas: `docs/alerts/mecontrola-agent-gate-posdeploy.yaml`
+- Rollout sem feature flag (onboarding): `docs/runbooks/onboarding-rollout-checklist.md`
 
 ## 1. Quando este runbook se aplica
 
@@ -254,7 +255,76 @@ corrigir a regressão antes.
    novos números medidos (não os thresholds codificados, que continuam fixos até revisão
    formal do PRD/ADR-005).
 
-## 10. Referências
+## 11. Troubleshooting de falso sucesso financeiro (RF-31/RF-34)
+
+Alerta: `PendingEntryFalseSuccess` (`agents_pending_entry_false_success_total` > 0).
+
+### Quando este runbook se aplica
+
+O alerta dispara quando o workflow `pending-entry` registra uma confirmação positiva do
+usuário (resposta "sim"/"confirmar"/"ok"/"pode") mas não obtém um `resourceID` de transação
+ativa como resultado. Isso caracteriza **falso sucesso financeiro**: o usuário aceitou a
+operação, mas não há transação durável rastreável.
+
+### Investigação imediata (sem ler mensagens do usuário)
+
+1. **Confirmar o incremento da métrica** no Prometheus:
+   ```promql
+   increase(agents_pending_entry_false_success_total{workflow="pending-entry"}[5m])
+   ```
+   Qualquer valor > 0 é crítico.
+
+2. **Correlacionar com spans** no Tempo:
+   - `agents.usecase.pending_entry_continuer`
+   - `agents.usecase.idempotent_write`
+   - `transactions.usecase.create_transaction` (ou `.update_transaction`)
+   Use `trace_id` para ligar o evento ao run correspondente.
+
+3. **Verificar rastros duráveis** (sem expor texto de mensagem como label):
+   ```sql
+   SELECT id, workflow, status, stage, error, started_at, ended_at
+   FROM mecontrola.workflow_runs
+   WHERE workflow = 'pending-entry'
+     AND status = 'failed'
+     AND started_at >= now() - interval '30 minutes'
+   ORDER BY started_at DESC;
+   ```
+
+4. **Confirmar ausência de transação ativa** pelo `origin_wamid` (obtido do span ou do run
+   de continuer; não use como label de métrica):
+   ```sql
+   SELECT id, amount_cents, description, payment_method, category_path, created_at
+   FROM mecontrola.transactions
+   WHERE origin_wamid = '<wamid-do-evento>'
+     AND deleted_at IS NULL;
+   ```
+   Resultado esperado em caso de falso sucesso: **0 linhas**.
+
+5. **Verificar se o ledger de escrita idempotente registrou a operação**:
+   ```sql
+   SELECT id, operation, resource_id, resource_kind, created_at
+   FROM mecontrola.agents_write_ledger
+   WHERE wamid = '<wamid-do-evento>';
+   ```
+   `resource_id` nulo ou ausente confirma que a escrita foi aceita sem recurso.
+
+### Ações
+
+- Se confirmado falso sucesso em produção: **reverter o deploy imediatamente** e abrir
+  incidente. Não aguardar a janela do gate pós-deploy.
+- Se o alerta for falso positivo (ex.: métrica incrementada por retry idempotente já
+  resolvido): documentar o `trace_id`/run_id e ajustar o threshold somente após revisão do
+  PRD.
+- Após correção, garantir que testes de regressão cobrem confirmação positiva com e sem
+  transação ativa (`pending_entry_no_false_success_test.go`).
+
+### Métricas e labels permitidos
+
+- `agents_pending_entry_false_success_total`: labels `workflow`, `step`.
+- Proibido como label: `user_id`, telefone, `wamid`, categoria, `run_id`, `thread_id`,
+  `resource_id` ou IDs de entidade.
+
+## 12. Referências
 
 - `internal/agents/application/postdeploy/gate.go` — cálculo puro (amostra mínima, margem,
   `tool-call-accuracy` redefinida, veredito de promoção).
@@ -266,4 +336,9 @@ corrigir a regressão antes.
   de tools/workflows/scorers/fluxos cobertos (RF-54..RF-57).
 - `internal/agents/application/postdeploy/regression_contract_test.go` +
   `module_wiring_source_test.go` — verificação executável do contrato de regressão.
+- `internal/agents/application/workflows/pending_entry_workflow.go` — métrica de falso
+  sucesso financeiro.
 - `.specs/prd-orquestracao-conversacional-confiavel/adr-005-golden-harness-gate.md`.
+- `.specs/prd-onboarding-sem-friccao-ate-primeiro-lancamento/prd.md` (RF-31..RF-34).
+- `docs/runbooks/onboarding-rollout-checklist.md` — checklist de rollout sem feature flag,
+  validação pós-deploy, SLO e procedimento de rollback para o onboarding sem fricção.

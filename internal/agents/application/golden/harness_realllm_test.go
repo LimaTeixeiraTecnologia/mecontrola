@@ -237,7 +237,7 @@ func goldenResolveCardNotFoundTool(sink ToolCaptureSink) tool.ToolHandle {
 	type output struct {
 		Found bool `json:"found"`
 	}
-	return tool.NewTool[map[string]any, output]("resolve_card_not_found", "Resolve o cartão de crédito do usuário pelo apelido informado; use como etapa obrigatória antes de registrar compra no crédito. Se não encontrar o cartão, peça ao usuário para escolher entre os cartões cadastrados via list_cards — nunca prossiga com um cardId inventado.", in, out,
+	return tool.NewTool[map[string]any, output]("resolve_card_not_found", "Resolve o 💳 de crédito do usuário pelo apelido informado; use como etapa obrigatória antes de registrar compra no crédito. Se não encontrar o 💳, peça ao usuário para escolher entre os 💳 cadastrados via list_cards — nunca prossiga com um cardId inventado.", in, out,
 		func(_ context.Context, in map[string]any) (output, error) {
 			sink("resolve_card_not_found", in)
 			return output{Found: false}, nil
@@ -265,19 +265,19 @@ var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
 		return goldenCaptureTool("search_transactions", "Pesquisa lançamentos do usuário por termo explícito no mês informado; use APENAS quando o usuário fornecer uma palavra-chave ou termo de busca específico.", goldenBaseSchema("query", "refMonth"), sink)
 	},
 	"list_cards": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("list_cards", "Lista os cartões cadastrados do usuário; use apenas quando o usuário pedir explicitamente para ver, listar ou saber quais são seus cartões.", goldenBaseSchema(), sink)
+		return goldenCaptureTool("list_cards", "Lista os 💳 cadastrados do usuário; use apenas quando o usuário pedir explicitamente para ver, listar ou saber quais são seus 💳.", goldenBaseSchema(), sink)
 	},
 	"get_card": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("get_card", "Busca dados de um cartão pelo ID", goldenBaseSchema("cardId"), sink)
+		return goldenCaptureTool("get_card", "Busca dados de um 💳 pelo ID", goldenBaseSchema("cardId"), sink)
 	},
 	"count_cards": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("count_cards", "Conta cartões do usuário", goldenBaseSchema(), sink)
+		return goldenCaptureTool("count_cards", "Conta 💳 do usuário", goldenBaseSchema(), sink)
 	},
 	"best_purchase_day": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("best_purchase_day", "Calcula melhor dia de compra", goldenBaseSchema("bank", "dueDay"), sink)
 	},
 	"query_card_invoice": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("query_card_invoice", "Consulta fatura do cartão", goldenBaseSchema("cardId", "refMonth"), sink)
+		return goldenCaptureTool("query_card_invoice", "Consulta fatura do 💳", goldenBaseSchema("cardId", "refMonth"), sink)
 	},
 	"list_recurrences": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("list_recurrences", "Lista templates de recorrência", goldenBaseSchema(), sink)
@@ -307,19 +307,22 @@ var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
 		return goldenCaptureTool("edit_entry", "Inicia a edição de um lançamento pelo ID", goldenBaseSchema("entryId", "entryKind"), sink)
 	},
 	"delete_entry": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("delete_entry", "Solicita exclusão de lançamento ou cartão", goldenBaseSchema("targetRef", "targetKind"), sink)
+		return goldenCaptureTool("delete_entry", "Solicita exclusão de lançamento ou 💳", goldenBaseSchema("targetRef", "targetKind"), sink)
 	},
 	"update_card": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("update_card", "Solicita atualização de cartão", goldenBaseSchema("cardId", "nickname", "dueDay"), sink)
+		return goldenCaptureTool("update_card", "Solicita atualização de 💳", goldenBaseSchema("cardId", "nickname", "dueDay"), sink)
 	},
 	"resolve_card": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("resolve_card", "Resolve o cartão de crédito do usuário pelo apelido informado, retornando o cardId; use como etapa obrigatória antes de registrar compra no crédito OU antes de consultar a fatura do cartão.", goldenBaseSchema("nickname"), sink)
+		return goldenCaptureTool("resolve_card", "Resolve o 💳 de crédito do usuário pelo apelido informado, retornando o cardId; use como etapa obrigatória antes de registrar compra no crédito OU antes de consultar a fatura do 💳.", goldenBaseSchema("nickname"), sink)
 	},
 	"resolve_card_not_found":  goldenResolveCardNotFoundTool,
 	"create_budget":           goldenCreateBudgetTool,
 	"query_plan_not_found":    goldenQueryPlanNotFoundTool,
 	"register_income_confirm": goldenRegisterIncomeConfirmTool,
 	"query_month_ask_year":    goldenMonthAskYearTool,
+	"create_card": func(sink ToolCaptureSink) tool.ToolHandle {
+		return goldenCaptureTool("create_card", "Cadastra um novo 💳 de crédito pela conversa. Requer confirmação humana explícita antes de criar.", goldenBaseSchema("nickname", "bank", "dueDay", "closingDay"), sink)
+	},
 }
 
 func goldenToolsFor(c Case, sink ToolCaptureSink) []tool.ToolHandle {

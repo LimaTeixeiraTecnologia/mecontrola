@@ -56,14 +56,48 @@ func expenseIncomeCases() []Case {
 			ResponseDescribe: "valor com separador de milhar brasileiro tratado como um único valor",
 		},
 		{
-			Name:             "despesa cartao usa cardId resolvido",
+			Name:             "despesa 💳 usa cardId resolvido",
 			Category:         CategoryExpenseIncome,
 			Origin:           "synthetic",
-			Input:            "comprei um tênis de 300 reais no cartão nubank",
+			Input:            "comprei um tênis de 300 reais no 💳 nubank",
 			ToolSubset:       []string{"register_expense", "resolve_card", "list_cards"},
 			ExpectedTools:    []string{"resolve_card", "register_expense"},
 			ResponseProperty: nonEmptyResponse,
-			ResponseDescribe: "resolve o cartão antes de registrar a compra",
+			ResponseDescribe: "resolve o 💳 antes de registrar a compra",
+		},
+		{
+			Name:         "despesa pix nao pergunta 💳",
+			Category:     CategoryExpenseIncome,
+			Origin:       "synthetic journey-derived (RF-16/RF-17: pix não depende de 💳)",
+			Input:        "gastei R$ 50,00 no supermercado no pix",
+			ToolSubset:   []string{"register_expense", "resolve_card", "list_cards"},
+			ExpectedTool: "register_expense",
+			ExpectedArgs: map[string]any{
+				"amountCents":   5000.0,
+				"paymentMethod": "pix",
+			},
+			ResponseProperty: allOf(
+				nonEmptyResponse,
+				notContainsAny("qual 💳", "qual 💳", "💳 você quer", "💳 você quer", "escolher", "💳 cadastrados"),
+			),
+			ResponseDescribe: "despesa pix chega a register_expense sem pergunta de 💳",
+		},
+		{
+			Name:         "receita salario separador milhar nao vira multiplo",
+			Category:     CategoryExpenseIncome,
+			Origin:       "synthetic journey-derived (RF-20/RF-21: separador de milhar não vira múltiplos lançamentos)",
+			Input:        "Recebi R$ 13.874,40 de salário",
+			ToolSubset:   []string{"register_income"},
+			ExpectedTool: "register_income",
+			ExpectedArgs: map[string]any{
+				"amountCents": 1387440.0,
+				"description": "salário",
+			},
+			ResponseProperty: allOf(
+				nonEmptyResponse,
+				notContainsAny("um lançamento por vez", "um de cada vez", "separadamente", "mais de um lançamento"),
+			),
+			ResponseDescribe: "receita com separador de milhar registra valor único e preserva descrição literal",
 		},
 	}
 }
@@ -81,5 +115,16 @@ func containsAny(terms ...string) ResponsePropertyFunc {
 			}
 		}
 		return false
+	}
+}
+
+func allOf(funcs ...ResponsePropertyFunc) ResponsePropertyFunc {
+	return func(response string) bool {
+		for _, f := range funcs {
+			if !f(response) {
+				return false
+			}
+		}
+		return true
 	}
 }

@@ -42,7 +42,7 @@ func (s *PendingEntryCardSuite) SetupTest() {
 }
 
 func (s *PendingEntryCardSuite) buildDef() workflow.Definition[PendingEntryState] {
-	return BuildPendingEntryWorkflow(s.ledger, s.cards, nil, nil)
+	return BuildPendingEntryWorkflowWithObservability(s.ledger, s.cards, nil, nil, nil)
 }
 
 func (s *PendingEntryCardSuite) cardState() PendingEntryState {
@@ -83,8 +83,9 @@ func (s *PendingEntryCardSuite) TestAwaitCard_Resolved_MovesToConfirmation_CA10_
 		Return(ifaces.Card{ID: s.cardID.String(), Nickname: "nubank"}, nil).
 		Once()
 
-	_, err := s.engine.Start(s.ctx, def, k, s.cardState())
+	startResult, err := s.engine.Start(s.ctx, def, k, s.cardState())
 	s.Require().NoError(err)
+	s.Equal("Qual 💳 foi utilizado?", startResult.State.ResponseText)
 
 	result, err := s.engine.Resume(s.ctx, def, k, s.resume("nubank"))
 
@@ -116,6 +117,7 @@ func (s *PendingEntryCardSuite) TestAwaitCard_NotFound_Reprompt() {
 	s.Equal(workflow.RunStatusSuspended, result.Status)
 	s.Equal(AwaitingSlotCard, result.State.Awaiting)
 	s.Equal(1, result.State.RepromptCount)
+	s.Equal("Não reconheci o 💳. Qual 💳 foi utilizado?", result.State.ResponseText)
 }
 
 func (s *PendingEntryCardSuite) TestAwaitCard_NotFound_MaxReprompts_Cancels() {
@@ -148,6 +150,7 @@ func (s *PendingEntryCardSuite) TestAwaitCard_NotFound_MaxReprompts_Cancels() {
 	s.NoError(err)
 	s.Equal(workflow.RunStatusSucceeded, result.Status)
 	s.Equal(PendingStatusCancelled, result.State.Status)
+	s.Equal("Não consegui identificar o 💳. O registro foi cancelado.", result.State.ResponseText)
 }
 
 func (s *PendingEntryCardSuite) TestAwaitCard_Cancel_Explicit() {

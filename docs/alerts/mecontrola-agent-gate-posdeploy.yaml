@@ -76,3 +76,19 @@ groups:
             30 minutos, apesar de trafego esperado. Pode indicar guardChainAgent nao
             conectado ou substituido silenciosamente (regressao de RF-01/RF-54/RF-55).
             Runbook: docs/runbooks/mecontrola-agent-gate-posdeploy.md
+
+      - alert: PendingEntryFalseSuccess
+        expr: increase(agents_pending_entry_false_success_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: agents
+          prd: prd-onboarding-sem-friccao-ate-primeiro-lancamento
+        annotations:
+          summary: "Confirmacao positiva sem transacao ativa detectada no pending-entry"
+          description: |
+            RF-31/RF-34: o workflow pending-entry registrou uma confirmacao positiva
+            (aceite do usuario) sem resourceID de transacao ativa. Isso indica falso
+            sucesso financeiro e deve ser investigado imediatamente.
+            Verificar: logs do continuer com workflow=pending-entry e spans no Tempo.
+            Runbook: docs/runbooks/mecontrola-agent-gate-posdeploy.md

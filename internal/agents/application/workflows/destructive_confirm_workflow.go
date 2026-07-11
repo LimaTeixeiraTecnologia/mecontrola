@@ -209,7 +209,7 @@ func successMessage(op OperationKind) string {
 	case OpEditEntry:
 		return "✅ Lançamento atualizado com sucesso."
 	case OpDeleteCard:
-		return "✅ Cartão removido com sucesso."
+		return "✅ 💳 removido com sucesso."
 	case OpConfirmRegister:
 		return "✅ Lançamento registrado com sucesso."
 	case OpUpdateRecurrence:
@@ -217,7 +217,7 @@ func successMessage(op OperationKind) string {
 	case OpDeleteRecurrence:
 		return "✅ Recorrência removida com sucesso."
 	case OpUpdateCard:
-		return "✅ Cartão atualizado com sucesso."
+		return "✅ 💳 atualizado com sucesso."
 	default:
 		return "✅ Operação realizada com sucesso."
 	}
@@ -375,13 +375,13 @@ func BuildImpactNote(ctx context.Context, targetRef, targetKind string, userID u
 	case "card":
 		id, err := uuid.Parse(targetRef)
 		if err != nil {
-			return "Remoção permanente do cartão."
+			return "Remoção permanente do 💳."
 		}
 		hasOpen, err := cards.HasOpenInstallments(ctx, id, userID)
 		if err != nil || !hasOpen {
-			return "Remoção permanente do cartão."
+			return "Remoção permanente do 💳."
 		}
-		return "⚠️ Este cartão possui compras parceladas em aberto. Removê-lo deixará as parcelas sem cartão associado."
+		return "⚠️ Este 💳 possui compras parceladas em aberto. Removê-lo deixará as parcelas sem 💳 associado."
 	default:
 		return "Este lançamento será removido permanentemente."
 	}

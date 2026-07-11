@@ -343,6 +343,42 @@ func centsToBasisPoints(cents []int64, totalCents int64) []int {
 	return bp
 }
 
+type cardMissingField int
+
+const (
+	cardMissingNone cardMissingField = iota + 1
+	cardMissingName
+	cardMissingDueDay
+	cardMissingNameAndDueDay
+)
+
+func classifyCardMissing(nickname, bank string, dueDay int) cardMissingField {
+	hasName := strings.TrimSpace(nickname) != "" || strings.TrimSpace(bank) != ""
+	hasDueDay := dueDay >= 1 && dueDay <= 31
+	switch {
+	case hasName && hasDueDay:
+		return cardMissingNone
+	case !hasName && !hasDueDay:
+		return cardMissingNameAndDueDay
+	case !hasName:
+		return cardMissingName
+	default:
+		return cardMissingDueDay
+	}
+}
+
+func normalizeCardExtract(extract cardExtract) cardExtract {
+	nickname := strings.TrimSpace(extract.Nickname)
+	bank := strings.TrimSpace(extract.Bank)
+	switch {
+	case nickname == "" && bank != "":
+		extract.Nickname = bank
+	case bank == "" && nickname != "":
+		extract.Bank = nickname
+	}
+	return extract
+}
+
 func DecideCardEntry(nickname, bank string, dueDay int) error {
 	var errs []error
 	if strings.TrimSpace(nickname) == "" {
@@ -483,22 +519,51 @@ var recurrenceSchema = map[string]any{
 	"additionalProperties": false,
 }
 
-const welcomePrompt = "🎉 Bem-vindo ao MeControla! 🎉\n\n" +
-	"Estou aqui para te ajudar a organizar suas finanças e conquistar seus objetivos. 💪💰"
+const welcomeCombinedPrompt = `🎉 Bem-vindo ao MeControla! 🎉
 
-const welcomeGoalPrompt = "Vamos começar? Qual é o seu principal objetivo financeiro para este mês?\n" +
-	"(por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva; se quiser, já pode me contar o valor da meta, tipo \"comprar uma casa, meta de R$ 400.000,00\")"
+Estou aqui para te ajudar a organizar suas finanças e conquistar seus objetivos. 💪💰
+
+Vamos começar? Qual é o seu principal objetivo financeiro para este mês?
+(por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva; se quiser, já pode me contar o valor da meta, tipo "comprar uma casa, meta de R$ 400.000,00")`
 
 const goalReprompt = "Não consegui identificar seu objetivo. Qual é o seu principal objetivo financeiro para este mês? Por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva. Se souber, pode me contar também o valor da meta — mas isso é totalmente opcional."
 
 const goalValueReprompt = "Legal! E você já tem uma ideia de quanto (em R$) representa essa meta? Pode responder com um número, por exemplo \"R$ 400.000,00\" ou \"400 mil\" — se preferir não informar agora, é só responder \"não\" que a gente segue em frente."
 
-const monthlyBudgetPrompt = "Antes de montar seu planejamento, deixa eu te mostrar como organizamos o dinheiro por aqui. Tudo vive em apenas 5 categorias: Custo Fixo, Conhecimento, Prazeres, Metas e Liberdade Financeira.\n\n" +
-	"Qual é o seu orçamento mensal? (por exemplo: R$ 3.500,00)"
+const monthlyBudgetPrompt = `📊 Antes de montar seu planejamento, deixa eu te mostrar como organizamos o dinheiro por aqui.
+
+O dinheiro vive em apenas 5 categorias:
+
+💰 Custo Fixo: contas essenciais e compromissos recorrentes, como moradia, mercado, transporte e saúde.
+🎓 Conhecimento: cursos, livros, mentorias e aprendizados que aumentam sua capacidade de ganhar ou administrar dinheiro.
+🎉 Prazeres: lazer, restaurantes, viagens, presentes e escolhas que trazem qualidade de vida.
+🎯 Metas: objetivos com prazo e valor definidos, como quitar dívida, comprar algo importante ou montar uma reserva específica.
+🏦 Liberdade Financeira: reserva de emergência, investimentos e aportes para independência financeira.
+
+Qual é o seu orçamento mensal? (por exemplo: R$ 3.500,00)`
 
 const monthlyBudgetReprompt = "Não consegui identificar o valor. Qual é o seu orçamento mensal? Por exemplo: R$ 3.500,00."
 
-const cardsReprompt = "Para adicionar o cartão, me diga o apelido, o banco emissor e o dia de vencimento da fatura (um número entre 1 e 31). Por exemplo: \"Nubank, vencimento dia 10\". Se preferir não adicionar agora, responda \"não\"."
+const cardsReprompt = "Para adicionar o 💳, me diga o apelido, o banco emissor e o dia de vencimento da fatura (um número entre 1 e 31). Por exemplo: \"Nubank, vencimento dia 10\". Se preferir não adicionar agora, responda \"não\"."
+
+const (
+	cardsRepromptMissingName   = "Para adicionar o 💳, preciso do apelido ou do banco emissor. Se não quiser cadastrar agora, é só responder \"não\"."
+	cardsRepromptMissingDueDay = "Para adicionar o 💳, preciso do dia de vencimento da fatura (um número entre 1 e 31). Se não quiser cadastrar agora, é só responder \"não\"."
+	cardsRepromptMissingBoth   = "Para adicionar o 💳, preciso do apelido/banco emissor e do dia de vencimento da fatura (entre 1 e 31). Se preferir não adicionar agora, responda \"não\"."
+)
+
+func cardsRepromptFor(missing cardMissingField) string {
+	switch missing {
+	case cardMissingName:
+		return cardsRepromptMissingName
+	case cardMissingDueDay:
+		return cardsRepromptMissingDueDay
+	case cardMissingNameAndDueDay:
+		return cardsRepromptMissingBoth
+	default:
+		return cardsReprompt
+	}
+}
 
 const conclusionRecurrencePrompt = "Quer que eu repita esse orçamento automaticamente pelos próximos 12 meses, sem precisar configurar de novo? Responda \"sim\" ou \"não\"."
 
@@ -523,7 +588,7 @@ const goalWithValueSystemPrompt = "Extraia o objetivo financeiro principal do te
 
 const monthlyBudgetSystemPrompt = "Extraia o valor do orcamento mensal em reais (BRL) do texto do usuario. Retorne como numero decimal."
 
-const cardsSystemPrompt = "Extraia do texto do usuario se ele quer adicionar um cartao (wantsCard), o apelido (nickname), o banco emissor (bank) e o dia de vencimento (dueDay, inteiro 1-31). Se nao quiser cartao, retorne wantsCard=false, nickname vazio, bank vazio e dueDay=0."
+const cardsSystemPrompt = "Extraia do texto do usuario se ele quer adicionar um 💳 (wantsCard), o apelido (nickname), o banco emissor (bank) e o dia de vencimento (dueDay, inteiro 1-31). Se nao quiser 💳, retorne wantsCard=false, nickname vazio, bank vazio e dueDay=0."
 
 const recurrenceSystemPrompt = "O usuario esta respondendo se deseja repetir o orcamento automaticamente pelos proximos 12 meses. Extraia se confirmou (true) ou nao (false)."
 
@@ -539,9 +604,9 @@ const goalValueSystemPrompt = "Extraia, se houver, o valor em reais que o usuár
 
 func cardsPrompt(existing int) string {
 	if existing > 0 {
-		return fmt.Sprintf("Você já tem %d cartão(ões) cadastrado(s). Deseja adicionar outro cartão de crédito agora? Se sim, informe o apelido, o banco emissor e o dia de vencimento da fatura (entre 1 e 31). Se não, responda \"não\".", existing)
+		return fmt.Sprintf("Você já tem %d 💳 cadastrado(s). Deseja cadastrar OUTRO 💳 agora? Se sim, informe o apelido, o banco emissor e o dia de vencimento da fatura (entre 1 e 31). Se não, responda \"não\".", existing)
 	}
-	return "Você deseja adicionar um cartão de crédito agora? Se sim, informe o apelido, o banco emissor e o dia de vencimento da fatura (entre 1 e 31). Se não, responda \"não\"."
+	return "O 💳 é opcional. Você deseja cadastrar um 💳 agora? Se sim, informe o apelido ou o banco emissor e o dia de vencimento da fatura (entre 1 e 31). Se não quiser agora, é só responder \"não\" e seguir sem 💳."
 }
 
 func methodologyPrompt(items []interfaces.AllocationCents) string {
@@ -597,10 +662,7 @@ func failStep(state OnboardingState, err error) (workflow.StepOutput[OnboardingS
 
 func BuildWelcomeStep() func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 	return func(_ context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
-		if state.ResumeText == "" {
-			state.Phase = PhaseWelcome
-			return suspendStep(state, welcomePrompt), nil
-		}
+		state.Phase = PhaseWelcome
 		state.ResumeText = ""
 		return completeStep(state), nil
 	}
@@ -610,7 +672,7 @@ func BuildGoalStep(a agent.Agent) func(context.Context, OnboardingState) (workfl
 	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		if state.ResumeText == "" {
 			state.Phase = PhaseGoal
-			return suspendStep(state, welcomeGoalPrompt), nil
+			return suspendStep(state, welcomeCombinedPrompt), nil
 		}
 		resumeText := state.ResumeText
 		state.ResumeText = ""
@@ -732,12 +794,17 @@ func BuildCardsStep(a agent.Agent, cards interfaces.CardManager) func(context.Co
 		if err := json.Unmarshal(extracted.RawJSON, &extract); err != nil {
 			return failStep(state, fmt.Errorf("agents.onboarding.cards: unmarshal: %w", err))
 		}
+		extract = normalizeCardExtract(extract)
 		if !extract.WantsCard {
 			state.CardsDone = true
 			return completeStep(state), nil
 		}
+		missing := classifyCardMissing(extract.Nickname, extract.Bank, extract.DueDay)
+		if missing != cardMissingNone {
+			return suspendStep(state, cardsRepromptFor(missing)), nil
+		}
 		if err := DecideCardEntry(extract.Nickname, extract.Bank, extract.DueDay); err != nil {
-			return suspendStep(state, cardsReprompt), nil
+			return suspendStep(state, cardsRepromptFor(cardMissingNameAndDueDay)), nil
 		}
 		userUUID, err := uuid.Parse(state.UserID)
 		if err != nil {

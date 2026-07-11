@@ -60,7 +60,7 @@ func BuildGetCardTool(cards interfaces.CardManager) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool("get_card", "Retorna os detalhes de um cartão de crédito do usuário.", in, out, buildGetCardExec(cards))
+	return tool.NewTool("get_card", "Retorna os detalhes de um 💳 de crédito do usuário.", in, out, buildGetCardExec(cards))
 }
 
 func buildGetCardExec(cards interfaces.CardManager) func(context.Context, GetCardInput) (GetCardOutput, error) {

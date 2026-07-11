@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 	"github.com/stretchr/testify/suite"
 
@@ -158,6 +159,90 @@ func (s *GuardChainAgentSuite) TestExecute_MultiplePostGuards_AllInspected() {
 	s.Equal(1, post1.inspects)
 	s.Equal(1, post2.inspects)
 	s.Equal("corrigido por post-2", output.Content)
+}
+
+func (s *GuardChainAgentSuite) TestExecute_VerbatimRelayBeforeCardProvenance_PreservesPixConfirmation() {
+	verbatim := "Confirma o lançamento de R$ 50,00 no supermercado via pix?"
+	underlying := &stubGuardChainUnderlyingAgent{result: agent.Result{
+		Content: "resposta original do agente",
+		ToolCalls: []agent.ToolCallRecord{
+			{
+				Tool:          "register_expense",
+				Outcome:       agent.ToolCallOutcomeSuccess,
+				Content:       `{"outcome":"clarify","message":"` + verbatim + `"}`,
+				ArgumentsJSON: map[string]any{"paymentMethod": "pix"},
+			},
+		},
+	}}
+
+	built := WithGuardChain(underlying, fake.NewProvider(), nil, []guards.PostGuard{
+		guards.NewVerbatimRelayGuard(),
+		guards.NewCardProvenanceGuard(),
+	})
+	output, err := built.Execute(s.ctx, agent.Request{AgentID: "agent-1"})
+
+	s.NoError(err)
+	s.Equal(verbatim, output.Content)
+}
+
+func (s *GuardChainAgentSuite) TestExecute_CardProvenance_DecisionsRecorded() {
+	scenarios := []struct {
+		name           string
+		paymentMethod  string
+		expectDecision string
+	}{
+		{
+			name:           "credit_card sem resolucao e handled",
+			paymentMethod:  "credit_card",
+			expectDecision: "handled",
+		},
+		{
+			name:           "pix nao e handled",
+			paymentMethod:  "pix",
+			expectDecision: "pass",
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			o11y := fake.NewProvider()
+			underlying := &stubGuardChainUnderlyingAgent{result: agent.Result{
+				Content: "resposta original",
+				ToolCalls: []agent.ToolCallRecord{
+					{
+						Tool:          "register_expense",
+						Outcome:       agent.ToolCallOutcomeSuccess,
+						Content:       `{"outcome":"routed"}`,
+						ArgumentsJSON: map[string]any{"paymentMethod": scenario.paymentMethod},
+					},
+				},
+			}}
+
+			built := WithGuardChain(underlying, o11y, nil, []guards.PostGuard{guards.NewCardProvenanceGuard()})
+			_, err := built.Execute(s.ctx, agent.Request{AgentID: "agent-1"})
+
+			s.NoError(err)
+			counter := o11y.Metrics().(*fake.FakeMetrics).GetCounter("agent_guard_decisions_total")
+			s.Require().NotNil(counter)
+			var found bool
+			for _, v := range counter.GetValues() {
+				if s.hasLabel(v.Fields, "guard", "card_provenance") && s.hasLabel(v.Fields, "decision", scenario.expectDecision) {
+					found = true
+					break
+				}
+			}
+			s.True(found, "deveria registrar decisao %s para card_provenance", scenario.expectDecision)
+		})
+	}
+}
+
+func (s *GuardChainAgentSuite) hasLabel(fields []observability.Field, key, value string) bool {
+	for _, f := range fields {
+		if f.Key == key && f.StringValue() == value {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *GuardChainAgentSuite) TestStream_DelegatesToUnderlyingAgent() {

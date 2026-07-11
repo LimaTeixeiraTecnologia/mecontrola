@@ -14,7 +14,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
 
-const cardNotFoundClarifyMessage = "❌ Não encontrei esse cartão. Pode me dizer o apelido do cartão (ex.: nubank) para eu localizar o certo?"
+const cardNotFoundClarifyMessage = "❌ Não encontrei esse 💳. Pode me dizer o apelido do 💳 (ex.: nubank) para eu localizar o certo?"
 
 type RegisterExpenseInput struct {
 	AmountCents     int64  `json:"amountCents"`
@@ -73,7 +73,7 @@ func BuildRegisterExpenseTool(registrar entryRegistrar, cards interfaces.CardMan
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewVerbatimTool("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário; a categoria é resolvida automaticamente por busca textual do campo description (nunca parafraseie o termo do usuário). Para compra no cartão de crédito, use paymentMethod=credit_card com cardId (obtido via resolve_card) e installments (1 para à vista, 2..24 para parcelada).", in, out, buildRegisterExpenseExec(registrar, cards), extractRegisterExpenseVerbatim)
+	return tool.NewVerbatimTool("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário; a categoria é resolvida automaticamente por busca textual do campo description (nunca parafraseie o termo do usuário). Para compra no 💳 de crédito, use paymentMethod=credit_card com cardId (obtido via resolve_card) e installments (1 para à vista, 2..24 para parcelada).", in, out, buildRegisterExpenseExec(registrar, cards), extractRegisterExpenseVerbatim)
 }
 
 func extractRegisterExpenseVerbatim(o RegisterExpenseOutput) (string, bool) {

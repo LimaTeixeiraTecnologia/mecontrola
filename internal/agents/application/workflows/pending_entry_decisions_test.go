@@ -573,3 +573,105 @@ func (s *PendingEntryDecisionsSuite) TestKnownPaymentMethodsAllValuesParseValidF
 func (s *PendingEntryDecisionsSuite) TestRecognizePaymentMethod_Doc_MapsToTED() {
 	s.Equal("ted", recognizePaymentMethod("doc"))
 }
+
+func (s *PendingEntryDecisionsSuite) TestDecideInitialAwaiting_OnlyCreditCardWithoutCardAsksCard() {
+	scenarios := []struct {
+		name             string
+		categoryAwaiting AwaitingSlot
+		paymentMethod    string
+		hasCard          bool
+		expected         AwaitingSlot
+	}{
+		{
+			name:             "credit_card sem cartão exige cartão",
+			categoryAwaiting: AwaitingSlotConfirmation,
+			paymentMethod:    PaymentMethodCreditCard,
+			hasCard:          false,
+			expected:         AwaitingSlotCard,
+		},
+		{
+			name:             "credit_card com cartão segue para confirmação",
+			categoryAwaiting: AwaitingSlotConfirmation,
+			paymentMethod:    PaymentMethodCreditCard,
+			hasCard:          true,
+			expected:         AwaitingSlotConfirmation,
+		},
+		{
+			name:             "pix sem cartão não exige cartão",
+			categoryAwaiting: AwaitingSlotConfirmation,
+			paymentMethod:    "pix",
+			hasCard:          false,
+			expected:         AwaitingSlotConfirmation,
+		},
+		{
+			name:             "cash sem cartão não exige cartão",
+			categoryAwaiting: AwaitingSlotConfirmation,
+			paymentMethod:    "cash",
+			hasCard:          false,
+			expected:         AwaitingSlotConfirmation,
+		},
+		{
+			name:             "boleto sem cartão não exige cartão",
+			categoryAwaiting: AwaitingSlotConfirmation,
+			paymentMethod:    "boleto",
+			hasCard:          false,
+			expected:         AwaitingSlotConfirmation,
+		},
+		{
+			name:             "ted sem cartão não exige cartão",
+			categoryAwaiting: AwaitingSlotConfirmation,
+			paymentMethod:    "ted",
+			hasCard:          false,
+			expected:         AwaitingSlotConfirmation,
+		},
+		{
+			name:             "debit_card sem cartão não exige cartão",
+			categoryAwaiting: AwaitingSlotConfirmation,
+			paymentMethod:    "debit_card",
+			hasCard:          false,
+			expected:         AwaitingSlotConfirmation,
+		},
+		{
+			name:             "debit_in_account sem cartão não exige cartão",
+			categoryAwaiting: AwaitingSlotConfirmation,
+			paymentMethod:    "debit_in_account",
+			hasCard:          false,
+			expected:         AwaitingSlotConfirmation,
+		},
+		{
+			name:             "vale_refeicao sem cartão não exige cartão",
+			categoryAwaiting: AwaitingSlotConfirmation,
+			paymentMethod:    "vale_refeicao",
+			hasCard:          false,
+			expected:         AwaitingSlotConfirmation,
+		},
+		{
+			name:             "vale_alimentacao sem cartão não exige cartão",
+			categoryAwaiting: AwaitingSlotConfirmation,
+			paymentMethod:    "vale_alimentacao",
+			hasCard:          false,
+			expected:         AwaitingSlotConfirmation,
+		},
+		{
+			name:             "forma de pagamento vazia pergunta pagamento",
+			categoryAwaiting: AwaitingSlotConfirmation,
+			paymentMethod:    "",
+			hasCard:          false,
+			expected:         AwaitingSlotPaymentMethod,
+		},
+		{
+			name:             "categoria pendente mantém prioridade de categoria",
+			categoryAwaiting: AwaitingSlotCategory,
+			paymentMethod:    "pix",
+			hasCard:          false,
+			expected:         AwaitingSlotCategory,
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			got := DecideInitialAwaiting(scenario.categoryAwaiting, scenario.paymentMethod, scenario.hasCard)
+			s.Equal(scenario.expected, got, "paymentMethod=%q hasCard=%v", scenario.paymentMethod, scenario.hasCard)
+		})
+	}
+}

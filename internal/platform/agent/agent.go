@@ -241,10 +241,10 @@ func (a *agentImpl) invokeToolCall(ctx context.Context, toolMap map[string]tool.
 	)
 	if invokeErr != nil {
 		content := fmt.Errorf("tool %s: %w", h.ID(), invokeErr).Error()
-		record := ToolCallRecord{Tool: h.ID(), Outcome: ToolCallOutcomeError, Content: content}
+		record := ToolCallRecord{Tool: h.ID(), Outcome: ToolCallOutcomeError, Content: content, ArgumentsJSON: tc.ArgumentsJSON}
 		return llm.Message{Role: roleTool, ToolCallID: tc.ID, Content: content}, record, toolExecError, "", true
 	}
-	record := ToolCallRecord{Tool: h.ID(), Outcome: ToolCallOutcomeSuccess, Content: string(result)}
+	record := ToolCallRecord{Tool: h.ID(), Outcome: ToolCallOutcomeSuccess, Content: string(result), ArgumentsJSON: tc.ArgumentsJSON}
 	return llm.Message{Role: roleTool, ToolCallID: tc.ID, Content: string(result)}, record, toolExecOK, verbatimText, true
 }
 

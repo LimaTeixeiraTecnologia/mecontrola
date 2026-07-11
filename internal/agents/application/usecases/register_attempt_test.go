@@ -70,7 +70,7 @@ func (s *RegisterAttemptSuite) SetupTest() {
 	s.catRootID = uuid.New()
 	s.catSubID = uuid.New()
 
-	def := workflows.BuildPendingEntryWorkflow(nil, nil, nil, nil)
+	def := workflows.BuildPendingEntryWorkflowWithObservability(nil, nil, nil, nil, nil)
 	s.ledger = imocks.NewTransactionsLedger(s.T())
 	s.uc = NewRegisterAttempt(s.categories, s.ledger, s.engine, def, s.obs)
 }

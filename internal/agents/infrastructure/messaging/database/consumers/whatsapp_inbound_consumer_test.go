@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +23,13 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 )
+
+const expectedWelcomeCombinedMessage = `🎉 Bem-vindo ao MeControla! 🎉
+
+Estou aqui para te ajudar a organizar suas finanças e conquistar seus objetivos. 💪💰
+
+Vamos começar? Qual é o seu principal objetivo financeiro para este mês?
+(por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva; se quiser, já pode me contar o valor da meta, tipo "comprar uma casa, meta de R$ 400.000,00")`
 
 type mockHandleInbound struct {
 	mock.Mock
@@ -362,7 +370,7 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 			},
 		},
 		{
-			name: "deve rotear para onboarding quando resolver retorna handled",
+			name: "deve rotear para onboarding e enviar primeira mensagem combinada em unica resposta",
 			args: args{
 				event: &mockEvent{
 					eventType: "agents.whatsapp.inbound.v1",
@@ -378,14 +386,20 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 				inboundMock: &mockHandleInbound{},
 				senderMock: func() *mockWhatsAppSender {
 					m := &mockWhatsAppSender{}
-					m.On("SendTextMessage", mock.Anything, "+5511888888888", "🎯 Bem-vindo ao MeControla!").
-						Return(nil).Once()
+					m.On("SendTextMessage", mock.Anything, "+5511888888888", mock.MatchedBy(func(text string) bool {
+						return strings.Contains(text, "🎉 Bem-vindo ao MeControla! 🎉") &&
+							strings.Contains(text, "Vamos começar?") &&
+							strings.Contains(text, "objetivo financeiro")
+					})).Return(nil).Once()
 					return m
 				}(),
 				onboardingMock: func() *mockOnboardingResolver {
 					m := &mockOnboardingResolver{}
 					m.On("Execute", mock.Anything, "user-new-456", "+5511888888888", "oi").
-						Return(usecases.OnboardingResult{Handled: true, Message: "🎯 Bem-vindo ao MeControla!"}, nil).Once()
+						Return(usecases.OnboardingResult{
+							Handled: true,
+							Message: expectedWelcomeCombinedMessage,
+						}, nil).Once()
 					return m
 				}(),
 			},

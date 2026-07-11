@@ -367,7 +367,7 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 			dependencies: dependencies{},
 			expect: func(instructions string) {
 				s.Contains(instructions, "Você ainda não tem um orçamento para")
-				s.Contains(instructions, "Não encontrei fatura para o cartão")
+				s.Contains(instructions, "Não encontrei fatura para o 💳")
 				s.Contains(instructions, "Não há lançamentos em")
 				s.Contains(instructions, "Não consegui consultar agora. Tente novamente em breve.")
 			},

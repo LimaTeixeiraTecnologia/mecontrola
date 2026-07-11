@@ -719,17 +719,12 @@ func (s *OnboardingWorkflowSuite) TestBuildWelcomeStep() {
 		expect func(out workflow.StepOutput[OnboardingState], err error)
 	}{
 		{
-			name: "primeira entrada deve suspender com boas-vindas isolada sem meta orcamento renda ou cartao",
+			name: "primeira entrada deve completar sem suspender para que goal envie mensagem combinada",
 			args: args{state: OnboardingState{UserID: "u1"}},
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
-				s.Equal(workflow.StepStatusSuspended, out.Status)
-				s.NotNil(out.Suspend)
-				s.Equal(welcomePrompt, out.Suspend.Prompt)
-				s.NotContains(out.Suspend.Prompt, "?")
-				s.NotContains(out.Suspend.Prompt, "orçamento")
-				s.NotContains(out.Suspend.Prompt, "renda")
-				s.NotContains(out.Suspend.Prompt, "cartão")
+				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.Empty(out.State.ResumeText)
 				s.Equal(PhaseWelcome, out.State.Phase)
 			},
 		},
@@ -767,19 +762,19 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 		expect       func(out workflow.StepOutput[OnboardingState], err error)
 	}{
 		{
-			name:         "primeira mensagem deve perguntar o objetivo sem preambulo de boas-vindas",
+			name:         "primeira mensagem deve combinar boas-vindas e pergunta de objetivo",
 			args:         args{state: OnboardingState{UserID: "u1"}},
 			dependencies: dependencies{agentMock: s.agentMock},
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
 				s.NotNil(out.Suspend)
-				s.Equal(welcomeGoalPrompt, out.Suspend.Prompt)
+				s.Equal(welcomeCombinedPrompt, out.Suspend.Prompt)
+				s.Contains(out.Suspend.Prompt, "🎉 Bem-vindo ao MeControla! 🎉")
 				s.Contains(out.Suspend.Prompt, "Vamos começar?")
 				s.Contains(out.Suspend.Prompt, "objetivo")
 				s.Contains(out.Suspend.Prompt, "valor da meta")
 				s.Contains(out.Suspend.Prompt, "R$ 400.000,00")
-				s.NotContains(out.Suspend.Prompt, "Bem-vindo")
 				s.Equal(PhaseGoal, out.State.Phase)
 			},
 		},
@@ -1089,17 +1084,27 @@ func (s *OnboardingWorkflowSuite) TestBuildMonthlyBudgetStep() {
 		expect       func(out workflow.StepOutput[OnboardingState], err error)
 	}{
 		{
-			name:         "primeira chamada deve apresentar as 5 categorias e perguntar o orcamento mensal em mensagem unica",
+			name:         "primeira chamada deve apresentar as 5 categorias com emoji e descricao e perguntar o orcamento mensal depois",
 			args:         args{state: OnboardingState{UserID: "u1"}},
 			dependencies: dependencies{agentMock: s.agentMock},
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
 				s.Equal(monthlyBudgetPrompt, out.Suspend.Prompt)
-				s.Contains(out.Suspend.Prompt, "Antes de montar seu planejamento, deixa eu te mostrar como organizamos o dinheiro por aqui. Tudo vive em apenas 5 categorias: Custo Fixo, Conhecimento, Prazeres, Metas e Liberdade Financeira.")
-				s.Contains(out.Suspend.Prompt, "orçamento mensal")
+				s.Contains(out.Suspend.Prompt, "📊 Antes de montar seu planejamento, deixa eu te mostrar como organizamos o dinheiro por aqui.")
+				s.Contains(out.Suspend.Prompt, "O dinheiro vive em apenas 5 categorias:")
+				s.Contains(out.Suspend.Prompt, "💰 Custo Fixo: contas essenciais e compromissos recorrentes, como moradia, mercado, transporte e saúde.")
+				s.Contains(out.Suspend.Prompt, "🎓 Conhecimento: cursos, livros, mentorias e aprendizados que aumentam sua capacidade de ganhar ou administrar dinheiro.")
+				s.Contains(out.Suspend.Prompt, "🎉 Prazeres: lazer, restaurantes, viagens, presentes e escolhas que trazem qualidade de vida.")
+				s.Contains(out.Suspend.Prompt, "🎯 Metas: objetivos com prazo e valor definidos, como quitar dívida, comprar algo importante ou montar uma reserva específica.")
+				s.Contains(out.Suspend.Prompt, "🏦 Liberdade Financeira: reserva de emergência, investimentos e aportes para independência financeira.")
+				s.Contains(out.Suspend.Prompt, "Qual é o seu orçamento mensal?")
 				s.NotContains(out.Suspend.Prompt, "renda")
 				s.NotContains(out.Suspend.Prompt, "Faz sentido?")
+				// A pergunta deve vir depois da lista de categorias.
+				idxCategorias := strings.Index(out.Suspend.Prompt, "🏦 Liberdade Financeira")
+				idxOrcamento := strings.Index(out.Suspend.Prompt, "Qual é o seu orçamento mensal?")
+				s.Greater(idxOrcamento, idxCategorias)
 				s.Equal(PhaseMonthlyBudget, out.State.Phase)
 			},
 		},
@@ -1795,20 +1800,82 @@ func (s *OnboardingWorkflowSuite) TestBuildCardsStep() {
 		s.True(thirdOut.State.CardsDone)
 	})
 
-	s.Run("cartao invalido deve re-suspender com reprompt sem criar cartao parcial", func() {
+	s.Run("cartao sem nome deve re-suspender explicando que falta apelido/banco sem criar cartao parcial", func() {
 		s.SetupTest()
 		s.agentMock.EXPECT().
 			Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
-			Return(agentpkg.Result{RawJSON: cardExtractJSON(s.T(), cardExtract{WantsCard: true, Nickname: "", Bank: "Nubank", DueDay: 10})}, nil).Once()
+			Return(agentpkg.Result{RawJSON: cardExtractJSON(s.T(), cardExtract{WantsCard: true, Nickname: "", Bank: "", DueDay: 10})}, nil).Once()
 
 		step := workflow.NewStepFunc(stepCardsID, BuildCardsStep(s.agentMock, s.cardsMock))
-		out, err := step.Execute(s.ctx, OnboardingState{UserID: userID, Phase: PhaseCards, ResumeText: "vencimento dia 10, banco Nubank"})
+		out, err := step.Execute(s.ctx, OnboardingState{UserID: userID, Phase: PhaseCards, ResumeText: "vencimento dia 10"})
 
 		s.NoError(err)
 		s.Equal(workflow.StepStatusSuspended, out.Status)
-		s.Equal(cardsReprompt, out.Suspend.Prompt)
+		s.Equal(cardsRepromptFor(cardMissingName), out.Suspend.Prompt)
+		s.Contains(out.Suspend.Prompt, "💳")
 		s.False(out.State.CardsDone)
 		s.cardsMock.AssertNotCalled(s.T(), "CreateCard", mock.Anything, mock.Anything)
+	})
+
+	s.Run("cartao sem vencimento deve re-suspender explicando que falta dueDay sem criar cartao parcial", func() {
+		s.SetupTest()
+		s.agentMock.EXPECT().
+			Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+			Return(agentpkg.Result{RawJSON: cardExtractJSON(s.T(), cardExtract{WantsCard: true, Nickname: "Nubank", Bank: "Nubank", DueDay: 0})}, nil).Once()
+
+		step := workflow.NewStepFunc(stepCardsID, BuildCardsStep(s.agentMock, s.cardsMock))
+		out, err := step.Execute(s.ctx, OnboardingState{UserID: userID, Phase: PhaseCards, ResumeText: "Nubank"})
+
+		s.NoError(err)
+		s.Equal(workflow.StepStatusSuspended, out.Status)
+		s.Equal(cardsRepromptFor(cardMissingDueDay), out.Suspend.Prompt)
+		s.Contains(out.Suspend.Prompt, "💳")
+		s.False(out.State.CardsDone)
+		s.cardsMock.AssertNotCalled(s.T(), "CreateCard", mock.Anything, mock.Anything)
+	})
+
+	s.Run("banco unico preenche apelido e cria cartao valido", func() {
+		s.SetupTest()
+		s.agentMock.EXPECT().
+			Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+			Return(agentpkg.Result{RawJSON: cardExtractJSON(s.T(), cardExtract{WantsCard: true, Nickname: "", Bank: "Santander", DueDay: 1})}, nil).Once()
+		s.cardsMock.EXPECT().
+			CreateCard(mock.Anything, interfaces.NewCard{UserID: userUUID, Nickname: "Santander", Bank: "Santander", DueDay: 1}).
+			Return(interfaces.CardRef{}, nil).Once()
+		s.cardsMock.EXPECT().
+			ListCards(mock.Anything, userUUID).
+			Return([]interfaces.Card{{Nickname: "Santander"}}, nil).Once()
+
+		step := workflow.NewStepFunc(stepCardsID, BuildCardsStep(s.agentMock, s.cardsMock))
+		out, err := step.Execute(s.ctx, OnboardingState{UserID: userID, Phase: PhaseCards, ResumeText: "Santander, vencimento dia 1"})
+
+		s.NoError(err)
+		s.Equal(workflow.StepStatusSuspended, out.Status)
+		s.Equal(cardsPrompt(1), out.Suspend.Prompt)
+		s.False(out.State.CardsDone)
+	})
+
+	s.Run("bancos do PRD com vencimento dia 1 criam cartao com nickname e bank preenchidos", func() {
+		for _, bank := range []string{"Santander", "Nubank", "XP"} {
+			s.SetupTest()
+			s.agentMock.EXPECT().
+				Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+				Return(agentpkg.Result{RawJSON: cardExtractJSON(s.T(), cardExtract{WantsCard: true, Nickname: "", Bank: bank, DueDay: 1})}, nil).Once()
+			s.cardsMock.EXPECT().
+				CreateCard(mock.Anything, interfaces.NewCard{UserID: userUUID, Nickname: bank, Bank: bank, DueDay: 1}).
+				Return(interfaces.CardRef{}, nil).Once()
+			s.cardsMock.EXPECT().
+				ListCards(mock.Anything, userUUID).
+				Return([]interfaces.Card{{Nickname: bank}}, nil).Once()
+
+			step := workflow.NewStepFunc(stepCardsID, BuildCardsStep(s.agentMock, s.cardsMock))
+			out, err := step.Execute(s.ctx, OnboardingState{UserID: userID, Phase: PhaseCards, ResumeText: fmt.Sprintf("%s, vencimento dia 1", bank)})
+
+			s.NoError(err, "banco=%s", bank)
+			s.Equal(workflow.StepStatusSuspended, out.Status, "banco=%s", bank)
+			s.Equal(cardsPrompt(1), out.Suspend.Prompt, "banco=%s", bank)
+			s.False(out.State.CardsDone, "banco=%s", bank)
+		}
 	})
 
 	s.Run("erro ao criar cartao deve falhar o step sem marcar CardsDone", func() {
@@ -1827,6 +1894,78 @@ func (s *OnboardingWorkflowSuite) TestBuildCardsStep() {
 		s.Equal(workflow.StepStatusFailed, out.Status)
 		s.False(out.State.CardsDone)
 	})
+}
+
+func (s *OnboardingWorkflowSuite) TestNormalizeCardExtract_ReplicatesSingleName() {
+	scenarios := []struct {
+		nickname string
+		bank     string
+		wantNick string
+		wantBank string
+	}{
+		{nickname: "Nubank", bank: "", wantNick: "Nubank", wantBank: "Nubank"},
+		{nickname: "", bank: "Nubank", wantNick: "Nubank", wantBank: "Nubank"},
+		{nickname: "Nubank", bank: "Nubank", wantNick: "Nubank", wantBank: "Nubank"},
+		{nickname: "", bank: "", wantNick: "", wantBank: ""},
+	}
+	for _, scenario := range scenarios {
+		got := normalizeCardExtract(cardExtract{Nickname: scenario.nickname, Bank: scenario.bank})
+		s.Equal(scenario.wantNick, got.Nickname, "nickname=%q bank=%q", scenario.nickname, scenario.bank)
+		s.Equal(scenario.wantBank, got.Bank, "nickname=%q bank=%q", scenario.nickname, scenario.bank)
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestClassifyCardMissing() {
+	scenarios := []struct {
+		nickname string
+		bank     string
+		dueDay   int
+		expected cardMissingField
+	}{
+		{nickname: "Nubank", bank: "Nubank", dueDay: 10, expected: cardMissingNone},
+		{nickname: "", bank: "", dueDay: 10, expected: cardMissingName},
+		{nickname: "Nubank", bank: "Nubank", dueDay: 0, expected: cardMissingDueDay},
+		{nickname: "", bank: "", dueDay: 0, expected: cardMissingNameAndDueDay},
+	}
+	for _, scenario := range scenarios {
+		got := classifyCardMissing(scenario.nickname, scenario.bank, scenario.dueDay)
+		s.Equal(scenario.expected, got, "nickname=%q bank=%q dueDay=%d", scenario.nickname, scenario.bank, scenario.dueDay)
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestMonthlyBudgetPrompt_HasExactRF06Copy() {
+	expected := `📊 Antes de montar seu planejamento, deixa eu te mostrar como organizamos o dinheiro por aqui.
+
+O dinheiro vive em apenas 5 categorias:
+
+💰 Custo Fixo: contas essenciais e compromissos recorrentes, como moradia, mercado, transporte e saúde.
+🎓 Conhecimento: cursos, livros, mentorias e aprendizados que aumentam sua capacidade de ganhar ou administrar dinheiro.
+🎉 Prazeres: lazer, restaurantes, viagens, presentes e escolhas que trazem qualidade de vida.
+🎯 Metas: objetivos com prazo e valor definidos, como quitar dívida, comprar algo importante ou montar uma reserva específica.
+🏦 Liberdade Financeira: reserva de emergência, investimentos e aportes para independência financeira.
+
+Qual é o seu orçamento mensal? (por exemplo: R$ 3.500,00)`
+	s.Equal(expected, monthlyBudgetPrompt)
+}
+
+func (s *OnboardingWorkflowSuite) TestCardsPrompts_UseCardEmoji() {
+	s.Contains(cardsPrompt(0), "💳")
+	s.Contains(cardsPrompt(0), "cadastrar")
+	s.Contains(cardsPrompt(0), "opcional")
+	s.NotContains(cardsPrompt(0), "cartão de crédito")
+	s.NotContains(cardsPrompt(0), "sem cartão")
+
+	s.Contains(cardsPrompt(1), "💳")
+	s.Contains(cardsPrompt(1), "OUTRO 💳")
+	s.Contains(cardsPrompt(1), "cadastrado(s)")
+	s.NotContains(cardsPrompt(1), "cartão de crédito")
+
+	s.Contains(cardsReprompt, "💳")
+	s.NotContains(cardsReprompt, "cartão de crédito")
+
+	s.Contains(cardsRepromptFor(cardMissingName), "💳")
+	s.Contains(cardsRepromptFor(cardMissingDueDay), "💳")
+	s.Contains(cardsRepromptFor(cardMissingNameAndDueDay), "💳")
 }
 
 func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_UpsertsWorkingMemoryAndSetsPhase() {
@@ -1971,9 +2110,9 @@ func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_SequenceStartsAtWe
 
 	s.NoError(err)
 	s.Equal(workflow.StepStatusSuspended, out.Status)
-	s.Equal(PhaseWelcome, out.State.Phase)
+	s.Equal(PhaseGoal, out.State.Phase)
 	s.NotNil(out.Suspend)
-	s.Equal(welcomePrompt, out.Suspend.Prompt)
+	s.Equal(welcomeCombinedPrompt, out.Suspend.Prompt)
 }
 
 func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_SequenceAdvancesWelcomeToGoalOnResume() {
@@ -1987,6 +2126,24 @@ func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_SequenceAdvancesWe
 	s.NoError(err)
 	s.Equal(workflow.StepStatusSuspended, out.Status)
 	s.Equal(PhaseGoal, out.State.Phase)
+	s.Equal(welcomeCombinedPrompt, out.Suspend.Prompt)
+	s.Equal("", out.State.ResumeText)
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_LegacyWelcomeResume_ReceivesCombinedPrompt() {
+	s.threadsMock.EXPECT().GetOrCreate(mock.Anything, mock.Anything, mock.Anything).
+		Return(memory.Thread{ID: uuid.New()}, nil).Maybe()
+	s.messagesMock.EXPECT().Append(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	// Simula run legado suspenso no step welcome: ao retomar com "Oi",
+	// welcome completa, goal suspende com a mensagem combinada.
+	def := BuildOnboardingWorkflow(s.agentMock, s.cardsMock, s.budgetsMock, s.wmMock, s.threadsMock, s.messagesMock)
+	out, err := def.Root.Execute(s.ctx, OnboardingState{UserID: "user-x", PeerID: "peer-x", ResumeText: "Oi"})
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusSuspended, out.Status)
+	s.Equal(PhaseGoal, out.State.Phase)
+	s.Equal(welcomeCombinedPrompt, out.Suspend.Prompt)
 	s.Equal("", out.State.ResumeText)
 }
 
@@ -2089,10 +2246,17 @@ func (s *OnboardingWorkflowSuite) TestWrapStepWithMessages_NoPeerID_NoAppend() {
 	s.Equal(workflow.StepStatusSuspended, out.Status)
 }
 
-func (s *OnboardingWorkflowSuite) TestWelcomeGoalPromptHasNoThirdPersonLeak() {
-	s.NotContains(welcomeGoalPrompt, "o usuário")
-	s.NotContains(welcomeGoalPrompt, "peça")
-	s.True(strings.Contains(welcomeGoalPrompt, "Vamos começar?"))
+func (s *OnboardingWorkflowSuite) TestWelcomeCombinedPrompt_HasExactRF03Copy() {
+	expected := `🎉 Bem-vindo ao MeControla! 🎉
+
+Estou aqui para te ajudar a organizar suas finanças e conquistar seus objetivos. 💪💰
+
+Vamos começar? Qual é o seu principal objetivo financeiro para este mês?
+(por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva; se quiser, já pode me contar o valor da meta, tipo "comprar uma casa, meta de R$ 400.000,00")`
+	s.Equal(expected, welcomeCombinedPrompt)
+	s.NotContains(welcomeCombinedPrompt, "o usuário")
+	s.NotContains(welcomeCombinedPrompt, "peça")
+	s.True(strings.Contains(welcomeCombinedPrompt, "Vamos começar?"))
 }
 
 func (s *OnboardingWorkflowSuite) TestM02_NoRendaTermInAnyOnboardingSurface() {
@@ -2106,8 +2270,7 @@ func (s *OnboardingWorkflowSuite) TestM02_NoRendaTermInAnyOnboardingSurface() {
 	}
 
 	surfaces := map[string]string{
-		"welcomePrompt":                   welcomePrompt,
-		"welcomeGoalPrompt":               welcomeGoalPrompt,
+		"welcomeCombinedPrompt":           welcomeCombinedPrompt,
 		"goalReprompt":                    goalReprompt,
 		"goalValueReprompt":               goalValueReprompt,
 		"monthlyBudgetPrompt":             monthlyBudgetPrompt,

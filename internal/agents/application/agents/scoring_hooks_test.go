@@ -197,6 +197,73 @@ func (s *ScoringHooksSuite) TestAfterTool_CapturesArgs() {
 	}
 }
 
+func (s *ScoringHooksSuite) TestAfterTool_CapturesVerbatimTextForScorer() {
+	runID := uuid.New()
+	verbatimMessage := "Confirma o registro dessa despesa? Responda sim para confirmar."
+
+	s.runner.EXPECT().
+		Observe(mock.Anything, mock.Anything, mock.Anything).
+		Run(func(_ context.Context, _ uuid.UUID, sample scorer.RunSample) {
+			s.Require().Equal(verbatimMessage, sample.Metadata["verbatim_text"], "RF-39: metadata deve conter texto verbatim da tool para scorer verbatim_required")
+		}).
+		Return().
+		Once()
+
+	hooks := NewScoringHooks(s.runner, s.obs)
+	ctx := agent.WithRunID(s.ctx, runID)
+	ctx = hooks.BeforeExecute(ctx, "mecontrola-agent", agent.Request{Messages: []llm.Message{
+		{Role: "user", Content: "gastei 50 no mercado"},
+	}})
+
+	resultBytes := []byte(`{"outcome":"clarify","message":"` + verbatimMessage + `"}`)
+	hooks.AfterTool(ctx, "mecontrola-agent", "register_expense", []byte(`{}`), resultBytes, nil)
+	hooks.AfterExecute(ctx, "mecontrola-agent", agent.Result{Content: verbatimMessage}, nil)
+}
+
+func (s *ScoringHooksSuite) TestAfterTool_VerbatimTextNotOverriddenByLaterEmptyTool() {
+	runID := uuid.New()
+	verbatimMessage := "Confirma o registro dessa despesa?"
+
+	s.runner.EXPECT().
+		Observe(mock.Anything, mock.Anything, mock.Anything).
+		Run(func(_ context.Context, _ uuid.UUID, sample scorer.RunSample) {
+			s.Require().Equal(verbatimMessage, sample.Metadata["verbatim_text"])
+		}).
+		Return().
+		Once()
+
+	hooks := NewScoringHooks(s.runner, s.obs)
+	ctx := agent.WithRunID(s.ctx, runID)
+	ctx = hooks.BeforeExecute(ctx, "mecontrola-agent", agent.Request{Messages: []llm.Message{
+		{Role: "user", Content: "quanto gastei"},
+	}})
+
+	hooks.AfterTool(ctx, "mecontrola-agent", "register_expense", []byte(`{}`), []byte(`{"outcome":"clarify","message":"`+verbatimMessage+`"}`), nil)
+	hooks.AfterTool(ctx, "mecontrola-agent", "query_month", []byte(`{}`), []byte(`{"entries":[]}`), nil)
+	hooks.AfterExecute(ctx, "mecontrola-agent", agent.Result{Content: verbatimMessage}, nil)
+}
+
+func (s *ScoringHooksSuite) TestAfterTool_ErroneousToolDoesNotSetVerbatim() {
+	runID := uuid.New()
+
+	s.runner.EXPECT().
+		Observe(mock.Anything, mock.Anything, mock.Anything).
+		Run(func(_ context.Context, _ uuid.UUID, sample scorer.RunSample) {
+			s.Nil(sample.Metadata)
+		}).
+		Return().
+		Once()
+
+	hooks := NewScoringHooks(s.runner, s.obs)
+	ctx := agent.WithRunID(s.ctx, runID)
+	ctx = hooks.BeforeExecute(ctx, "mecontrola-agent", agent.Request{Messages: []llm.Message{
+		{Role: "user", Content: "gastei 50 no mercado"},
+	}})
+
+	hooks.AfterTool(ctx, "mecontrola-agent", "register_expense", []byte(`{}`), []byte(`{"outcome":"clarify","message":"Confirma?"}`), errors.New("tool failed"))
+	hooks.AfterExecute(ctx, "mecontrola-agent", agent.Result{Content: "ok"}, nil)
+}
+
 func (s *ScoringHooksSuite) TestExtractOutcome() {
 	scenarios := []struct {
 		name        string

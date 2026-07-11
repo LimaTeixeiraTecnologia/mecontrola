@@ -7,6 +7,7 @@ import (
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/agents/guards"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/scorer"
@@ -15,8 +16,9 @@ import (
 type scoringStateKey struct{}
 
 type scoringObservation struct {
-	input     string
-	toolCalls []scorer.ToolCallRecord
+	input        string
+	toolCalls    []scorer.ToolCallRecord
+	verbatimText string
 }
 
 type ScoringHooks struct {
@@ -60,6 +62,7 @@ func (h *ScoringHooks) AfterExecute(ctx context.Context, agentID string, result 
 		Input:     obs.input,
 		Output:    result.Content,
 		ToolCalls: obs.toolCalls,
+		Metadata:  buildScoringMetadata(obs),
 	})
 }
 
@@ -94,6 +97,12 @@ func (h *ScoringHooks) AfterTool(ctx context.Context, _, toolID string, argsJSON
 		outcome = agent.ToolOutcomeUsecaseError.String()
 	}
 	obs.toolCalls = append(obs.toolCalls, scorer.ToolCallRecord{ID: toolID, Name: toolID, Args: args, Outcome: outcome})
+
+	if err == nil && len(resultBytes) > 0 {
+		if text := guards.ExtractVerbatimField(string(resultBytes)); text != "" {
+			obs.verbatimText = text
+		}
+	}
 }
 
 func extractOutcome(resultBytes []byte) string {
@@ -107,6 +116,13 @@ func extractOutcome(resultBytes []byte) string {
 		return ""
 	}
 	return payload.Outcome
+}
+
+func buildScoringMetadata(obs *scoringObservation) map[string]any {
+	if obs.verbatimText == "" {
+		return nil
+	}
+	return map[string]any{"verbatim_text": obs.verbatimText}
 }
 
 func lastUserMessage(msgs []llm.Message) string {

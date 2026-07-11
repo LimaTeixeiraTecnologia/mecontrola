@@ -40,7 +40,7 @@ func (s *PendingEntryWorkflowSuite) SetupTest() {
 	s.store = newWfStore()
 	s.ledger = imocks.NewTransactionsLedger(s.T())
 	s.engine = workflow.NewEngine[PendingEntryState](s.store, fake.NewProvider())
-	s.def = BuildPendingEntryWorkflow(s.ledger, nil, nil, nil)
+	s.def = BuildPendingEntryWorkflowWithObservability(s.ledger, nil, nil, nil, nil)
 	s.userID = uuid.New()
 }
 
@@ -74,6 +74,11 @@ func (s *PendingEntryWorkflowSuite) key(suffix string) string {
 
 func (s *PendingEntryWorkflowSuite) resumePayload(text string) []byte {
 	b, _ := json.Marshal(map[string]string{"resumeText": text})
+	return b
+}
+
+func (s *PendingEntryWorkflowSuite) resumePayloadWithMsgID(text, msgID string) []byte {
+	b, _ := json.Marshal(map[string]string{"resumeText": text, "incomingMessageId": msgID})
 	return b
 }
 
@@ -220,6 +225,46 @@ func (s *PendingEntryWorkflowSuite) TestResume_Reprompt_MaxReached_Cancels() {
 	s.Equal(PendingStatusCancelled, result.State.Status)
 }
 
+func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_PixWithoutCard_PersistsTransaction_RF17_RF18_RF19() {
+	state := s.newState(AwaitingSlotConfirmation)
+	state.AmountCents = 5000
+	state.Description = "supermercado"
+	state.PaymentMethod = "pix"
+	state.CardID = nil
+	k := s.key("thr-pix-no-card")
+
+	var captured ifaces.RawTransaction
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.MatchedBy(func(in ifaces.RawTransaction) bool {
+			captured = in
+			return in.AmountCents == 5000 &&
+				in.Description == "supermercado" &&
+				in.PaymentMethod == "pix" &&
+				in.Direction == "outcome" &&
+				in.OriginWamid == "wamid-001" &&
+				in.OriginOperation == originOperationPending &&
+				in.CardID == nil &&
+				in.CategoryID != uuid.Nil &&
+				in.SubcategoryID != nil
+		})).
+		Return(ifaces.EntryRef{ID: uuid.New(), Kind: ifaces.EntryKindTransaction}, nil).
+		Once()
+
+	_, err := s.engine.Start(s.ctx, s.def, k, state)
+	s.Require().NoError(err)
+
+	result, err := s.engine.Resume(s.ctx, s.def, k, s.resumePayload("sim"))
+
+	s.NoError(err)
+	s.Equal(workflow.RunStatusSucceeded, result.Status)
+	s.Equal(PendingStatusCompleted, result.State.Status)
+	s.NotContains(result.State.ResponseText, "Não consegui registrar")
+	s.Contains(result.State.ResponseText, "R$ 50,00")
+	s.NotNil(captured)
+	s.NotEqual(uuid.Nil, captured.CategoryID)
+	s.NotNil(captured.SubcategoryID)
+}
+
 func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_Accept_Sim() {
 	state := s.newState(AwaitingSlotConfirmation)
 	k := s.key("thr-confirm-accept")
@@ -309,7 +354,7 @@ func (s *PendingEntryWorkflowSuite) TestResume_RF23_ApósExaustãoDeRetryProxima
 	k := s.key("thr-confirm-rf23-revive")
 
 	cats := imocks.NewCategoriesReader(s.T())
-	def := BuildPendingEntryWorkflow(s.ledger, nil, cats, nil)
+	def := BuildPendingEntryWorkflowWithObservability(s.ledger, nil, cats, nil, nil)
 
 	cats.EXPECT().
 		ResolveForWrite(mock.Anything, mock.Anything).
@@ -371,7 +416,7 @@ func (s *PendingEntryWorkflowSuite) TestResume_RF23_LimiteDeRevivasEntreTurnosIm
 	k := s.key("thr-confirm-rf23-cap")
 
 	cats := imocks.NewCategoriesReader(s.T())
-	def := BuildPendingEntryWorkflow(s.ledger, nil, cats, nil)
+	def := BuildPendingEntryWorkflowWithObservability(s.ledger, nil, cats, nil, nil)
 
 	cats.EXPECT().
 		ResolveForWrite(mock.Anything, mock.Anything).
@@ -423,7 +468,7 @@ func (s *PendingEntryWorkflowSuite) TestResume_RF23_RepromptDeConfirmacaoNaoCons
 	state := s.newState(AwaitingSlotConfirmation)
 	k := s.key("thr-confirm-rf23-reprompt-isolado")
 
-	def := BuildPendingEntryWorkflow(s.ledger, nil, nil, nil)
+	def := BuildPendingEntryWorkflowWithObservability(s.ledger, nil, nil, nil, nil)
 
 	_, err := s.engine.Start(s.ctx, def, k, state)
 	s.Require().NoError(err)
@@ -490,7 +535,7 @@ func (f *fakeIdempotentWriter) Execute(
 func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_IdempotentPath_TransientFailure_RetriesOnce_RF22() {
 	state := s.newState(AwaitingSlotConfirmation)
 	k := s.key("thr-confirm-idem-retry")
-	def := BuildPendingEntryWorkflow(s.ledger, nil, nil, &fakeIdempotentWriter{
+	def := BuildPendingEntryWorkflowWithObservability(s.ledger, nil, nil, &fakeIdempotentWriter{
 		results: []struct {
 			id      uuid.UUID
 			outcome agent.ToolOutcome
@@ -499,7 +544,7 @@ func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_IdempotentPath_Trans
 			{id: uuid.Nil, outcome: 0, err: context.DeadlineExceeded},
 			{id: uuid.New(), outcome: agent.ToolOutcomeRouted, err: nil},
 		},
-	})
+	}, nil)
 
 	_, err := s.engine.Start(s.ctx, def, k, state)
 	s.Require().NoError(err)
@@ -524,7 +569,7 @@ func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_IdempotentPath_Repla
 			{id: existingID, outcome: agent.ToolOutcomeReplay, err: nil},
 		},
 	}
-	def := BuildPendingEntryWorkflow(s.ledger, nil, nil, writer)
+	def := BuildPendingEntryWorkflowWithObservability(s.ledger, nil, nil, writer, nil)
 
 	_, err := s.engine.Start(s.ctx, def, k, state)
 	s.Require().NoError(err)
@@ -642,6 +687,29 @@ func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_Reprompt_CA14() {
 	s.NoError(err)
 	s.Equal(workflow.RunStatusSuspended, result.Status)
 	s.Equal(1, result.State.ConfirmRepromptCount)
+}
+
+func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_SameMessageID_NoDoubleWrite_RF27() {
+	state := s.newState(AwaitingSlotConfirmation)
+	k := s.key("thr-confirm-replay-msgid")
+
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.Anything).
+		Return(ifaces.EntryRef{ID: uuid.New(), Kind: ifaces.EntryKindTransaction}, nil).
+		Once()
+
+	_, err := s.engine.Start(s.ctx, s.def, k, state)
+	s.Require().NoError(err)
+
+	first, err := s.engine.Resume(s.ctx, s.def, k, s.resumePayloadWithMsgID("sim", "wamid-confirm-replay"))
+	s.NoError(err)
+	s.Equal(workflow.RunStatusSucceeded, first.Status)
+	s.Equal(PendingStatusCompleted, first.State.Status)
+
+	second, err := s.engine.Resume(s.ctx, s.def, k, s.resumePayloadWithMsgID("sim", "wamid-confirm-replay"))
+	s.NoError(err)
+	s.Equal(workflow.RunStatus(0), second.Status)
+	s.ledger.AssertNumberOfCalls(s.T(), "CreateTransaction", 1)
 }
 
 func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_2ndAmbiguous_Cancels_CA14() {
@@ -768,7 +836,7 @@ func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_KindMismatch_Reclass
 	incomeSub := uuid.MustParse("44444444-4444-4444-4444-444444444444")
 
 	cats := imocks.NewCategoriesReader(s.T())
-	def := BuildPendingEntryWorkflow(s.ledger, nil, cats, nil)
+	def := BuildPendingEntryWorkflowWithObservability(s.ledger, nil, cats, nil, nil)
 
 	cats.EXPECT().
 		ResolveForWrite(mock.Anything, ifaces.CategoryWriteRequest{
@@ -827,7 +895,7 @@ func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_KindMismatch_NoCompa
 	k := s.key("thr-kind-clarify")
 
 	cats := imocks.NewCategoriesReader(s.T())
-	def := BuildPendingEntryWorkflow(s.ledger, nil, cats, nil)
+	def := BuildPendingEntryWorkflowWithObservability(s.ledger, nil, cats, nil, nil)
 
 	cats.EXPECT().
 		ResolveForWrite(mock.Anything, ifaces.CategoryWriteRequest{
@@ -867,7 +935,7 @@ func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_ExpenseKindMismatch_
 	expenseSub := uuid.MustParse("66666666-6666-6666-6666-666666666666")
 
 	cats := imocks.NewCategoriesReader(s.T())
-	def := BuildPendingEntryWorkflow(s.ledger, nil, cats, nil)
+	def := BuildPendingEntryWorkflowWithObservability(s.ledger, nil, cats, nil, nil)
 
 	cats.EXPECT().
 		ResolveForWrite(mock.Anything, ifaces.CategoryWriteRequest{
@@ -924,7 +992,7 @@ func (s *PendingEntryWorkflowSuite) TestResume_Confirmation_NonKindBusinessRejec
 	k := s.key("thr-kind-not-mismatch")
 
 	cats := imocks.NewCategoriesReader(s.T())
-	def := BuildPendingEntryWorkflow(s.ledger, nil, cats, nil)
+	def := BuildPendingEntryWorkflowWithObservability(s.ledger, nil, cats, nil, nil)
 
 	cats.EXPECT().
 		ResolveForWrite(mock.Anything, mock.Anything).

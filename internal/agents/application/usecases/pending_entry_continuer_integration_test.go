@@ -88,7 +88,7 @@ func (s *PendingEntryContinuerIntegrationSuite) TestInteg_EscritaFalhaNoResume_G
 	engine := workflow.NewEngine[workflows.PendingEntryState](workflowStore, obs)
 
 	ledger := &continuerFailingLedger{forceErr: errors.New("db unavailable")}
-	def := workflows.BuildPendingEntryWorkflow(ledger, nil, nil, nil)
+	def := workflows.BuildPendingEntryWorkflowWithObservability(ledger, nil, nil, nil, nil)
 
 	userID := uuid.New()
 	threadID := "thread-integ-" + uuid.NewString()
@@ -158,7 +158,7 @@ func (s *PendingEntryContinuerIntegrationSuite) TestInteg_Cancelamento_RunNaoFic
 	engine := workflow.NewEngine[workflows.PendingEntryState](workflowStore, obs)
 
 	ledger := &continuerFailingLedger{}
-	def := workflows.BuildPendingEntryWorkflow(ledger, nil, nil, nil)
+	def := workflows.BuildPendingEntryWorkflowWithObservability(ledger, nil, nil, nil, nil)
 
 	userID := uuid.New()
 	threadID := "thread-integ-" + uuid.NewString()

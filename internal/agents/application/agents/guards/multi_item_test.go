@@ -49,6 +49,13 @@ func (s *MultiItemGuardSuite) TestDetectMultipleMonetaryValues() {
 			},
 		},
 		{
+			name: "receita simples salario com separador de milhar nao deve disparar",
+			args: args{message: "Recebi R$ 13.874,40 de salário"},
+			expect: func(matched bool) {
+				s.False(matched)
+			},
+		},
+		{
 			name: "valor unico com milhar e centavos nao deve disparar",
 			args: args{message: "gastei R$ 1.234,56 no mercado"},
 			expect: func(matched bool) {

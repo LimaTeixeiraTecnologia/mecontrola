@@ -41,7 +41,7 @@ func BuildCountCardsTool(cards interfaces.CardManager) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool("count_cards", "Conta o número de cartões de crédito do usuário.", in, out, buildCountCardsExec(cards))
+	return tool.NewTool("count_cards", "Conta o número de 💳 de crédito do usuário.", in, out, buildCountCardsExec(cards))
 }
 
 func buildCountCardsExec(cards interfaces.CardManager) func(context.Context, CountCardsInput) (CountCardsOutput, error) {

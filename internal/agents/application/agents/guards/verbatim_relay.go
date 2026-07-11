@@ -27,7 +27,7 @@ func (g *verbatimRelayGuard) Name() string {
 }
 
 func (g *verbatimRelayGuard) Inspect(_ context.Context, _ agent.Request, out agent.Result) GuardDecision {
-	expected := expectedVerbatimText(out.ToolCalls)
+	expected := ExpectedVerbatimText(out.ToolCalls)
 	if expected == "" || expected == out.Content {
 		return GuardDecision{}
 	}
@@ -36,12 +36,12 @@ func (g *verbatimRelayGuard) Inspect(_ context.Context, _ agent.Request, out age
 	return GuardDecision{Handled: true, Result: forced}
 }
 
-func expectedVerbatimText(calls []agent.ToolCallRecord) string {
+func ExpectedVerbatimText(calls []agent.ToolCallRecord) string {
 	for _, call := range slices.Backward(calls) {
 		if call.Outcome != agent.ToolCallOutcomeSuccess {
 			continue
 		}
-		text := extractVerbatimField(call.Content)
+		text := ExtractVerbatimField(call.Content)
 		if text != "" {
 			return text
 		}
@@ -49,7 +49,7 @@ func expectedVerbatimText(calls []agent.ToolCallRecord) string {
 	return ""
 }
 
-func extractVerbatimField(rawJSON string) string {
+func ExtractVerbatimField(rawJSON string) string {
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(rawJSON), &payload); err != nil {
 		return ""
