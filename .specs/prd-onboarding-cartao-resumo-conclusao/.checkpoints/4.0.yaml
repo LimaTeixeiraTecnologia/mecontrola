@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-onboarding-cartao-resumo-conclusao/4.0_execution_report.md
+summary: Matriz de validação completa verde (build/vet/lint/test-race/integration/real-LLM/golden); zero regressão RF-17/RF-18 confirmada.
+timestamp: 2026-07-12T11:06:46Z

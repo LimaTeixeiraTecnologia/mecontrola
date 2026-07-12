@@ -1949,23 +1949,58 @@ Qual é o seu orçamento mensal? (por exemplo: R$ 3.500,00)`
 }
 
 func (s *OnboardingWorkflowSuite) TestCardsPrompts_UseCardEmoji() {
-	s.Contains(cardsPrompt(0), "💳")
+	s.Contains(cardsPrompt(0), "cartão 💳")
 	s.Contains(cardsPrompt(0), "cadastrar")
 	s.Contains(cardsPrompt(0), "opcional")
 	s.NotContains(cardsPrompt(0), "cartão de crédito")
-	s.NotContains(cardsPrompt(0), "sem cartão")
 
-	s.Contains(cardsPrompt(1), "💳")
-	s.Contains(cardsPrompt(1), "OUTRO 💳")
+	s.Contains(cardsPrompt(1), "cartão 💳")
+	s.Contains(cardsPrompt(1), "Deseja cadastrar **outro** cartão 💳 agora?")
 	s.Contains(cardsPrompt(1), "cadastrado(s)")
 	s.NotContains(cardsPrompt(1), "cartão de crédito")
+	s.NotContains(cardsPrompt(1), "OUTRO")
 
-	s.Contains(cardsReprompt, "💳")
+	s.Contains(cardsReprompt, "cartão 💳")
 	s.NotContains(cardsReprompt, "cartão de crédito")
 
-	s.Contains(cardsRepromptFor(cardMissingName), "💳")
-	s.Contains(cardsRepromptFor(cardMissingDueDay), "💳")
-	s.Contains(cardsRepromptFor(cardMissingNameAndDueDay), "💳")
+	s.Contains(cardsRepromptFor(cardMissingName), "cartão 💳")
+	s.Contains(cardsRepromptFor(cardMissingDueDay), "cartão 💳")
+	s.Contains(cardsRepromptFor(cardMissingNameAndDueDay), "cartão 💳")
+}
+
+func (s *OnboardingWorkflowSuite) TestCardsPrompts_ExactCopyWordEmojiAndExample() {
+	s.Contains(cardsPrompt(1), "Deseja cadastrar **outro** cartão 💳 agora?")
+	s.NotContains(cardsPrompt(1), "**Outro**")
+	s.NotContains(cardsPrompt(1), "**Deseja**")
+
+	s.Contains(cardsPrompt(0), "Roxinho, Nubank e vencimento dia 1")
+	s.Contains(cardsPrompt(0), "Nubank e vencimento dia primeiro")
+	s.Contains(cardsPrompt(0), "sem apelido, o apelido do cartão 💳 fica igual ao banco")
+
+	s.Contains(cardsPrompt(1), "Roxinho, Nubank e vencimento dia 1")
+	s.Contains(cardsPrompt(1), "Nubank e vencimento dia primeiro")
+	s.Contains(cardsPrompt(1), "sem apelido, o apelido do cartão 💳 fica igual ao banco")
+
+	s.Contains(cardsReprompt, "Roxinho, Nubank e vencimento dia 1")
+	s.Contains(cardsReprompt, "Nubank e vencimento dia primeiro")
+	s.Contains(cardsReprompt, "sem apelido, o apelido do cartão 💳 fica igual ao banco")
+
+	s.Contains(cardsRepromptMissingName, "sem apelido, o apelido do cartão 💳 fica igual ao banco")
+
+	s.Contains(cardsRepromptMissingDueDay, "dia 1")
+	s.Contains(cardsRepromptMissingDueDay, "dia primeiro")
+
+	s.Contains(cardsRepromptMissingBoth, "Roxinho, Nubank e vencimento dia 1")
+	s.Contains(cardsRepromptMissingBoth, "Nubank e vencimento dia primeiro")
+	s.Contains(cardsRepromptMissingBoth, "sem apelido, o apelido do cartão 💳 fica igual ao banco")
+
+	for _, prompt := range []string{
+		cardsPrompt(0), cardsPrompt(1), cardsReprompt,
+		cardsRepromptMissingName, cardsRepromptMissingDueDay, cardsRepromptMissingBoth,
+	} {
+		s.NotContains(prompt, "🪪")
+		s.NotContains(prompt, "💰💳")
+	}
 }
 
 func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_UpsertsWorkingMemoryAndSetsPhase() {
@@ -1976,8 +2011,14 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_UpsertsWorkingMemoryAn
 	s.wmMock.EXPECT().
 		UpsertMetadata(mock.Anything, state.UserID, map[string]any{"objetivo_financeiro": state.Goal}).
 		Return(nil).Once()
+	s.budgetsMock.EXPECT().
+		SuggestAllocation(mock.Anything, state.MonthlyBudgetCents, allocationBPList(state.Allocations)).
+		Return(suggestReturn(state.MonthlyBudgetCents, defaultDistributionBP), nil).Once()
+	s.cardsMock.EXPECT().
+		ListCards(mock.Anything, uuid.MustParse(state.UserID)).
+		Return(nil, nil).Once()
 
-	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock))
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock, s.budgetsMock, s.cardsMock))
 	out, err := step.Execute(s.ctx, state)
 
 	s.NoError(err)
@@ -2002,8 +2043,14 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WithGoalValuePersistsM
 			"objetivo_financeiro_valor_centavos": state.GoalValueCents,
 		}).
 		Return(nil).Once()
+	s.budgetsMock.EXPECT().
+		SuggestAllocation(mock.Anything, state.MonthlyBudgetCents, allocationBPList(state.Allocations)).
+		Return(suggestReturn(state.MonthlyBudgetCents, defaultDistributionBP), nil).Once()
+	s.cardsMock.EXPECT().
+		ListCards(mock.Anything, uuid.MustParse(state.UserID)).
+		Return(nil, nil).Once()
 
-	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock))
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock, s.budgetsMock, s.cardsMock))
 	out, err := step.Execute(s.ctx, state)
 
 	s.NoError(err)
@@ -2023,8 +2070,14 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WithoutGoalValueOmitsM
 	s.wmMock.EXPECT().
 		UpsertMetadata(mock.Anything, state.UserID, map[string]any{"objetivo_financeiro": state.Goal}).
 		Return(nil).Once()
+	s.budgetsMock.EXPECT().
+		SuggestAllocation(mock.Anything, state.MonthlyBudgetCents, allocationBPList(state.Allocations)).
+		Return(suggestReturn(state.MonthlyBudgetCents, defaultDistributionBP), nil).Once()
+	s.cardsMock.EXPECT().
+		ListCards(mock.Anything, uuid.MustParse(state.UserID)).
+		Return(nil, nil).Once()
 
-	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock))
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock, s.budgetsMock, s.cardsMock))
 	out, err := step.Execute(s.ctx, state)
 
 	s.NoError(err)
@@ -2046,8 +2099,14 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_DoesNotReopenDistribut
 	s.wmMock.EXPECT().
 		UpsertMetadata(mock.Anything, state.UserID, mock.AnythingOfType("map[string]interface {}")).
 		Return(nil).Once()
+	s.budgetsMock.EXPECT().
+		SuggestAllocation(mock.Anything, state.MonthlyBudgetCents, allocationBPList(state.Allocations)).
+		Return(suggestReturn(state.MonthlyBudgetCents, defaultDistributionBP), nil).Once()
+	s.cardsMock.EXPECT().
+		ListCards(mock.Anything, uuid.MustParse(state.UserID)).
+		Return(nil, nil).Once()
 
-	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock))
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock, s.budgetsMock, s.cardsMock))
 	out, err := step.Execute(s.ctx, state)
 
 	s.NoError(err)
@@ -2066,13 +2125,169 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WorkingMemoryHasNoInco
 	s.wmMock.EXPECT().
 		UpsertMetadata(mock.Anything, state.UserID, mock.AnythingOfType("map[string]interface {}")).
 		Return(nil).Once()
+	s.budgetsMock.EXPECT().
+		SuggestAllocation(mock.Anything, state.MonthlyBudgetCents, allocationBPList(state.Allocations)).
+		Return(suggestReturn(state.MonthlyBudgetCents, defaultDistributionBP), nil).Once()
+	s.cardsMock.EXPECT().
+		ListCards(mock.Anything, uuid.MustParse(state.UserID)).
+		Return(nil, nil).Once()
 
-	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock))
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock, s.budgetsMock, s.cardsMock))
 	_, err := step.Execute(s.ctx, state)
 
 	s.NoError(err)
 	s.NotContains(strings.ToLower(capturedContent), "renda")
 	s.NotContains(strings.ToLower(capturedContent), "orçamento")
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_SummaryWithoutCardsIndicatesNoneCadastrado() {
+	state := OnboardingState{
+		UserID:             "11111111-1111-1111-1111-111111111111",
+		Goal:               "economizar",
+		MonthlyBudgetCents: 500000,
+		Allocations:        defaultDistributionBP,
+		Recurrence:         false,
+	}
+	s.wmMock.EXPECT().
+		Upsert(mock.Anything, state.UserID, mock.AnythingOfType("string")).
+		Return(nil).Once()
+	s.wmMock.EXPECT().
+		UpsertMetadata(mock.Anything, state.UserID, mock.AnythingOfType("map[string]interface {}")).
+		Return(nil).Once()
+	allocations := suggestReturn(state.MonthlyBudgetCents, defaultDistributionBP)
+	s.budgetsMock.EXPECT().
+		SuggestAllocation(mock.Anything, state.MonthlyBudgetCents, allocationBPList(state.Allocations)).
+		Return(allocations, nil).Once()
+	s.cardsMock.EXPECT().
+		ListCards(mock.Anything, uuid.MustParse(state.UserID)).
+		Return([]interfaces.Card{}, nil).Once()
+
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock, s.budgetsMock, s.cardsMock))
+	out, err := step.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+	s.Contains(out.State.FinalMessage, "Resumo de Onboarding")
+	s.Contains(out.State.FinalMessage, "🎯 Objetivo: economizar")
+	s.Contains(out.State.FinalMessage, "💵 Orçamento mensal: "+money.FromCents(state.MonthlyBudgetCents).BRL())
+	s.Contains(out.State.FinalMessage, "Distribuição:")
+	s.Contains(out.State.FinalMessage, renderAllocationLines(allocations))
+	s.Contains(out.State.FinalMessage, "Cartões 💳:")
+	s.Contains(out.State.FinalMessage, "Nenhum cartão 💳 cadastrado.")
+	s.Contains(out.State.FinalMessage, "🔁 Recorrência: desligada")
+	s.Contains(out.State.FinalMessage, conclusionFinalMessage(state.Goal, state.GoalValueCents))
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_SummaryWithOneCardListsNicknameEqualsBank() {
+	state := OnboardingState{
+		UserID:             "11111111-1111-1111-1111-111111111111",
+		Goal:               "comprar uma casa",
+		GoalValueCents:     40000000,
+		MonthlyBudgetCents: 800000,
+		Allocations:        defaultDistributionBP,
+		Recurrence:         true,
+	}
+	s.wmMock.EXPECT().
+		Upsert(mock.Anything, state.UserID, mock.AnythingOfType("string")).
+		Return(nil).Once()
+	s.wmMock.EXPECT().
+		UpsertMetadata(mock.Anything, state.UserID, mock.AnythingOfType("map[string]interface {}")).
+		Return(nil).Once()
+	allocations := suggestReturn(state.MonthlyBudgetCents, defaultDistributionBP)
+	s.budgetsMock.EXPECT().
+		SuggestAllocation(mock.Anything, state.MonthlyBudgetCents, allocationBPList(state.Allocations)).
+		Return(allocations, nil).Once()
+	s.cardsMock.EXPECT().
+		ListCards(mock.Anything, uuid.MustParse(state.UserID)).
+		Return([]interfaces.Card{{Nickname: "Nubank", Bank: "Nubank", DueDay: 1}}, nil).Once()
+
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock, s.budgetsMock, s.cardsMock))
+	out, err := step.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+	s.Contains(out.State.FinalMessage, "Resumo de Onboarding")
+	s.Contains(out.State.FinalMessage, "🎯 Objetivo: comprar uma casa (meta de "+money.FromCents(state.GoalValueCents).BRL()+")")
+	s.Contains(out.State.FinalMessage, "Cartões 💳:")
+	s.Contains(out.State.FinalMessage, "- Nubank — vencimento dia 1")
+	s.Contains(out.State.FinalMessage, "🔁 Recorrência: ligada (repete pelos próximos 12 meses)")
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_SummaryWithMultipleCardsListsEachWithNicknameAndBank() {
+	state := OnboardingState{
+		UserID:             "11111111-1111-1111-1111-111111111111",
+		Goal:               "economizar",
+		MonthlyBudgetCents: 500000,
+		Allocations:        defaultDistributionBP,
+		Recurrence:         false,
+	}
+	s.wmMock.EXPECT().
+		Upsert(mock.Anything, state.UserID, mock.AnythingOfType("string")).
+		Return(nil).Once()
+	s.wmMock.EXPECT().
+		UpsertMetadata(mock.Anything, state.UserID, mock.AnythingOfType("map[string]interface {}")).
+		Return(nil).Once()
+	allocations := suggestReturn(state.MonthlyBudgetCents, defaultDistributionBP)
+	s.budgetsMock.EXPECT().
+		SuggestAllocation(mock.Anything, state.MonthlyBudgetCents, allocationBPList(state.Allocations)).
+		Return(allocations, nil).Once()
+	s.cardsMock.EXPECT().
+		ListCards(mock.Anything, uuid.MustParse(state.UserID)).
+		Return([]interfaces.Card{
+			{Nickname: "Roxinho", Bank: "Nubank", DueDay: 1},
+			{Nickname: "Inter", Bank: "Inter", DueDay: 10},
+		}, nil).Once()
+
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock, s.budgetsMock, s.cardsMock))
+	out, err := step.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+	s.Contains(out.State.FinalMessage, "- Roxinho (Nubank) — vencimento dia 1")
+	s.Contains(out.State.FinalMessage, "- Inter — vencimento dia 10")
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_SuggestAllocationFailureFailsStepWithoutPartialSummary() {
+	state := OnboardingState{UserID: "11111111-1111-1111-1111-111111111111", Goal: "economizar"}
+	s.wmMock.EXPECT().
+		Upsert(mock.Anything, state.UserID, mock.AnythingOfType("string")).
+		Return(nil).Once()
+	s.wmMock.EXPECT().
+		UpsertMetadata(mock.Anything, state.UserID, mock.AnythingOfType("map[string]interface {}")).
+		Return(nil).Once()
+	s.budgetsMock.EXPECT().
+		SuggestAllocation(mock.Anything, state.MonthlyBudgetCents, allocationBPList(state.Allocations)).
+		Return(nil, errors.New("suggest allocation failure")).Once()
+
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock, s.budgetsMock, s.cardsMock))
+	out, err := step.Execute(s.ctx, state)
+
+	s.Error(err)
+	s.Equal(workflow.StepStatusFailed, out.Status)
+	s.Empty(out.State.FinalMessage)
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_ListCardsFailureFailsStepWithoutPartialSummary() {
+	state := OnboardingState{UserID: "11111111-1111-1111-1111-111111111111", Goal: "economizar"}
+	s.wmMock.EXPECT().
+		Upsert(mock.Anything, state.UserID, mock.AnythingOfType("string")).
+		Return(nil).Once()
+	s.wmMock.EXPECT().
+		UpsertMetadata(mock.Anything, state.UserID, mock.AnythingOfType("map[string]interface {}")).
+		Return(nil).Once()
+	s.budgetsMock.EXPECT().
+		SuggestAllocation(mock.Anything, state.MonthlyBudgetCents, allocationBPList(state.Allocations)).
+		Return(suggestReturn(state.MonthlyBudgetCents, defaultDistributionBP), nil).Once()
+	s.cardsMock.EXPECT().
+		ListCards(mock.Anything, uuid.MustParse(state.UserID)).
+		Return(nil, errors.New("list cards failure")).Once()
+
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock, s.budgetsMock, s.cardsMock))
+	out, err := step.Execute(s.ctx, state)
+
+	s.Error(err)
+	s.Equal(workflow.StepStatusFailed, out.Status)
+	s.Empty(out.State.FinalMessage)
 }
 
 func (s *OnboardingWorkflowSuite) TestConclusionFinalMessage_WithValueMentionsAmount() {

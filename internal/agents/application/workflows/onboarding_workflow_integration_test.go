@@ -620,6 +620,92 @@ func (s *OnboardingWorkflowRealLLMSuite) TestCardExtractionGate() {
 	require.GreaterOrEqual(s.T(), ratio, 0.90, "gate de merge RF-42 (card): ratio %.4f abaixo de 0.90 em %q", ratio, s.model)
 }
 
+func (s *OnboardingWorkflowRealLLMSuite) TestCardExtractionRealLLMGate() {
+	obs := fake.NewProvider()
+	a := agents.BuildMeControlaAgent(s.provider, nil, nil, obs, 0)
+
+	type expected struct {
+		nickname string
+		bank     string
+		dueDay   int
+	}
+
+	scenarios := []struct {
+		name       string
+		resumeText string
+		expected   expected
+	}{
+		{
+			name:       "banco-sem-apelido-dia-primeiro",
+			resumeText: "Nubank e vencimento dia primeiro",
+			expected:   expected{nickname: "Nubank", bank: "Nubank", dueDay: 1},
+		},
+		{
+			name:       "apelido-banco-dia-numerico",
+			resumeText: "Roxinho, Nubank e vencimento dia 1",
+			expected:   expected{nickname: "Roxinho", bank: "Nubank", dueDay: 1},
+		},
+		{
+			name:       "banco-sem-apelido-dia-numerico",
+			resumeText: "Nubank e vencimento dia 1",
+			expected:   expected{nickname: "Nubank", bank: "Nubank", dueDay: 1},
+		},
+	}
+
+	hits := 0
+	total := len(scenarios)
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			var captured interfaces.NewCard
+			captureCard := false
+
+			cards := interfacemocks.NewCardManager(s.T())
+			cards.EXPECT().
+				ListCards(mock.Anything, mock.AnythingOfType("uuid.UUID")).
+				Return([]interfaces.Card{}, nil).
+				Maybe()
+			cards.EXPECT().
+				CreateCard(mock.Anything, mock.AnythingOfType("interfaces.NewCard")).
+				RunAndReturn(func(_ context.Context, in interfaces.NewCard) (interfaces.CardRef, error) {
+					captured = in
+					captureCard = true
+					return interfaces.CardRef{}, nil
+				}).
+				Maybe()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+
+			step := workflows.BuildCardsStep(a, cards)
+			firstEntry, err := step(ctx, workflows.OnboardingState{UserID: "11111111-1111-1111-1111-111111111111"})
+			require.NoError(s.T(), err)
+			require.Equal(s.T(), workflow.StepStatusSuspended, firstEntry.Status)
+
+			resumeState := firstEntry.State
+			resumeState.ResumeText = scenario.resumeText
+			out, err := step(ctx, resumeState)
+
+			ok := err == nil
+			if ok {
+				ok = captureCard &&
+					captured.Nickname == scenario.expected.nickname &&
+					captured.Bank == scenario.expected.bank &&
+					captured.DueDay == scenario.expected.dueDay
+			}
+			if ok {
+				hits++
+			}
+			s.T().Logf("caso=%q modelo=%q status=%v captured=%+v esperado=%+v err=%v ok=%v",
+				scenario.name, s.model, out.Status, captured, scenario.expected, err, ok)
+		})
+	}
+
+	ratio := float64(hits) / float64(total)
+	s.T().Logf("gate real-LLM onboarding_card_extraction modelo=%q hits=%d total=%d ratio=%.4f", s.model, hits, total, ratio)
+	require.GreaterOrEqual(s.T(), ratio, 0.90, "gate de merge RF-07/RF-09 (card extraction): ratio %.4f abaixo de 0.90 em %q", ratio, s.model)
+}
+
 func TestCardFlow_Integration(t *testing.T) {
 	const userID = "11111111-1111-1111-1111-111111111111"
 	userUUID := uuid.MustParse(userID)
@@ -654,7 +740,7 @@ func TestCardFlow_Integration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, workflow.StepStatusSuspended, out.Status)
 		require.NotNil(t, out.Suspend)
-		require.Contains(t, out.Suspend.Prompt, "OUTRO 💳")
+		require.Contains(t, out.Suspend.Prompt, "Deseja cadastrar **outro** cartão 💳 agora?")
 		require.False(t, out.State.CardsDone)
 	})
 

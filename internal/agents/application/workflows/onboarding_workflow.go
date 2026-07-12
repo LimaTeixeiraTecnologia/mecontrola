@@ -544,12 +544,20 @@ Qual é o seu orçamento mensal? (por exemplo: R$ 3.500,00)`
 
 const monthlyBudgetReprompt = "Não consegui identificar o valor. Qual é o seu orçamento mensal? Por exemplo: R$ 3.500,00."
 
-const cardsReprompt = "Para adicionar o 💳, me diga o apelido, o banco emissor e o dia de vencimento da fatura (um número entre 1 e 31). Por exemplo: \"Nubank, vencimento dia 10\". Se preferir não adicionar agora, responda \"não\"."
+const cardsReprompt = "Para adicionar o cartão 💳, me diga o apelido, o banco emissor e o dia de vencimento da fatura (um número entre 1 e 31). " +
+	"Por exemplo: \"Roxinho, Nubank e vencimento dia 1\" ou \"Nubank e vencimento dia primeiro\" (sem apelido, o apelido do cartão 💳 fica igual ao banco). " +
+	"Se preferir não adicionar agora, responda \"não\"."
 
 const (
-	cardsRepromptMissingName   = "Para adicionar o 💳, preciso do apelido ou do banco emissor. Se não quiser cadastrar agora, é só responder \"não\"."
-	cardsRepromptMissingDueDay = "Para adicionar o 💳, preciso do dia de vencimento da fatura (um número entre 1 e 31). Se não quiser cadastrar agora, é só responder \"não\"."
-	cardsRepromptMissingBoth   = "Para adicionar o 💳, preciso do apelido/banco emissor e do dia de vencimento da fatura (entre 1 e 31). Se preferir não adicionar agora, responda \"não\"."
+	cardsRepromptMissingName = "Para adicionar o cartão 💳, preciso do apelido ou do banco emissor. " +
+		"Por exemplo: \"Roxinho, Nubank\" ou apenas \"Nubank\" (sem apelido, o apelido do cartão 💳 fica igual ao banco). " +
+		"Se não quiser cadastrar agora, é só responder \"não\"."
+	cardsRepromptMissingDueDay = "Para adicionar o cartão 💳, preciso do dia de vencimento da fatura (um número entre 1 e 31). " +
+		"Por exemplo: \"dia 1\" ou \"dia primeiro\". " +
+		"Se não quiser cadastrar agora, é só responder \"não\"."
+	cardsRepromptMissingBoth = "Para adicionar o cartão 💳, preciso do apelido/banco emissor e do dia de vencimento da fatura (entre 1 e 31). " +
+		"Por exemplo: \"Roxinho, Nubank e vencimento dia 1\" ou \"Nubank e vencimento dia primeiro\" (sem apelido, o apelido do cartão 💳 fica igual ao banco). " +
+		"Se preferir não adicionar agora, responda \"não\"."
 )
 
 func cardsRepromptFor(missing cardMissingField) string {
@@ -604,9 +612,16 @@ const goalValueSystemPrompt = "Extraia, se houver, o valor em reais que o usuár
 
 func cardsPrompt(existing int) string {
 	if existing > 0 {
-		return fmt.Sprintf("Você já tem %d 💳 cadastrado(s). Deseja cadastrar OUTRO 💳 agora? Se sim, informe o apelido, o banco emissor e o dia de vencimento da fatura (entre 1 e 31). Se não, responda \"não\".", existing)
+		return fmt.Sprintf(
+			"Você já tem %d cartão 💳 cadastrado(s). Deseja cadastrar **outro** cartão 💳 agora? "+
+				"Por exemplo: \"Roxinho, Nubank e vencimento dia 1\" ou \"Nubank e vencimento dia primeiro\" (sem apelido, o apelido do cartão 💳 fica igual ao banco). "+
+				"Se não, responda \"não\".",
+			existing,
+		)
 	}
-	return "O 💳 é opcional. Você deseja cadastrar um 💳 agora? Se sim, informe o apelido ou o banco emissor e o dia de vencimento da fatura (entre 1 e 31). Se não quiser agora, é só responder \"não\" e seguir sem 💳."
+	return "O cartão 💳 é opcional. Você deseja cadastrar um cartão 💳 agora? " +
+		"Por exemplo: \"Roxinho, Nubank e vencimento dia 1\" ou \"Nubank e vencimento dia primeiro\" (sem apelido, o apelido do cartão 💳 fica igual ao banco). " +
+		"Se não quiser agora, é só responder \"não\" e seguir sem cartão 💳."
 }
 
 func methodologyPrompt(items []interfaces.AllocationCents) string {
@@ -642,6 +657,54 @@ func conclusionFinalMessage(goal string, valueCents int64) string {
 			"Agora é só começar: me envie seus gastos e receitas no dia a dia (ex.: \"gastei R$ 50 no mercado\" ou \"recebi R$ 200 de freela\") que eu registro tudo pra você. Vamos juntos! 💪",
 		objetivo,
 	)
+}
+
+func cardSummaryLine(card interfaces.Card) string {
+	if card.Nickname == card.Bank {
+		return fmt.Sprintf("- %s — vencimento dia %d", card.Bank, card.DueDay)
+	}
+	return fmt.Sprintf("- %s (%s) — vencimento dia %d", card.Nickname, card.Bank, card.DueDay)
+}
+
+func renderCardsSummary(cards []interfaces.Card) string {
+	if len(cards) == 0 {
+		return "Nenhum cartão 💳 cadastrado."
+	}
+	var b strings.Builder
+	for i, card := range cards {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(cardSummaryLine(card))
+	}
+	return b.String()
+}
+
+func recurrenceSummaryLine(recurrence bool) string {
+	if recurrence {
+		return "🔁 Recorrência: ligada (repete pelos próximos 12 meses)"
+	}
+	return "🔁 Recorrência: desligada"
+}
+
+func conclusionSummaryMessage(state OnboardingState, items []interfaces.AllocationCents, cards []interfaces.Card) string {
+	var b strings.Builder
+	b.WriteString("Resumo de Onboarding\n\n")
+	if state.GoalValueCents > 0 {
+		fmt.Fprintf(&b, "🎯 Objetivo: %s (meta de %s)\n", state.Goal, money.FromCents(state.GoalValueCents).BRL())
+	} else {
+		fmt.Fprintf(&b, "🎯 Objetivo: %s\n", state.Goal)
+	}
+	fmt.Fprintf(&b, "💵 Orçamento mensal: %s\n\n", money.FromCents(state.MonthlyBudgetCents).BRL())
+	b.WriteString("Distribuição:\n")
+	b.WriteString(renderAllocationLines(items))
+	b.WriteString("\nCartões 💳:\n")
+	b.WriteString(renderCardsSummary(cards))
+	b.WriteString("\n\n")
+	b.WriteString(recurrenceSummaryLine(state.Recurrence))
+	b.WriteString("\n\n")
+	b.WriteString(conclusionFinalMessage(state.Goal, state.GoalValueCents))
+	return b.String()
 }
 
 func suspendStep(state OnboardingState, prompt string) workflow.StepOutput[OnboardingState] {
@@ -1033,7 +1096,11 @@ func BuildRecurrenceStep(a agent.Agent, budgets interfaces.BudgetPlanner) func(c
 	}
 }
 
-func BuildConclusionStep(workingMem memory.WorkingMemory) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+func BuildConclusionStep(
+	workingMem memory.WorkingMemory,
+	budgets interfaces.BudgetPlanner,
+	cards interfaces.CardManager,
+) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		state.Phase = PhaseConclusion
 		if err := workingMem.Upsert(ctx, state.UserID, "## Objetivo Financeiro\n\n"+state.Goal); err != nil {
@@ -1046,7 +1113,19 @@ func BuildConclusionStep(workingMem memory.WorkingMemory) func(context.Context, 
 		if err := workingMem.UpsertMetadata(ctx, state.UserID, metadata); err != nil {
 			return failStep(state, fmt.Errorf("agents.onboarding.conclusion: upsert_metadata: %w", err))
 		}
-		state.FinalMessage = conclusionFinalMessage(state.Goal, state.GoalValueCents)
+		items, err := budgets.SuggestAllocation(ctx, state.MonthlyBudgetCents, allocationBPList(state.Allocations))
+		if err != nil {
+			return failStep(state, fmt.Errorf("agents.onboarding.conclusion: suggest_allocation: %w", err))
+		}
+		userUUID, err := uuid.Parse(state.UserID)
+		if err != nil {
+			return failStep(state, fmt.Errorf("agents.onboarding.conclusion: parse_user_id: %w", err))
+		}
+		userCards, err := cards.ListCards(ctx, userUUID)
+		if err != nil {
+			return failStep(state, fmt.Errorf("agents.onboarding.conclusion: list_cards: %w", err))
+		}
+		state.FinalMessage = conclusionSummaryMessage(state, items, userCards)
 		return completeStep(state), nil
 	}
 }
@@ -1107,7 +1186,7 @@ func BuildOnboardingWorkflow(
 			workflow.NewStepFunc(stepActivationID, wrap(BuildActivationStep(budgets))),
 			workflow.NewStepFunc(stepRecurrenceID, wrap(BuildRecurrenceStep(a, budgets))),
 			workflow.NewStepFunc(stepCardsID, wrap(BuildCardsStep(a, cards))),
-			workflow.NewStepFunc(stepConclusionID, wrap(BuildConclusionStep(workingMem))),
+			workflow.NewStepFunc(stepConclusionID, wrap(BuildConclusionStep(workingMem, budgets, cards))),
 		),
 		Durable:     true,
 		MaxAttempts: 3,
