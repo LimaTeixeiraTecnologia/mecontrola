@@ -343,7 +343,7 @@ func (s *WhatsAppInboundConsumerIntegrationSuite) TestInteg_OnboardingFluxoDeCar
 		}).
 		Return(agentsifaces.CardRef{ID: uuid.NewString()}, nil).Once()
 
-	cardsMock.On("ListCards", mock.Anything, userID).Return([]agentsifaces.Card{{ID: uuid.NewString(), Nickname: "Nubank"}}, nil).Once()
+	cardsMock.On("ListCards", mock.Anything, userID).Return([]agentsifaces.Card{{ID: uuid.NewString(), Nickname: "Nubank"}}, nil).Twice()
 
 	def := workflows.BuildOnboardingWorkflow(a, cardsMock, consumerIntegrationBudgetPlanner{}, workingMem, threads, messages)
 	onboardingResolver := usecases.NewResolveOnboardingOrAgent(engine, workflowStore, workingMem, def, o11y)
@@ -386,14 +386,15 @@ func (s *WhatsAppInboundConsumerIntegrationSuite) TestInteg_OnboardingFluxoDeCar
 	}
 
 	gatewayMock.AssertExpectations(s.T())
-	s.Require().GreaterOrEqual(len(replies), 8)
+	s.Require().GreaterOrEqual(len(replies), 9)
 	s.Contains(replies[6], "💳")
-	s.Contains(replies[7], "OUTRO")
+	s.Contains(replies[7], "outro")
 	s.Contains(replies[7], "💳")
 	s.Equal("Nubank", createdCard.Nickname)
 	s.Equal("Nubank", createdCard.Bank)
 	s.Equal(10, createdCard.DueDay)
 	s.NotEmpty(replies[8])
+	s.Contains(replies[8], "Resumo de Onboarding")
 	inboundMock.AssertNotCalled(s.T(), "Execute")
 
 	var onboardingStatus string
