@@ -115,6 +115,7 @@ func (s *CardCreateConfirmWorkflowSuite) TestSuspend_PersistsStateBeforeAsking()
 	s.Equal(workflow.RunStatusSuspended, result.Status)
 	s.NotEmpty(result.State.ResponseText)
 	s.Contains(result.State.ResponseText, "Nubank")
+	s.Contains(result.State.ResponseText, "💳")
 
 	snap, ok, err := s.store.Load(s.ctx, CardCreateConfirmWorkflowID, s.key)
 	s.Require().NoError(err)
@@ -140,7 +141,30 @@ func (s *CardCreateConfirmWorkflowSuite) TestAccept_InvokesWriteFnViaIdempotentE
 	s.Equal(workflow.RunStatusSucceeded, result.Status)
 	s.Equal(CardCreateStatusCompleted, result.State.Status)
 	s.Contains(result.State.ResponseText, "✅")
+	s.Contains(result.State.ResponseText, "💳")
+	s.Contains(result.State.ResponseText, "cadastrado com sucesso")
 	s.Equal(1, s.idem.calls)
+}
+
+func (s *CardCreateConfirmWorkflowSuite) TestAccept_IdempotentReplay_MessageWithoutEmoji() {
+	cardID := uuid.New()
+	s.cards.EXPECT().
+		CreateCard(mock.Anything, mock.AnythingOfType("interfaces.NewCard")).
+		Return(interfaces.CardRef{ID: cardID.String(), Nickname: "Nubank"}, nil).
+		Once()
+
+	_, err := s.engine.Start(s.ctx, s.def, s.key, s.baseState())
+	s.Require().NoError(err)
+
+	s.idem.results = []cardCreateIdempotentResult{
+		{invoke: true, outcome: agent.ToolOutcomeReplay},
+	}
+
+	result := s.resume("sim", "wamid-1")
+	s.Equal(workflow.RunStatusSucceeded, result.Status)
+	s.Equal(CardCreateStatusCompleted, result.State.Status)
+	s.Contains(result.State.ResponseText, "já estava cadastrado")
+	s.NotContains(result.State.ResponseText, "💳")
 }
 
 func (s *CardCreateConfirmWorkflowSuite) TestAccept_NicknameConflict_DomainMessage_RunConcluded() {
@@ -160,6 +184,7 @@ func (s *CardCreateConfirmWorkflowSuite) TestAccept_NicknameConflict_DomainMessa
 	s.Equal(workflow.RunStatusSucceeded, result.Status)
 	s.Equal(CardCreateStatusCompleted, result.State.Status)
 	s.Contains(result.State.ResponseText, "apelido")
+	s.NotContains(result.State.ResponseText, "💳")
 }
 
 func (s *CardCreateConfirmWorkflowSuite) TestAccept_InvalidDueDay_ActionableRangeMessage_RunConcluded() {
@@ -180,6 +205,7 @@ func (s *CardCreateConfirmWorkflowSuite) TestAccept_InvalidDueDay_ActionableRang
 	s.Equal(CardCreateStatusCompleted, result.State.Status)
 	s.Contains(result.State.ResponseText, "31")
 	s.Contains(result.State.ResponseText, "entre 1 e 31")
+	s.NotContains(result.State.ResponseText, "💳")
 }
 
 func (s *CardCreateConfirmWorkflowSuite) TestAccept_InfraError_RunFailed_ErrorPersisted() {
@@ -221,10 +247,12 @@ func (s *CardCreateConfirmWorkflowSuite) TestReprompt_FirstAmbiguous_ResuspendsT
 	result1 := s.resume("talvez", "wamid-1")
 	s.Equal(workflow.RunStatusSuspended, result1.Status)
 	s.Contains(result1.State.ResponseText, "sim")
+	s.NotContains(result1.State.ResponseText, "💳")
 
 	result2 := s.resume("quem sabe", "wamid-2")
 	s.Equal(workflow.RunStatusSucceeded, result2.Status)
 	s.Equal(CardCreateStatusCancelled, result2.State.Status)
+	s.NotContains(result2.State.ResponseText, "💳")
 }
 
 func (s *CardCreateConfirmWorkflowSuite) TestCancel_Explicit_RunConcluded() {
@@ -235,6 +263,7 @@ func (s *CardCreateConfirmWorkflowSuite) TestCancel_Explicit_RunConcluded() {
 	s.Equal(workflow.RunStatusSucceeded, result.Status)
 	s.Equal(CardCreateStatusCancelled, result.State.Status)
 	s.Contains(result.State.ResponseText, "cancelado")
+	s.NotContains(result.State.ResponseText, "💳")
 }
 
 func (s *CardCreateConfirmWorkflowSuite) TestNoDecisionLeavesRunSuspended_Accept() {

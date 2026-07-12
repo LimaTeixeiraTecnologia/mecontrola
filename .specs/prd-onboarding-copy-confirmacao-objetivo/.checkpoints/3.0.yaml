@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-onboarding-copy-confirmacao-objetivo/3_execution_report.md
+summary: "Aplicada regra de emoji RF-15 ao fluxo avulso card_create_confirm_workflow.go: 💳 preservado apenas na confirmação inicial (linha 94) e no selo de sucesso (linha 155, 'cadastrado com sucesso' intacto); removido das demais mensagens (cancelamento, reprompt, erros de infra/domínio, idempotência). Testes unitários atualizados com asserts de presença/ausência de 💳; build/vet/test-race/lint verdes."
+timestamp: "2026-07-12T00:00:00Z"

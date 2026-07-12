@@ -217,6 +217,21 @@ func (s *OnboardingWorkflowSuite) TestGoalValueReprompt_InvitesOptionalValueWith
 	s.Contains(strings.ToLower(goalValueReprompt), "não")
 }
 
+func (s *OnboardingWorkflowSuite) TestGoalValueReprompt_UsesCellphoneAmountExample() {
+	s.Contains(goalValueReprompt, "R$ 5.000,00")
+	s.Contains(goalValueReprompt, "5 mil")
+	s.NotContains(goalValueReprompt, "400.000")
+}
+
+func (s *OnboardingWorkflowSuite) TestGoalConfirmationReprompt_EchoesGoalAndKeepsValuePrompt() {
+	goal := "comprar um celular novo"
+	out := goalConfirmationReprompt(goal)
+
+	s.Contains(out, "\""+goal+"\"")
+	s.Contains(out, goalValueReprompt)
+	s.NotEmpty(out)
+}
+
 func (s *OnboardingWorkflowSuite) TestOnboardingState_MergePatch_PreservesGoalValueFields() {
 	codec := workflow.NewCodec[OnboardingState]()
 	base := OnboardingState{
@@ -774,7 +789,8 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 				s.Contains(out.Suspend.Prompt, "Vamos começar?")
 				s.Contains(out.Suspend.Prompt, "objetivo")
 				s.Contains(out.Suspend.Prompt, "valor da meta")
-				s.Contains(out.Suspend.Prompt, "R$ 400.000,00")
+				s.Contains(out.Suspend.Prompt, "R$ 5.000,00")
+				s.NotContains(out.Suspend.Prompt, "comprar uma casa")
 				s.Equal(PhaseGoal, out.State.Phase)
 			},
 		},
@@ -814,7 +830,7 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
-				s.Equal(goalValueReprompt, out.Suspend.Prompt)
+				s.Equal(goalConfirmationReprompt("quitar minhas dividas"), out.Suspend.Prompt)
 				s.Equal("quitar minhas dividas", out.State.Goal)
 				s.Equal(int64(0), out.State.GoalValueCents)
 				s.True(out.State.GoalValueAsked)
@@ -855,7 +871,7 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
-				s.Equal(goalValueReprompt, out.Suspend.Prompt)
+				s.Equal(goalConfirmationReprompt("viajar"), out.Suspend.Prompt)
 				s.Equal("viajar", out.State.Goal)
 				s.Equal(int64(0), out.State.GoalValueCents)
 				s.True(out.State.GoalValueAsked)
@@ -907,7 +923,7 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
-				s.Equal(goalValueReprompt, out.Suspend.Prompt)
+				s.Equal(goalConfirmationReprompt("viajar"), out.Suspend.Prompt)
 				s.Equal("viajar", out.State.Goal)
 				s.Equal(int64(0), out.State.GoalValueCents)
 				s.True(out.State.GoalValueAsked)
@@ -1749,7 +1765,7 @@ func (s *OnboardingWorkflowSuite) TestBuildCardsStep() {
 		s.NoError(err)
 		s.Equal(workflow.StepStatusSuspended, out.Status)
 		s.NotNil(out.Suspend)
-		s.Equal(cardsPrompt(1), out.Suspend.Prompt)
+		s.Equal(cardCreatedSuccessOnboarding, out.Suspend.Prompt)
 		s.False(out.State.CardsDone)
 	})
 
@@ -1769,7 +1785,7 @@ func (s *OnboardingWorkflowSuite) TestBuildCardsStep() {
 		firstOut, err := step.Execute(s.ctx, OnboardingState{UserID: userID, Phase: PhaseCards, ResumeText: "Nubank, vencimento dia 10"})
 		s.NoError(err)
 		s.Equal(workflow.StepStatusSuspended, firstOut.Status)
-		s.Equal(cardsPrompt(1), firstOut.Suspend.Prompt)
+		s.Equal(cardCreatedSuccessOnboarding, firstOut.Suspend.Prompt)
 
 		s.agentMock.EXPECT().
 			Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
@@ -1786,7 +1802,7 @@ func (s *OnboardingWorkflowSuite) TestBuildCardsStep() {
 		secondOut, err := step.Execute(s.ctx, secondState)
 		s.NoError(err)
 		s.Equal(workflow.StepStatusSuspended, secondOut.Status)
-		s.Equal(cardsPrompt(2), secondOut.Suspend.Prompt)
+		s.Equal(cardCreatedSuccessOnboarding, secondOut.Suspend.Prompt)
 
 		s.agentMock.EXPECT().
 			Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
@@ -1812,7 +1828,7 @@ func (s *OnboardingWorkflowSuite) TestBuildCardsStep() {
 		s.NoError(err)
 		s.Equal(workflow.StepStatusSuspended, out.Status)
 		s.Equal(cardsRepromptFor(cardMissingName), out.Suspend.Prompt)
-		s.Contains(out.Suspend.Prompt, "💳")
+		s.NotContains(out.Suspend.Prompt, "💳")
 		s.False(out.State.CardsDone)
 		s.cardsMock.AssertNotCalled(s.T(), "CreateCard", mock.Anything, mock.Anything)
 	})
@@ -1829,7 +1845,7 @@ func (s *OnboardingWorkflowSuite) TestBuildCardsStep() {
 		s.NoError(err)
 		s.Equal(workflow.StepStatusSuspended, out.Status)
 		s.Equal(cardsRepromptFor(cardMissingDueDay), out.Suspend.Prompt)
-		s.Contains(out.Suspend.Prompt, "💳")
+		s.NotContains(out.Suspend.Prompt, "💳")
 		s.False(out.State.CardsDone)
 		s.cardsMock.AssertNotCalled(s.T(), "CreateCard", mock.Anything, mock.Anything)
 	})
@@ -1851,7 +1867,7 @@ func (s *OnboardingWorkflowSuite) TestBuildCardsStep() {
 
 		s.NoError(err)
 		s.Equal(workflow.StepStatusSuspended, out.Status)
-		s.Equal(cardsPrompt(1), out.Suspend.Prompt)
+		s.Equal(cardCreatedSuccessOnboarding, out.Suspend.Prompt)
 		s.False(out.State.CardsDone)
 	})
 
@@ -1873,7 +1889,7 @@ func (s *OnboardingWorkflowSuite) TestBuildCardsStep() {
 
 			s.NoError(err, "banco=%s", bank)
 			s.Equal(workflow.StepStatusSuspended, out.Status, "banco=%s", bank)
-			s.Equal(cardsPrompt(1), out.Suspend.Prompt, "banco=%s", bank)
+			s.Equal(cardCreatedSuccessOnboarding, out.Suspend.Prompt, "banco=%s", bank)
 			s.False(out.State.CardsDone, "banco=%s", bank)
 		}
 	})
@@ -1955,44 +1971,44 @@ func (s *OnboardingWorkflowSuite) TestCardsPrompts_UseCardEmoji() {
 	s.NotContains(cardsPrompt(0), "cartão de crédito")
 
 	s.Contains(cardsPrompt(1), "cartão 💳")
-	s.Contains(cardsPrompt(1), "Deseja cadastrar **outro** cartão 💳 agora?")
+	s.Contains(cardsPrompt(1), "Deseja cadastrar **outro** cartão agora?")
 	s.Contains(cardsPrompt(1), "cadastrado(s)")
 	s.NotContains(cardsPrompt(1), "cartão de crédito")
 	s.NotContains(cardsPrompt(1), "OUTRO")
 
-	s.Contains(cardsReprompt, "cartão 💳")
+	s.NotContains(cardsReprompt, "💳")
 	s.NotContains(cardsReprompt, "cartão de crédito")
 
-	s.Contains(cardsRepromptFor(cardMissingName), "cartão 💳")
-	s.Contains(cardsRepromptFor(cardMissingDueDay), "cartão 💳")
-	s.Contains(cardsRepromptFor(cardMissingNameAndDueDay), "cartão 💳")
+	s.NotContains(cardsRepromptFor(cardMissingName), "💳")
+	s.NotContains(cardsRepromptFor(cardMissingDueDay), "💳")
+	s.NotContains(cardsRepromptFor(cardMissingNameAndDueDay), "💳")
 }
 
 func (s *OnboardingWorkflowSuite) TestCardsPrompts_ExactCopyWordEmojiAndExample() {
-	s.Contains(cardsPrompt(1), "Deseja cadastrar **outro** cartão 💳 agora?")
+	s.Contains(cardsPrompt(1), "Deseja cadastrar **outro** cartão agora?")
 	s.NotContains(cardsPrompt(1), "**Outro**")
 	s.NotContains(cardsPrompt(1), "**Deseja**")
 
 	s.Contains(cardsPrompt(0), "Roxinho, Nubank e vencimento dia 1")
 	s.Contains(cardsPrompt(0), "Nubank e vencimento dia primeiro")
-	s.Contains(cardsPrompt(0), "sem apelido, o apelido do cartão 💳 fica igual ao banco")
+	s.Contains(cardsPrompt(0), "sem apelido, o apelido fica igual ao banco")
 
 	s.Contains(cardsPrompt(1), "Roxinho, Nubank e vencimento dia 1")
 	s.Contains(cardsPrompt(1), "Nubank e vencimento dia primeiro")
-	s.Contains(cardsPrompt(1), "sem apelido, o apelido do cartão 💳 fica igual ao banco")
+	s.Contains(cardsPrompt(1), "sem apelido, o apelido fica igual ao banco")
 
 	s.Contains(cardsReprompt, "Roxinho, Nubank e vencimento dia 1")
 	s.Contains(cardsReprompt, "Nubank e vencimento dia primeiro")
-	s.Contains(cardsReprompt, "sem apelido, o apelido do cartão 💳 fica igual ao banco")
+	s.Contains(cardsReprompt, "sem apelido, o apelido do cartão fica igual ao banco")
 
-	s.Contains(cardsRepromptMissingName, "sem apelido, o apelido do cartão 💳 fica igual ao banco")
+	s.Contains(cardsRepromptMissingName, "sem apelido, o apelido do cartão fica igual ao banco")
 
 	s.Contains(cardsRepromptMissingDueDay, "dia 1")
 	s.Contains(cardsRepromptMissingDueDay, "dia primeiro")
 
 	s.Contains(cardsRepromptMissingBoth, "Roxinho, Nubank e vencimento dia 1")
 	s.Contains(cardsRepromptMissingBoth, "Nubank e vencimento dia primeiro")
-	s.Contains(cardsRepromptMissingBoth, "sem apelido, o apelido do cartão 💳 fica igual ao banco")
+	s.Contains(cardsRepromptMissingBoth, "sem apelido, o apelido do cartão fica igual ao banco")
 
 	for _, prompt := range []string{
 		cardsPrompt(0), cardsPrompt(1), cardsReprompt,
@@ -2001,6 +2017,12 @@ func (s *OnboardingWorkflowSuite) TestCardsPrompts_ExactCopyWordEmojiAndExample(
 		s.NotContains(prompt, "🪪")
 		s.NotContains(prompt, "💰💳")
 	}
+}
+
+func (s *OnboardingWorkflowSuite) TestCardCreatedSuccessOnboarding_ExactCopy() {
+	s.Equal("💳 Cartão registrado com sucesso ✅\nQuer registrar algum outro?", cardCreatedSuccessOnboarding)
+	s.Contains(cardCreatedSuccessOnboarding, "💳 Cartão registrado com sucesso ✅")
+	s.Contains(cardCreatedSuccessOnboarding, "Quer registrar algum outro?")
 }
 
 func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_UpsertsWorkingMemoryAndSetsPhase() {
@@ -2172,10 +2194,10 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_SummaryWithoutCardsInd
 	s.Contains(out.State.FinalMessage, "💵 Orçamento mensal: "+money.FromCents(state.MonthlyBudgetCents).BRL())
 	s.Contains(out.State.FinalMessage, "Distribuição:")
 	s.Contains(out.State.FinalMessage, renderAllocationLines(allocations))
-	s.Contains(out.State.FinalMessage, "Cartões 💳:")
-	s.Contains(out.State.FinalMessage, "Nenhum cartão 💳 cadastrado.")
+	s.Contains(out.State.FinalMessage, "Cartões:")
+	s.Contains(out.State.FinalMessage, "Nenhum cartão cadastrado.")
 	s.Contains(out.State.FinalMessage, "🔁 Recorrência: desligada")
-	s.Contains(out.State.FinalMessage, conclusionFinalMessage(state.Goal, state.GoalValueCents))
+	s.Contains(out.State.FinalMessage, conclusionFinalMessage())
 }
 
 func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_SummaryWithOneCardListsNicknameEqualsBank() {
@@ -2208,7 +2230,7 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_SummaryWithOneCardList
 	s.Equal(workflow.StepStatusCompleted, out.Status)
 	s.Contains(out.State.FinalMessage, "Resumo de Onboarding")
 	s.Contains(out.State.FinalMessage, "🎯 Objetivo: comprar uma casa (meta de "+money.FromCents(state.GoalValueCents).BRL()+")")
-	s.Contains(out.State.FinalMessage, "Cartões 💳:")
+	s.Contains(out.State.FinalMessage, "Cartões:")
 	s.Contains(out.State.FinalMessage, "- Nubank — vencimento dia 1")
 	s.Contains(out.State.FinalMessage, "🔁 Recorrência: ligada (repete pelos próximos 12 meses)")
 }
@@ -2290,20 +2312,15 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_ListCardsFailureFailsS
 	s.Empty(out.State.FinalMessage)
 }
 
-func (s *OnboardingWorkflowSuite) TestConclusionFinalMessage_WithValueMentionsAmount() {
-	msg := conclusionFinalMessage("comprar uma casa", 40000000)
-	s.Contains(msg, fmt.Sprintf(`Seu objetivo "comprar uma casa" (meta de %s)`, money.FromCents(40000000).BRL()))
-}
-
-func (s *OnboardingWorkflowSuite) TestConclusionFinalMessage_WithoutValueMatchesPreviousBehavior() {
-	msg := conclusionFinalMessage("economizar", 0)
-	expected := fmt.Sprintf(
-		"Tudo pronto! 🚀 %s está registrado.\n\n"+
-			"Agora é só começar: me envie seus gastos e receitas no dia a dia (ex.: \"gastei R$ 50 no mercado\" ou \"recebi R$ 200 de freela\") que eu registro tudo pra você. Vamos juntos! 💪",
-		`Seu objetivo "economizar"`,
-	)
+func (s *OnboardingWorkflowSuite) TestConclusionFinalMessage_DoesNotRepeatGoalAndPreservesCTA() {
+	msg := conclusionFinalMessage()
+	expected := "Tudo pronto! 🚀\n\n" +
+		"Agora é só começar: me envie seus gastos e receitas no dia a dia (ex.: \"gastei R$ 50 no mercado\" ou \"recebi R$ 200 de freela\") que eu registro tudo pra você. Vamos juntos! 💪"
 	s.Equal(expected, msg)
+	s.NotContains(msg, "objetivo")
+	s.NotContains(msg, "está registrado")
 	s.NotContains(msg, "meta de")
+	s.Contains(msg, "me envie seus gastos e receitas no dia a dia")
 }
 
 func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_IDAndStructure() {
@@ -2467,7 +2484,7 @@ func (s *OnboardingWorkflowSuite) TestWelcomeCombinedPrompt_HasExactRF03Copy() {
 Estou aqui para te ajudar a organizar suas finanças e conquistar seus objetivos. 💪💰
 
 Vamos começar? Qual é o seu principal objetivo financeiro para este mês?
-(por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva; se quiser, já pode me contar o valor da meta, tipo "comprar uma casa, meta de R$ 400.000,00")`
+(por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva; se quiser, já pode me contar o valor da meta, tipo "comprar um celular novo, meta de R$ 5.000,00")`
 	s.Equal(expected, welcomeCombinedPrompt)
 	s.NotContains(welcomeCombinedPrompt, "o usuário")
 	s.NotContains(welcomeCombinedPrompt, "peça")
@@ -2485,28 +2502,27 @@ func (s *OnboardingWorkflowSuite) TestM02_NoRendaTermInAnyOnboardingSurface() {
 	}
 
 	surfaces := map[string]string{
-		"welcomeCombinedPrompt":           welcomeCombinedPrompt,
-		"goalReprompt":                    goalReprompt,
-		"goalValueReprompt":               goalValueReprompt,
-		"monthlyBudgetPrompt":             monthlyBudgetPrompt,
-		"monthlyBudgetReprompt":           monthlyBudgetReprompt,
-		"cardsReprompt":                   cardsReprompt,
-		"conclusionRecurrencePrompt":      conclusionRecurrencePrompt,
-		"allocationInputSystemPrompt":     allocationInputSystemPrompt,
-		"summaryConfirmSystemPrompt":      summaryConfirmSystemPrompt,
-		"goalWithValueSystemPrompt":       goalWithValueSystemPrompt,
-		"goalValueSystemPrompt":           goalValueSystemPrompt,
-		"monthlyBudgetSystemPrompt":       monthlyBudgetSystemPrompt,
-		"cardsSystemPrompt":               cardsSystemPrompt,
-		"recurrenceSystemPrompt":          recurrenceSystemPrompt,
-		"cardsPrompt(0)":                  cardsPrompt(0),
-		"cardsPrompt(2)":                  cardsPrompt(2),
-		"methodologyPrompt":               methodologyPrompt(sampleAllocations),
-		"methodologyReprompt":             methodologyReprompt("valores não fecham", sampleAllocations),
-		"summaryPrompt":                   summaryPrompt(sampleState, sampleAllocations),
-		"conclusionFinalMessage_valor":    conclusionFinalMessage("juntar reserva", 100000),
-		"conclusionFinalMessage_semValor": conclusionFinalMessage("juntar reserva", 0),
-		"renderAllocationLines":           renderAllocationLines(sampleAllocations),
+		"welcomeCombinedPrompt":       welcomeCombinedPrompt,
+		"goalReprompt":                goalReprompt,
+		"goalValueReprompt":           goalValueReprompt,
+		"monthlyBudgetPrompt":         monthlyBudgetPrompt,
+		"monthlyBudgetReprompt":       monthlyBudgetReprompt,
+		"cardsReprompt":               cardsReprompt,
+		"conclusionRecurrencePrompt":  conclusionRecurrencePrompt,
+		"allocationInputSystemPrompt": allocationInputSystemPrompt,
+		"summaryConfirmSystemPrompt":  summaryConfirmSystemPrompt,
+		"goalWithValueSystemPrompt":   goalWithValueSystemPrompt,
+		"goalValueSystemPrompt":       goalValueSystemPrompt,
+		"monthlyBudgetSystemPrompt":   monthlyBudgetSystemPrompt,
+		"cardsSystemPrompt":           cardsSystemPrompt,
+		"recurrenceSystemPrompt":      recurrenceSystemPrompt,
+		"cardsPrompt(0)":              cardsPrompt(0),
+		"cardsPrompt(2)":              cardsPrompt(2),
+		"methodologyPrompt":           methodologyPrompt(sampleAllocations),
+		"methodologyReprompt":         methodologyReprompt("valores não fecham", sampleAllocations),
+		"summaryPrompt":               summaryPrompt(sampleState, sampleAllocations),
+		"conclusionFinalMessage":      conclusionFinalMessage(),
+		"renderAllocationLines":       renderAllocationLines(sampleAllocations),
 	}
 
 	for label, text := range surfaces {

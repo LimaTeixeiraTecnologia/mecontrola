@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-onboarding-copy-confirmacao-objetivo/4_execution_report.md
+summary: Build/vet/test-race/lint verdes, integracao verde, escopo restrito aos 2 fluxos deterministicos confirmado, gate golden real-LLM CategoryOnboarding=1.0000 (>=0.90)
+timestamp: 2026-07-12T00:00:00Z

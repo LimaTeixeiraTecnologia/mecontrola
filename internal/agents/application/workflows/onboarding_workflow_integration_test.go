@@ -740,7 +740,7 @@ func TestCardFlow_Integration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, workflow.StepStatusSuspended, out.Status)
 		require.NotNil(t, out.Suspend)
-		require.Contains(t, out.Suspend.Prompt, "Deseja cadastrar **outro** cartão 💳 agora?")
+		require.Equal(t, "💳 Cartão registrado com sucesso ✅\nQuer registrar algum outro?", out.Suspend.Prompt)
 		require.False(t, out.State.CardsDone)
 	})
 
@@ -794,7 +794,8 @@ func TestCardFlow_Integration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, workflow.StepStatusSuspended, out.Status)
 		require.NotNil(t, out.Suspend)
-		require.Contains(t, out.Suspend.Prompt, "💳")
+		require.NotContains(t, out.Suspend.Prompt, "💳")
+		require.Contains(t, out.Suspend.Prompt, "cartão")
 		require.False(t, out.State.CardsDone)
 	})
 }

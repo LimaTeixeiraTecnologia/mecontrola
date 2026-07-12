@@ -29,7 +29,7 @@ const expectedWelcomeCombinedMessage = `🎉 Bem-vindo ao MeControla! 🎉
 Estou aqui para te ajudar a organizar suas finanças e conquistar seus objetivos. 💪💰
 
 Vamos começar? Qual é o seu principal objetivo financeiro para este mês?
-(por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva; se quiser, já pode me contar o valor da meta, tipo "comprar uma casa, meta de R$ 400.000,00")`
+(por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva; se quiser, já pode me contar o valor da meta, tipo "comprar um celular novo, meta de R$ 5.000,00")`
 
 type mockHandleInbound struct {
 	mock.Mock
