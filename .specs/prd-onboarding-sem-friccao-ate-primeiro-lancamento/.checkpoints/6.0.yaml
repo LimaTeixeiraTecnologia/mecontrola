@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-onboarding-sem-friccao-ate-primeiro-lancamento/6.0_execution_report.md
-summary: Testes unitarios e de integracao obrigatorios adicionados/atualizados para RF-35 a RF-39, com build, vet, testes e lint passando.
-timestamp: 2026-07-11T15:37:01Z

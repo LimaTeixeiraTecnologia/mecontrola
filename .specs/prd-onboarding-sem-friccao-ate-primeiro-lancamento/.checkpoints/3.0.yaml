@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-onboarding-sem-friccao-ate-primeiro-lancamento/3.0_execution_report.md
-summary: Guard card_provenance corrigido para exigir cartão apenas em credit_card; testes unitários e de integração dos guards passam; lint limpo.
-timestamp: 2026-07-11T14:02:22Z

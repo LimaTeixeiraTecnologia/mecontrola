@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-onboarding-cartao-resumo-conclusao/2.0_execution_report.md
-summary: Resumo de Onboarding + conclusão implementado em BuildConclusionStep (SuggestAllocation + ListCards), wired em BuildOnboardingWorkflow, 5 call sites migradas + 7 novos testes; APPROVED.
-timestamp: 2026-07-12T11:01:23Z
