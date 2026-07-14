@@ -228,7 +228,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		})
 	}
 
-	onboardingDef := workflows.BuildOnboardingWorkflow(onboardingAgent, cardManager, budgetPlanner, workingMem, threadGateway, messageStore)
+	onboardingDef := workflows.BuildOnboardingWorkflow(onboardingAgent, cardManager, budgetPlanner, workingMem, threadGateway, messageStore, deps.O11y)
 
 	runStore := agentpostgres.NewRunStore(deps.DB)
 	runtime := agent.NewAgentRuntime(registry, threadGateway, messageStore, workingMem, runStore, deps.O11y,

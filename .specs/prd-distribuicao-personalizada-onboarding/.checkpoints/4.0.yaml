@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-distribuicao-personalizada-onboarding/4.0_execution_report.md
+summary: Handlers de distribuicao/personalizar reescritos com roteamento por intencao e persistencia do sub-estado antes de suspender; teste de baseline antes falhando agora passa.
+timestamp: 2026-07-13T00:00:00Z

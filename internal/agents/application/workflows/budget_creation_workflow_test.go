@@ -233,6 +233,114 @@ func (s *BudgetCreationWorkflowSuite) TestHandleBudgetDistributionSlot() {
 				s.Equal(workflow.StepStatusSuspended, out.Status)
 				s.Equal(AwaitingBudgetDistribution, out.State.Awaiting)
 				s.Contains(out.Suspend.Prompt, "não consegui aplicar essa distribuição")
+				s.Contains(out.Suspend.Prompt, "faltou 10.0% para 100%")
+			},
+		},
+		{
+			name: "distribuicao em percentual que passa de 100 deve reperguntar informando o excesso",
+			args: args{state: BudgetCreationState{UserID: s.userID, Competence: "2026-06", Awaiting: AwaitingBudgetDistribution, TotalCents: 350000, ResumeText: "50 10 10 10 30"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(allocationInputExtract{
+						Action:              "percent",
+						CustoFixo:           50,
+						Conhecimento:        10,
+						Prazeres:            10,
+						Metas:               10,
+						LiberdadeFinanceira: 30,
+					})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[BudgetCreationState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(AwaitingBudgetDistribution, out.State.Awaiting)
+				s.Contains(out.Suspend.Prompt, "não consegui aplicar essa distribuição")
+				s.Contains(out.Suspend.Prompt, "passou 10.0% de 100%")
+			},
+		},
+		{
+			name: "distribuicao em reais dentro da tolerancia deve fechar por maior-resto",
+			args: args{state: BudgetCreationState{UserID: s.userID, Competence: "2026-06", Awaiting: AwaitingBudgetDistribution, TotalCents: 350000, ResumeText: "140000 35000 35000 35000 104996"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(allocationInputExtract{
+						Action:              "reais",
+						CustoFixo:           1400.00,
+						Conhecimento:        350.00,
+						Prazeres:            350.00,
+						Metas:               350.00,
+						LiberdadeFinanceira: 1049.96,
+					})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[BudgetCreationState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(AwaitingBudgetConfirm, out.State.Awaiting)
+				s.Equal(10000, sumAllocations(out.State.Allocations))
+			},
+		},
+		{
+			name: "RF-15 regressao: distribuicao em reais que passa do orcamento herda o delta do nucleo compartilhado em R$, sem transitar",
+			args: args{state: BudgetCreationState{UserID: s.userID, Competence: "2026-06", Awaiting: AwaitingBudgetDistribution, TotalCents: 350000, ResumeText: "2000 350 350 350 1050"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(allocationInputExtract{
+						Action:              "reais",
+						CustoFixo:           2000.00,
+						Conhecimento:        350.00,
+						Prazeres:            350.00,
+						Metas:               350.00,
+						LiberdadeFinanceira: 1050.00,
+					})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[BudgetCreationState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(AwaitingBudgetDistribution, out.State.Awaiting)
+				s.Contains(out.Suspend.Prompt, "não consegui aplicar essa distribuição")
+				s.Contains(out.Suspend.Prompt, "passou R$ 600,00 de o orçamento mensal")
+			},
+		},
+		{
+			name: "RF-15 regressao: distribuicao em reais abaixo do orcamento herda quanto falta do nucleo compartilhado em R$, sem transitar",
+			args: args{state: BudgetCreationState{UserID: s.userID, Competence: "2026-06", Awaiting: AwaitingBudgetDistribution, TotalCents: 350000, ResumeText: "1000 350 350 350 1050"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(allocationInputExtract{
+						Action:              "reais",
+						CustoFixo:           1000.00,
+						Conhecimento:        350.00,
+						Prazeres:            350.00,
+						Metas:               350.00,
+						LiberdadeFinanceira: 1050.00,
+					})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[BudgetCreationState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(AwaitingBudgetDistribution, out.State.Awaiting)
+				s.Contains(out.Suspend.Prompt, "não consegui aplicar essa distribuição")
+				s.Contains(out.Suspend.Prompt, "faltou R$ 400,00 para o orçamento mensal")
 			},
 		},
 		{

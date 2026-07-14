@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -318,7 +319,7 @@ func (s *OnboardingWorkflowRealLLMSuite) TestBudgetReviewParsesConfirmPercentRea
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 
-			step := workflows.BuildBudgetReviewStep(a, budgets)
+			step := workflows.BuildBudgetReviewStep(a, budgets, nil)
 			firstEntry, err := step(ctx, workflows.OnboardingState{
 				UserID:             "11111111-1111-1111-1111-111111111111",
 				MonthlyBudgetCents: income,
@@ -346,6 +347,178 @@ func (s *OnboardingWorkflowRealLLMSuite) TestBudgetReviewParsesConfirmPercentRea
 			s.T().Logf("caso %q → allocations %v", scenario.name, out.State.Allocations)
 		})
 	}
+}
+
+func (s *OnboardingWorkflowRealLLMSuite) TestBudgetReviewPersonalizeAndBalanceGate() {
+	obs := fake.NewProvider()
+	a := agents.BuildMeControlaAgent(s.provider, []tool.ToolHandle{}, nil, obs, 0)
+
+	const income int64 = 1000000
+
+	type expected struct {
+		reviewAwait    string
+		status         workflow.StepStatus
+		allocationsSum int
+		promptContains []string
+	}
+
+	scenarios := []struct {
+		name       string
+		resumeText string
+		expected   expected
+	}{
+		{
+			name:       "recusa entra em personalize",
+			resumeText: "não, prefiro escolher eu mesmo quanto vai em cada categoria",
+			expected: expected{
+				reviewAwait:    "personalize",
+				status:         workflow.StepStatusSuspended,
+				promptContains: []string{"orçamento"},
+			},
+		},
+		{
+			name:       "valores em reais somando o orcamento",
+			resumeText: "Custo Fixo R$ 4.000, Conhecimento R$ 1.000, Prazeres R$ 1.000, Metas R$ 1.000, Liberdade Financeira R$ 3.000",
+			expected: expected{
+				status:         workflow.StepStatusSuspended,
+				allocationsSum: 10000,
+			},
+		},
+		{
+			name:       "valores em percentual somando 100",
+			resumeText: "Custo Fixo 40%, Conhecimento 10%, Prazeres 10%, Metas 10%, Liberdade Financeira 30%",
+			expected: expected{
+				status:         workflow.StepStatusSuspended,
+				allocationsSum: 10000,
+			},
+		},
+		{
+			name:       "soma acima do orcamento permanece suspenso",
+			resumeText: "Custo Fixo R$ 5.000, Conhecimento R$ 2.000, Prazeres R$ 2.000, Metas R$ 2.000, Liberdade Financeira R$ 2.000",
+			expected: expected{
+				reviewAwait:    "distribution",
+				status:         workflow.StepStatusSuspended,
+				promptContains: []string{"passou"},
+			},
+		},
+		{
+			name:       "soma abaixo do orcamento permanece suspenso",
+			resumeText: "Custo Fixo R$ 2.000, Conhecimento R$ 1.000, Prazeres R$ 1.000, Metas R$ 1.000, Liberdade Financeira R$ 1.000",
+			expected: expected{
+				reviewAwait:    "distribution",
+				status:         workflow.StepStatusSuspended,
+				promptContains: []string{"falta"},
+			},
+		},
+		{
+			name:       "categoria zerada aceita e fecha o total",
+			resumeText: "Custo Fixo R$ 5.000, Conhecimento R$ 0, Prazeres R$ 2.000, Metas R$ 1.000, Liberdade Financeira R$ 2.000",
+			expected: expected{
+				status:         workflow.StepStatusSuspended,
+				allocationsSum: 10000,
+			},
+		},
+		{
+			name:       "valores por extenso",
+			resumeText: "Custo Fixo mil reais, Conhecimento quinhentos, Prazeres quinhentos, Metas quinhentos, Liberdade Financeira sete mil e quinhentos",
+			expected: expected{
+				status:         workflow.StepStatusSuspended,
+				allocationsSum: 10000,
+			},
+		},
+		{
+			name:       "tolerancia absorve arredondamento de percentuais",
+			resumeText: "Custo Fixo 33,3%, Conhecimento 33,3%, Prazeres 33,4%, Metas 0%, Liberdade Financeira 0%",
+			expected: expected{
+				status:         workflow.StepStatusSuspended,
+				allocationsSum: 10000,
+			},
+		},
+		{
+			name:       "unidades misturadas pede unidade unica",
+			resumeText: "Custo Fixo 40%, Conhecimento R$ 100, Prazeres 10%, Metas 10%, Liberdade Financeira 30%",
+			expected: expected{
+				reviewAwait:    "distribution",
+				status:         workflow.StepStatusSuspended,
+				promptContains: []string{"única unidade"},
+			},
+		},
+	}
+
+	hits := 0
+	total := len(scenarios)
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			budgets := func() *interfacemocks.BudgetPlanner {
+				m := interfacemocks.NewBudgetPlanner(s.T())
+				m.EXPECT().
+					SuggestAllocation(mock.Anything, income, mock.Anything).
+					Return(onboardingSuggestReturn(income), nil).
+					Maybe()
+				m.EXPECT().
+					GetMonthlySummary(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+					Return(interfaces.BudgetSummary{}, interfaces.ErrBudgetNotFound).
+					Maybe()
+				m.EXPECT().
+					CreateBudget(mock.Anything, mock.AnythingOfType("interfaces.DraftBudget")).
+					Return(interfaces.BudgetRef{}, nil).
+					Maybe()
+				return m
+			}()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+
+			step := workflows.BuildBudgetReviewStep(a, budgets, nil)
+			firstEntry, err := step(ctx, workflows.OnboardingState{
+				UserID:             "11111111-1111-1111-1111-111111111111",
+				MonthlyBudgetCents: income,
+			})
+			require.NoError(s.T(), err)
+			require.Equal(s.T(), workflow.StepStatusSuspended, firstEntry.Status)
+
+			resumeState := firstEntry.State
+			resumeState.ResumeText = scenario.resumeText
+			out, err := step(ctx, resumeState)
+
+			ok := err == nil
+			if ok {
+				ok = out.Status == scenario.expected.status
+			}
+			if ok && scenario.expected.reviewAwait != "" {
+				ok = out.State.ReviewAwait.String() == scenario.expected.reviewAwait
+			}
+			if ok && scenario.expected.allocationsSum > 0 {
+				sum := 0
+				for _, bp := range out.State.Allocations {
+					sum += bp
+				}
+				ok = sum == scenario.expected.allocationsSum
+			}
+			if ok && out.Suspend != nil {
+				for _, fragment := range scenario.expected.promptContains {
+					if !strings.Contains(out.Suspend.Prompt, fragment) {
+						ok = false
+						break
+					}
+				}
+			}
+			if ok {
+				hits++
+			}
+			prompt := ""
+			if out.Suspend != nil {
+				prompt = out.Suspend.Prompt
+			}
+			s.T().Logf("caso=%q modelo=%q status=%v reviewAwait=%v allocations=%v prompt=%q err=%v ok=%v",
+				scenario.name, s.model, out.Status, out.State.ReviewAwait, out.State.Allocations, prompt, err, ok)
+		})
+	}
+
+	ratio := float64(hits) / float64(total)
+	s.T().Logf("gate real-LLM onboarding_budget_review_personalize_balance modelo=%q hits=%d total=%d ratio=%.4f", s.model, hits, total, ratio)
+	require.GreaterOrEqual(s.T(), ratio, 0.90, "gate de merge RF-12/CS-04 (personalize + balance): ratio %.4f abaixo de 0.90 em %q", ratio, s.model)
 }
 
 func (s *OnboardingWorkflowRealLLMSuite) TestMonthlyBudgetExtractionGate() {
@@ -452,7 +625,7 @@ func (s *OnboardingWorkflowRealLLMSuite) TestSummaryConfirmExtractionGate() {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 
-			step := workflows.BuildBudgetReviewStep(a, budgets)
+			step := workflows.BuildBudgetReviewStep(a, budgets, nil)
 			firstEntry, err := step(ctx, workflows.OnboardingState{
 				UserID:             "11111111-1111-1111-1111-111111111111",
 				MonthlyBudgetCents: income,

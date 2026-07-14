@@ -144,7 +144,7 @@ func (s *WhatsAppInboundConsumerIntegrationSuite) buildOnboardingResolver() *use
 	workingMem := mempostgres.NewWorkingMemoryRepository(s.db, o11y)
 
 	a := agentmocks.NewAgent(s.T())
-	def := workflows.BuildOnboardingWorkflow(a, nil, consumerIntegrationBudgetPlanner{}, workingMem, threads, messages)
+	def := workflows.BuildOnboardingWorkflow(a, nil, consumerIntegrationBudgetPlanner{}, workingMem, threads, messages, nil)
 	return usecases.NewResolveOnboardingOrAgent(engine, workflowStore, workingMem, def, o11y)
 }
 
@@ -307,9 +307,7 @@ func (s *WhatsAppInboundConsumerIntegrationSuite) TestInteg_OnboardingFluxoDeCar
 	goalExtract, _ := json.Marshal(map[string]any{"goal": "comprar uma casa", "hasAmount": false, "amountBRL": 0})
 	goalValueExtract, _ := json.Marshal(map[string]any{"hasAmount": false, "amountBRL": 0})
 	budgetExtract, _ := json.Marshal(map[string]any{"amountBRL": 1000})
-	allocationExtract, _ := json.Marshal(map[string]any{
-		"action": "confirm", "custo_fixo": 0, "conhecimento": 0, "prazeres": 0, "metas": 0, "liberdade_financeira": 0,
-	})
+	distributionIntentAcceptExtract, _ := json.Marshal(map[string]any{"action": "accept", "mixed_unit": false})
 	summaryConfirmExtract, _ := json.Marshal(map[string]any{"confirmed": true})
 	recurrenceExtract, _ := json.Marshal(map[string]any{"confirmed": false})
 	cardCreateExtract, _ := json.Marshal(map[string]any{"wantsCard": true, "nickname": "Nubank", "bank": "Nubank", "dueDay": 10})
@@ -319,7 +317,7 @@ func (s *WhatsAppInboundConsumerIntegrationSuite) TestInteg_OnboardingFluxoDeCar
 	a.On("Execute", mock.Anything, mock.Anything).Return(agentResultRawJSON(goalExtract), nil).Once()
 	a.On("Execute", mock.Anything, mock.Anything).Return(agentResultRawJSON(goalValueExtract), nil).Once()
 	a.On("Execute", mock.Anything, mock.Anything).Return(agentResultRawJSON(budgetExtract), nil).Once()
-	a.On("Execute", mock.Anything, mock.Anything).Return(agentResultRawJSON(allocationExtract), nil).Once()
+	a.On("Execute", mock.Anything, mock.Anything).Return(agentResultRawJSON(distributionIntentAcceptExtract), nil).Once()
 	a.On("Execute", mock.Anything, mock.Anything).Return(agentResultRawJSON(summaryConfirmExtract), nil).Once()
 	a.On("Execute", mock.Anything, mock.Anything).Return(agentResultRawJSON(recurrenceExtract), nil).Once()
 	a.On("Execute", mock.Anything, mock.Anything).Return(agentResultRawJSON(cardCreateExtract), nil).Once()
@@ -345,7 +343,7 @@ func (s *WhatsAppInboundConsumerIntegrationSuite) TestInteg_OnboardingFluxoDeCar
 
 	cardsMock.On("ListCards", mock.Anything, userID).Return([]agentsifaces.Card{{ID: uuid.NewString(), Nickname: "Nubank"}}, nil).Twice()
 
-	def := workflows.BuildOnboardingWorkflow(a, cardsMock, consumerIntegrationBudgetPlanner{}, workingMem, threads, messages)
+	def := workflows.BuildOnboardingWorkflow(a, cardsMock, consumerIntegrationBudgetPlanner{}, workingMem, threads, messages, nil)
 	onboardingResolver := usecases.NewResolveOnboardingOrAgent(engine, workflowStore, workingMem, def, o11y)
 
 	gatewayMock := &mockWhatsAppSender{}

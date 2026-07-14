@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-distribuicao-personalizada-onboarding/7.0_execution_report.md
+summary: Gate completo de nao-regressao verde (build/vet/test-race/integracao/golden real-LLM 1.0000/lint); 1 teste de integracao desatualizado corrigido; RF-01..RF-17 confirmados item-a-item.
+timestamp: 2026-07-14T08:14:11Z

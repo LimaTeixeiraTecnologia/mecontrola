@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -158,6 +159,26 @@ func budgetDistributionReprompt(reason string, totalCents int64) string {
 	return "Ops, não consegui aplicar essa distribuição: " + reason + "\n\n" + budgetDistributionPrompt(totalCents)
 }
 
+func budgetBalanceReason(balance DistributionBalance) string {
+	var unitLabel string
+	var deltaLabel string
+	if balance.Unit == allocationInputReais {
+		unitLabel = "o orçamento mensal"
+		deltaLabel = money.FromCents(int64(math.Round(balance.DeltaAbs * 100))).BRL()
+	} else {
+		unitLabel = "100%"
+		deltaLabel = fmt.Sprintf("%.1f%%", balance.DeltaAbs)
+	}
+	switch balance.Status {
+	case distributionOver:
+		return fmt.Sprintf("passou %s de %s. Envie novamente a distribuição para fechar exatamente %s.", deltaLabel, unitLabel, unitLabel)
+	case distributionUnder:
+		return fmt.Sprintf("faltou %s para %s. Envie novamente a distribuição para fechar exatamente %s.", deltaLabel, unitLabel, unitLabel)
+	default:
+		return "a soma precisa fechar exatamente o total."
+	}
+}
+
 func handleBudgetDistributionSlot(ctx context.Context, state BudgetCreationState, a agent.Agent) (workflow.StepOutput[BudgetCreationState], error) {
 	if state.ResumeText == "" {
 		return budgetSuspend(state, budgetDistributionPrompt(state.TotalCents))
@@ -194,9 +215,14 @@ func handleBudgetDistributionSlot(ctx context.Context, state BudgetCreationState
 		"expense.liberdade_financeira": input.LiberdadeFinanceira,
 	}
 	kind = DecideAllocationKind(kind, values, state.TotalCents)
+	balance := DecideDistributionBalance(kind, values, state.TotalCents)
 	bp, decErr := DecideAllocationsBP(kind, values, state.TotalCents)
 	if decErr != nil {
-		return budgetSuspend(state, budgetDistributionReprompt(decErr.Error(), state.TotalCents))
+		reason := decErr.Error()
+		if errors.Is(decErr, errAllocationOutOfTolerance) {
+			reason = budgetBalanceReason(balance)
+		}
+		return budgetSuspend(state, budgetDistributionReprompt(reason, state.TotalCents))
 	}
 
 	decision := DecideBudgetDistribution(bp)

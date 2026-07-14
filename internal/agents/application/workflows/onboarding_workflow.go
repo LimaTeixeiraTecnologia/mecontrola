@@ -134,6 +134,7 @@ type reviewAwaitKind int
 const (
 	reviewAwaitDistribution reviewAwaitKind = iota + 1
 	reviewAwaitConfirm
+	reviewAwaitPersonalize
 )
 
 var errInvalidReviewAwaitKind = errors.New("onboarding: invalid review await kind")
@@ -144,13 +145,15 @@ func (k reviewAwaitKind) String() string {
 		return "distribution"
 	case reviewAwaitConfirm:
 		return "confirm"
+	case reviewAwaitPersonalize:
+		return "personalize"
 	default:
 		return "unknown"
 	}
 }
 
 func (k reviewAwaitKind) IsValid() bool {
-	return k >= reviewAwaitDistribution && k <= reviewAwaitConfirm
+	return k >= reviewAwaitDistribution && k <= reviewAwaitPersonalize
 }
 
 type allocationInputKind int
@@ -176,6 +179,132 @@ func ParseAllocationInputKind(s string) (allocationInputKind, error) {
 	default:
 		return 0, fmt.Errorf("%w: %q", errInvalidAllocationInput, s)
 	}
+}
+
+type distributionIntentKind int
+
+const (
+	distributionIntentAccept distributionIntentKind = iota + 1
+	distributionIntentPersonalize
+	distributionIntentValues
+)
+
+var errInvalidDistributionIntent = errors.New("distribution: tipo de intencao invalido")
+
+func (k distributionIntentKind) String() string {
+	switch k {
+	case distributionIntentAccept:
+		return "accept"
+	case distributionIntentPersonalize:
+		return "personalize"
+	case distributionIntentValues:
+		return "values"
+	default:
+		return "unknown"
+	}
+}
+
+func (k distributionIntentKind) IsValid() bool {
+	return k >= distributionIntentAccept && k <= distributionIntentValues
+}
+
+func ParseDistributionIntentKind(s string) (distributionIntentKind, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "accept":
+		return distributionIntentAccept, nil
+	case "personalize":
+		return distributionIntentPersonalize, nil
+	case "values":
+		return distributionIntentValues, nil
+	default:
+		return 0, fmt.Errorf("%w: %q", errInvalidDistributionIntent, s)
+	}
+}
+
+type distributionBalanceKind int
+
+const (
+	distributionBalanced distributionBalanceKind = iota + 1
+	distributionOver
+	distributionUnder
+)
+
+var errInvalidDistributionBalance = errors.New("distribution: tipo de saldo invalido")
+
+func (k distributionBalanceKind) String() string {
+	switch k {
+	case distributionBalanced:
+		return "balanced"
+	case distributionOver:
+		return "over"
+	case distributionUnder:
+		return "under"
+	default:
+		return "unknown"
+	}
+}
+
+func (k distributionBalanceKind) IsValid() bool {
+	return k >= distributionBalanced && k <= distributionUnder
+}
+
+func ParseDistributionBalanceKind(s string) (distributionBalanceKind, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "balanced":
+		return distributionBalanced, nil
+	case "over":
+		return distributionOver, nil
+	case "under":
+		return distributionUnder, nil
+	default:
+		return 0, fmt.Errorf("%w: %q", errInvalidDistributionBalance, s)
+	}
+}
+
+const (
+	distributionPercentToleranceAbs = 0.5
+	distributionReaisToleranceCents = 5
+)
+
+type DistributionBalance struct {
+	Status   distributionBalanceKind
+	Unit     allocationInputKind
+	Target   float64
+	Sum      float64
+	DeltaAbs float64
+}
+
+func DecideDistributionBalance(kind allocationInputKind, valuesBySlug map[string]float64, monthlyBudgetCents int64) DistributionBalance {
+	sum := sumAllocationValues(valuesBySlug)
+	if kind == allocationInputReais {
+		target := float64(monthlyBudgetCents) / 100
+		deltaCents := math.Round(sum*100) - float64(monthlyBudgetCents)
+		deltaAbs := math.Abs(deltaCents) / 100
+		balance := DistributionBalance{Unit: kind, Target: target, Sum: sum, DeltaAbs: deltaAbs}
+		switch {
+		case math.Abs(deltaCents) <= distributionReaisToleranceCents:
+			balance.Status = distributionBalanced
+		case deltaCents > 0:
+			balance.Status = distributionOver
+		default:
+			balance.Status = distributionUnder
+		}
+		return balance
+	}
+
+	target := 100.0
+	delta := sum - target
+	deltaAbs := math.Abs(delta)
+	balance := DistributionBalance{Unit: allocationInputPercent, Target: target, Sum: sum, DeltaAbs: deltaAbs}
+	switch {
+	case deltaAbs <= distributionPercentToleranceAbs:
+		balance.Status = distributionBalanced
+	case delta > 0:
+		balance.Status = distributionOver
+	default:
+		balance.Status = distributionUnder
+	}
+	return balance
 }
 
 type OnboardingState struct {
@@ -262,57 +391,84 @@ func DecideAllocationKind(kind allocationInputKind, valuesBySlug map[string]floa
 	return kind
 }
 
+var errAllocationOutOfTolerance = errors.New("distribution: soma fora da tolerancia de fechamento")
+
 func DecideAllocationsBP(kind allocationInputKind, valuesBySlug map[string]float64, monthlyBudgetCents int64) (map[string]int, error) {
 	switch kind {
 	case allocationInputConfirm:
-		if sumAllocationValues(valuesBySlug) > 0 {
-			return nil, errAllocationConfirmWithValues
-		}
-		return maps.Clone(defaultDistributionBP), nil
+		return decideAllocationsBPConfirm(valuesBySlug)
 	case allocationInputPercent:
-		bp := make(map[string]int, len(canonicalSlugs))
-		totalPct := 0
-		for _, slug := range canonicalSlugs {
-			pct := int(math.Round(valuesBySlug[slug]))
-			if pct < 0 {
-				return nil, fmt.Errorf("o percentual de %s não pode ser negativo", categoryLabels[slug])
-			}
-			bp[slug] = pct * 100
-			totalPct += pct
-		}
-		if totalPct != 100 {
-			return nil, fmt.Errorf("a soma dos percentuais precisa ser 100%%, mas você informou %d%%", totalPct)
-		}
-		return bp, nil
+		return decideAllocationsBPPercent(valuesBySlug, monthlyBudgetCents)
 	case allocationInputReais:
-		if monthlyBudgetCents <= 0 {
-			return nil, errors.New("não consegui usar seu orçamento mensal para converter os valores")
-		}
-		cents := make([]int64, len(canonicalSlugs))
-		var sum int64
-		for i, slug := range canonicalSlugs {
-			v := valuesBySlug[slug]
-			if v < 0 {
-				return nil, fmt.Errorf("o valor de %s não pode ser negativo", categoryLabels[slug])
-			}
-			cents[i] = int64(math.Round(v * 100))
-			sum += cents[i]
-		}
-		if sum != monthlyBudgetCents {
-			return nil, fmt.Errorf("a soma dos valores (%s) precisa ser igual ao seu orçamento mensal (%s)", money.FromCents(sum).BRL(), money.FromCents(monthlyBudgetCents).BRL())
-		}
-		bpSlice := centsToBasisPoints(cents, monthlyBudgetCents)
-		bp := make(map[string]int, len(canonicalSlugs))
-		for i, slug := range canonicalSlugs {
-			bp[slug] = bpSlice[i]
-		}
-		if err := DecideDistribution(bp); err != nil {
-			return nil, err
-		}
-		return bp, nil
+		return decideAllocationsBPReais(valuesBySlug, monthlyBudgetCents)
 	default:
 		return nil, errInvalidAllocationInput
 	}
+}
+
+func decideAllocationsBPConfirm(valuesBySlug map[string]float64) (map[string]int, error) {
+	if sumAllocationValues(valuesBySlug) > 0 {
+		return nil, errAllocationConfirmWithValues
+	}
+	return maps.Clone(defaultDistributionBP), nil
+}
+
+func decideAllocationsBPPercent(valuesBySlug map[string]float64, monthlyBudgetCents int64) (map[string]int, error) {
+	millis := make([]int64, len(canonicalSlugs))
+	for i, slug := range canonicalSlugs {
+		v := valuesBySlug[slug]
+		if v < 0 {
+			return nil, fmt.Errorf("o percentual de %s não pode ser negativo", categoryLabels[slug])
+		}
+		millis[i] = int64(math.Round(v * 1000))
+	}
+	balance := DecideDistributionBalance(allocationInputPercent, valuesBySlug, monthlyBudgetCents)
+	if balance.Status != distributionBalanced {
+		return nil, errAllocationOutOfTolerance
+	}
+	return finalizeAllocationsBP(millis, sumUnits(millis))
+}
+
+func decideAllocationsBPReais(valuesBySlug map[string]float64, monthlyBudgetCents int64) (map[string]int, error) {
+	if monthlyBudgetCents <= 0 {
+		return nil, errors.New("não consegui usar seu orçamento mensal para converter os valores")
+	}
+	cents := make([]int64, len(canonicalSlugs))
+	for i, slug := range canonicalSlugs {
+		v := valuesBySlug[slug]
+		if v < 0 {
+			return nil, fmt.Errorf("o valor de %s não pode ser negativo", categoryLabels[slug])
+		}
+		cents[i] = int64(math.Round(v * 100))
+	}
+	balance := DecideDistributionBalance(allocationInputReais, valuesBySlug, monthlyBudgetCents)
+	if balance.Status != distributionBalanced {
+		return nil, errAllocationOutOfTolerance
+	}
+	return finalizeAllocationsBP(cents, sumUnits(cents))
+}
+
+func sumUnits(units []int64) int64 {
+	var total int64
+	for _, u := range units {
+		total += u
+	}
+	return total
+}
+
+func finalizeAllocationsBP(units []int64, total int64) (map[string]int, error) {
+	if total <= 0 {
+		return nil, errAllocationOutOfTolerance
+	}
+	bpSlice := centsToBasisPoints(units, total)
+	bp := make(map[string]int, len(canonicalSlugs))
+	for i, slug := range canonicalSlugs {
+		bp[slug] = bpSlice[i]
+	}
+	if err := DecideDistribution(bp); err != nil {
+		return nil, err
+	}
+	return bp, nil
 }
 
 func centsToBasisPoints(cents []int64, totalCents int64) []int {
@@ -448,6 +604,12 @@ type allocationInputExtract struct {
 	Prazeres            float64 `json:"prazeres"`
 	Metas               float64 `json:"metas"`
 	LiberdadeFinanceira float64 `json:"liberdade_financeira"`
+	MixedUnit           bool    `json:"mixed_unit"`
+}
+
+type distributionIntentExtract struct {
+	Action    string `json:"action"`
+	MixedUnit bool   `json:"mixed_unit"`
 }
 
 type yesNoExtract struct {
@@ -505,8 +667,19 @@ var allocationInputSchema = map[string]any{
 		"prazeres":             map[string]any{"type": "number"},
 		"metas":                map[string]any{"type": "number"},
 		"liberdade_financeira": map[string]any{"type": "number"},
+		"mixed_unit":           map[string]any{"type": "boolean"},
 	},
-	"required":             []any{"action", "custo_fixo", "conhecimento", "prazeres", "metas", "liberdade_financeira"},
+	"required":             []any{"action", "custo_fixo", "conhecimento", "prazeres", "metas", "liberdade_financeira", "mixed_unit"},
+	"additionalProperties": false,
+}
+
+var distributionIntentSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"action":     map[string]any{"type": "string", "enum": []any{"accept", "personalize", "values"}},
+		"mixed_unit": map[string]any{"type": "boolean"},
+	},
+	"required":             []any{"action", "mixed_unit"},
 	"additionalProperties": false,
 }
 
@@ -598,7 +771,24 @@ const allocationInputSystemPrompt = "Você classifica a resposta do usuário sob
 	"Defina action='reais' quando o usuário informar valores em reais — valores acompanhados de R$/reais ou números grandes cuja soma se aproxima do orçamento mensal (ex.: 2500, 500, 2000). " +
 	"Defina action='percent' quando ele informar percentuais — números pequenos, acompanhados de % ou cuja soma se aproxima de 100. " +
 	"Em caso de dúvida entre 'reais' e 'percent', escolha 'reais' se a soma dos números se aproximar do orçamento mensal e 'percent' se a soma se aproximar de 100; jamais coaja valores em reais para percentuais ou vice-versa. " +
-	"Preencha cada categoria com o número informado pelo usuário; use 0 quando a categoria não for citada."
+	"Preencha cada categoria com o número informado pelo usuário; use 0 quando a categoria não for citada. " +
+	"Converta valores por extenso para número, sempre em ponto decimal, nunca com símbolo de moeda ou separador de milhar. Exemplos de conversão: " +
+	"\"mil reais\" -> 1000; " +
+	"\"quinhentos\" -> 500; " +
+	"\"dois mil e quinhentos\" -> 2500; " +
+	"\"dez mil\" -> 10000; " +
+	"\"quarenta por cento\" -> 40. " +
+	"Defina mixed_unit=true quando a MESMA mensagem misturar unidades diferentes entre as categorias informadas (ex.: 'custo fixo 40%, prazeres R$ 300' mistura porcentagem e reais); caso contrário mixed_unit=false. " +
+	"Quando mixed_unit=true, ainda assim preencha action e os valores como de costume, pois a ambiguidade de unidade é tratada separadamente."
+
+const distributionIntentSystemPrompt = "Você classifica a intenção do usuário sobre o passo de distribuição do orçamento em 5 categorias. " +
+	"Retorne action e mixed_unit; NÃO extraia valores por categoria aqui. " +
+	"Precedência obrigatória entre as três intenções: 'values' > 'personalize' > 'accept' — se a mensagem contém números utilizáveis para pelo menos uma categoria (em reais, porcentagem ou por extenso), a ação é SEMPRE 'values', mesmo que o texto também contenha a palavra 'não' ou 'nao' (ex.: 'não, quero 40% em custo fixo e o resto dividido' -> action='values', pois há número; 'não, prefiro escolher os valores' sem número nenhum -> action='personalize'). " +
+	"Defina action='accept' somente quando o usuário aceitar a sugestão sem recusar e sem informar nenhum valor novo (ex.: 'sim', 'aceito', 'pode confirmar', 'ok', 'topo'). " +
+	"Defina action='personalize' quando o usuário recusar a sugestão ou pedir para escolher/personalizar sem informar nenhum número usável (ex.: 'não', 'nao', 'quero personalizar', 'prefiro escolher', 'quero mudar os valores'). " +
+	"Defina action='values' quando o usuário informar valores usáveis para pelo menos uma categoria, em reais ('R$ 1.000,00', '1000'), em porcentagem ('40%', '40') ou por extenso ('mil reais' -> 1000, 'quinhentos' -> 500, 'dois mil e quinhentos' -> 2500, 'dez mil' -> 10000, 'quarenta por cento' -> 40). " +
+	"Defina mixed_unit=true quando a MESMA mensagem misturar unidades diferentes entre as categorias informadas (ex.: 'custo fixo 40%, prazeres R$ 300' mistura porcentagem e reais); caso contrário mixed_unit=false. " +
+	"Quando mixed_unit=true, ainda assim retorne o action mais adequado (normalmente 'values'), pois a ambiguidade de unidade é tratada separadamente da intenção."
 
 const summaryConfirmSystemPrompt = "O usuario esta confirmando se deseja ativar o orcamento com os dados apresentados. Extraia se confirmou (true) ou nao (false)."
 
@@ -650,12 +840,77 @@ func methodologyPrompt(items []interfaces.AllocationCents) string {
 	var b strings.Builder
 	b.WriteString("Agora vamos distribuir seu orçamento. O MeControla organiza tudo em 5 categorias. Esta é a sugestão com base no seu orçamento mensal:\n\n")
 	b.WriteString(renderAllocationLines(items))
-	b.WriteString("\nAceita esta sugestão? Responda \"sim\" para confirmar, ou envie novos valores para cada categoria — pode ser em reais (R$) ou em porcentagem (%).")
+	b.WriteString("\nAceita esta sugestão? Responda \"sim\" para confirmar, envie novos valores para cada categoria — pode ser em reais (R$) ou em porcentagem (%) — ou responda \"não\" para personalizar e me dizer você mesmo quanto quer em cada categoria.")
+	return b.String()
+}
+
+func formatDistributionValue(unit allocationInputKind, v float64) string {
+	if unit == allocationInputReais {
+		return money.FromCents(int64(math.Round(v * 100))).BRL()
+	}
+	return fmt.Sprintf("%.0f%%", v)
+}
+
+func renderEchoedValues(unit allocationInputKind, valuesBySlug map[string]float64) string {
+	var b strings.Builder
+	for _, slug := range canonicalSlugs {
+		fmt.Fprintf(&b, "%s: %s\n", categoryLabels[slug], formatDistributionValue(unit, valuesBySlug[slug]))
+	}
+	return b.String()
+}
+
+func renderBalanceMessage(balance DistributionBalance, valuesBySlug map[string]float64) string {
+	var b strings.Builder
+	targetLabel := "100%"
+	if balance.Unit == allocationInputReais {
+		targetLabel = money.FromCents(int64(math.Round(balance.Target * 100))).BRL()
+	}
+	switch balance.Status {
+	case distributionOver:
+		fmt.Fprintf(&b, "A soma que você enviou passou %s do que precisamos fechar (%s).\n\n", formatDistributionValue(balance.Unit, balance.DeltaAbs), targetLabel)
+	case distributionUnder:
+		fmt.Fprintf(&b, "A soma que você enviou ainda falta %s para fechar o total (%s).\n\n", formatDistributionValue(balance.Unit, balance.DeltaAbs), targetLabel)
+	default:
+		fmt.Fprintf(&b, "A distribuição precisa fechar %s no total.\n\n", targetLabel)
+	}
+	b.WriteString("Veja o que entendi de cada categoria:\n")
+	b.WriteString(renderEchoedValues(balance.Unit, valuesBySlug))
+	b.WriteString("\nMe envie os valores novamente, por categoria, para fechar exatamente o total.")
 	return b.String()
 }
 
 func methodologyReprompt(reason string, items []interfaces.AllocationCents) string {
 	return "Ops, não consegui aplicar essa distribuição: " + reason + "\n\n" + methodologyPrompt(items)
+}
+
+func personalizePrompt(monthlyBudgetCents int64) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Combinado! Vamos personalizar sua distribuição. Seu orçamento mensal é %s e ele precisa ser todo distribuído entre as 5 categorias:\n\n", money.FromCents(monthlyBudgetCents).BRL())
+	for _, slug := range canonicalSlugs {
+		fmt.Fprintf(&b, "%s\n", categoryLabels[slug])
+	}
+	b.WriteString("\nMe diga quanto vai para cada categoria — pode ser em reais (R$) ou em porcentagem (%), sempre somando o total do orçamento (ou 100%). Se alguma categoria não fizer sentido para você agora, pode colocar ZERO nela, sem problema.")
+	return b.String()
+}
+
+func personalizeReprompt(monthlyBudgetCents int64) string {
+	return "Não consegui identificar valores para as categorias. " + personalizePrompt(monthlyBudgetCents)
+}
+
+const distributionMixedUnitPrompt = "Entendi valores misturando reais (R$) e porcentagem (%) na mesma resposta. Use uma única unidade para todas as categorias — ou só em reais (R$), ou só em porcentagem (%) — e me envie de novo."
+
+func zeroedCategoriesWarning(items []interfaces.AllocationCents) string {
+	bySlug := allocationCentsBySlug(items)
+	var zeroed []string
+	for _, slug := range canonicalSlugs {
+		if bySlug[slug].BasisPoints == 0 {
+			zeroed = append(zeroed, categoryLabels[slug])
+		}
+	}
+	if len(zeroed) == 0 {
+		return ""
+	}
+	return "\n⚠️ Estas categorias ficarão zeradas (R$ 0,00 / 0%): " + strings.Join(zeroed, ", ") + ".\n"
 }
 
 func summaryPrompt(state OnboardingState, items []interfaces.AllocationCents) string {
@@ -665,6 +920,7 @@ func summaryPrompt(state OnboardingState, items []interfaces.AllocationCents) st
 	fmt.Fprintf(&b, "💵 Orçamento mensal: %s\n", money.FromCents(state.MonthlyBudgetCents).BRL())
 	b.WriteString("\nDistribuição:\n")
 	b.WriteString(renderAllocationLines(items))
+	b.WriteString(zeroedCategoriesWarning(items))
 	b.WriteString("\nPosso ativar seu orçamento com esses dados? Responda \"sim\" para confirmar ou \"não\" para revisar a distribuição.")
 	return b.String()
 }
@@ -951,7 +1207,34 @@ func applyDraftBudget(ctx context.Context, budgets interfaces.BudgetPlanner, sta
 	return nil
 }
 
-func BuildBudgetReviewStep(a agent.Agent, budgets interfaces.BudgetPlanner) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+const distributionOutcomeMetric = "agents_onboarding_distribution_total"
+
+const (
+	distributionOutcomePersonalizeEntered = "personalize_entered"
+	distributionOutcomeAcceptedDefault    = "accepted_default"
+	distributionOutcomeAcceptedValues     = "accepted_values"
+	distributionOutcomeOver               = "over"
+	distributionOutcomeUnder              = "under"
+	distributionOutcomeMixedUnit          = "mixed_unit"
+	distributionOutcomeToleranceAbsorbed  = "tolerance_absorbed"
+)
+
+func newDistributionOutcomeCounter(o11y observability.Observability) observability.Counter {
+	return o11y.Metrics().Counter(
+		distributionOutcomeMetric,
+		"Total de resultados do passo de distribuicao personalizada do onboarding",
+		"1",
+	)
+}
+
+func recordDistributionOutcome(ctx context.Context, dist observability.Counter, outcome string) {
+	if dist == nil {
+		return
+	}
+	dist.Add(ctx, 1, observability.String("outcome", outcome))
+}
+
+func BuildBudgetReviewStep(a agent.Agent, budgets interfaces.BudgetPlanner, dist observability.Counter) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		state.Phase = PhaseBudgetReview
 
@@ -966,7 +1249,9 @@ func BuildBudgetReviewStep(a agent.Agent, budgets interfaces.BudgetPlanner) func
 
 		switch state.ReviewAwait {
 		case reviewAwaitDistribution:
-			return handleReviewAwaitDistribution(ctx, a, budgets, state)
+			return handleReviewAwaitDistribution(ctx, a, budgets, dist, state)
+		case reviewAwaitPersonalize:
+			return handleReviewAwaitPersonalize(ctx, a, budgets, dist, state)
 		case reviewAwaitConfirm:
 			return handleReviewAwaitConfirm(ctx, a, budgets, state)
 		default:
@@ -975,13 +1260,26 @@ func BuildBudgetReviewStep(a agent.Agent, budgets interfaces.BudgetPlanner) func
 	}
 }
 
-func handleReviewAwaitDistribution(ctx context.Context, a agent.Agent, budgets interfaces.BudgetPlanner, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
-	resumeText := state.ResumeText
-	state.ResumeText = ""
-	preview, previewErr := budgets.SuggestAllocation(ctx, state.MonthlyBudgetCents, allocationBPList(defaultDistributionBP))
-	if previewErr != nil {
-		return failStep(state, fmt.Errorf("agents.onboarding.budget_review: suggest_allocation: %w", previewErr))
+func classifyDistributionIntent(ctx context.Context, a agent.Agent, resumeText string) (distributionIntentKind, bool, error) {
+	extracted, err := a.Execute(ctx, agent.Request{
+		Messages: []llm.Message{
+			{Role: "system", Content: distributionIntentSystemPrompt},
+			{Role: "user", Content: resumeText},
+		},
+		Schema: &llm.Schema{Name: "distribution_intent", Strict: true, Schema: distributionIntentSchema},
+	})
+	if err != nil {
+		return 0, false, fmt.Errorf("classify_intent: %w", err)
 	}
+	var intent distributionIntentExtract
+	if err := json.Unmarshal(extracted.RawJSON, &intent); err != nil {
+		return 0, false, fmt.Errorf("unmarshal_intent: %w", err)
+	}
+	kind, _ := ParseDistributionIntentKind(intent.Action)
+	return kind, intent.MixedUnit, nil
+}
+
+func extractAllocationValues(ctx context.Context, a agent.Agent, resumeText string) (allocationInputKind, map[string]float64, bool, error) {
 	extracted, err := a.Execute(ctx, agent.Request{
 		Messages: []llm.Message{
 			{Role: "system", Content: allocationInputSystemPrompt},
@@ -990,16 +1288,15 @@ func handleReviewAwaitDistribution(ctx context.Context, a agent.Agent, budgets i
 		Schema: &llm.Schema{Name: "allocation_input", Strict: true, Schema: allocationInputSchema},
 	})
 	if err != nil {
-		return failStep(state, fmt.Errorf("agents.onboarding.budget_review: parse_allocation: %w", err))
+		return 0, nil, false, fmt.Errorf("parse_allocation: %w", err)
 	}
 	var input allocationInputExtract
 	if err := json.Unmarshal(extracted.RawJSON, &input); err != nil {
-		return failStep(state, fmt.Errorf("agents.onboarding.budget_review: unmarshal_allocation: %w", err))
+		return 0, nil, false, fmt.Errorf("unmarshal_allocation: %w", err)
 	}
 	kind, kindErr := ParseAllocationInputKind(input.Action)
 	if kindErr != nil {
-		state.ReviewAwait = reviewAwaitDistribution
-		return suspendStep(state, methodologyReprompt("não entendi sua resposta.", preview)), nil
+		return 0, nil, false, fmt.Errorf("parse_allocation_kind: %w", kindErr)
 	}
 	values := map[string]float64{
 		"expense.custo_fixo":           input.CustoFixo,
@@ -1008,11 +1305,33 @@ func handleReviewAwaitDistribution(ctx context.Context, a agent.Agent, budgets i
 		"expense.metas":                input.Metas,
 		"expense.liberdade_financeira": input.LiberdadeFinanceira,
 	}
-	kind = DecideAllocationKind(kind, values, state.MonthlyBudgetCents)
-	bp, decErr := DecideAllocationsBP(kind, values, state.MonthlyBudgetCents)
+	return kind, values, input.MixedUnit, nil
+}
+
+func activateAllocationValues(ctx context.Context, budgets interfaces.BudgetPlanner, dist observability.Counter, state OnboardingState, kind allocationInputKind, values map[string]float64) (workflow.StepOutput[OnboardingState], error) {
+	resolvedKind := DecideAllocationKind(kind, values, state.MonthlyBudgetCents)
+	balance := DecideDistributionBalance(resolvedKind, values, state.MonthlyBudgetCents)
+	if balance.Status != distributionBalanced {
+		state.ReviewAwait = reviewAwaitDistribution
+		if balance.Status == distributionOver {
+			recordDistributionOutcome(ctx, dist, distributionOutcomeOver)
+		} else {
+			recordDistributionOutcome(ctx, dist, distributionOutcomeUnder)
+		}
+		return suspendStep(state, renderBalanceMessage(balance, values)), nil
+	}
+	bp, decErr := DecideAllocationsBP(resolvedKind, values, state.MonthlyBudgetCents)
 	if decErr != nil {
 		state.ReviewAwait = reviewAwaitDistribution
-		return suspendStep(state, methodologyReprompt(decErr.Error(), preview)), nil
+		if errors.Is(decErr, errAllocationOutOfTolerance) {
+			if balance.Status == distributionOver {
+				recordDistributionOutcome(ctx, dist, distributionOutcomeOver)
+			} else {
+				recordDistributionOutcome(ctx, dist, distributionOutcomeUnder)
+			}
+			return suspendStep(state, renderBalanceMessage(balance, values)), nil
+		}
+		return suspendStep(state, "Ops, não consegui aplicar essa distribuição: "+decErr.Error()), nil
 	}
 	state.Allocations = bp
 	if err := applyDraftBudget(ctx, budgets, state); err != nil {
@@ -1023,7 +1342,83 @@ func handleReviewAwaitDistribution(ctx context.Context, a agent.Agent, budgets i
 		return failStep(state, fmt.Errorf("agents.onboarding.budget_review: suggest_allocation_current: %w", err))
 	}
 	state.ReviewAwait = reviewAwaitConfirm
+	if balance.DeltaAbs > 0 {
+		recordDistributionOutcome(ctx, dist, distributionOutcomeToleranceAbsorbed)
+	} else {
+		recordDistributionOutcome(ctx, dist, distributionOutcomeAcceptedValues)
+	}
 	return suspendStep(state, summaryPrompt(state, summaryPreview)), nil
+}
+
+func handleReviewAwaitDistribution(ctx context.Context, a agent.Agent, budgets interfaces.BudgetPlanner, dist observability.Counter, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+	resumeText := state.ResumeText
+	state.ResumeText = ""
+	preview, previewErr := budgets.SuggestAllocation(ctx, state.MonthlyBudgetCents, allocationBPList(defaultDistributionBP))
+	if previewErr != nil {
+		return failStep(state, fmt.Errorf("agents.onboarding.budget_review: suggest_allocation: %w", previewErr))
+	}
+	intent, mixedUnit, intentErr := classifyDistributionIntent(ctx, a, resumeText)
+	if intentErr != nil {
+		return failStep(state, fmt.Errorf("agents.onboarding.budget_review: %w", intentErr))
+	}
+	if mixedUnit {
+		state.ReviewAwait = reviewAwaitDistribution
+		recordDistributionOutcome(ctx, dist, distributionOutcomeMixedUnit)
+		return suspendStep(state, distributionMixedUnitPrompt), nil
+	}
+	switch intent {
+	case distributionIntentAccept:
+		state.Allocations = maps.Clone(defaultDistributionBP)
+		if err := applyDraftBudget(ctx, budgets, state); err != nil {
+			return failStep(state, fmt.Errorf("agents.onboarding.budget_review: apply_draft_budget: %w", err))
+		}
+		summaryPreview, err := budgets.SuggestAllocation(ctx, state.MonthlyBudgetCents, allocationBPList(state.Allocations))
+		if err != nil {
+			return failStep(state, fmt.Errorf("agents.onboarding.budget_review: suggest_allocation_current: %w", err))
+		}
+		state.ReviewAwait = reviewAwaitConfirm
+		recordDistributionOutcome(ctx, dist, distributionOutcomeAcceptedDefault)
+		return suspendStep(state, summaryPrompt(state, summaryPreview)), nil
+	case distributionIntentPersonalize:
+		state.ReviewAwait = reviewAwaitPersonalize
+		recordDistributionOutcome(ctx, dist, distributionOutcomePersonalizeEntered)
+		return suspendStep(state, personalizePrompt(state.MonthlyBudgetCents)), nil
+	case distributionIntentValues:
+		kind, values, _, extractErr := extractAllocationValues(ctx, a, resumeText)
+		if extractErr != nil {
+			return failStep(state, fmt.Errorf("agents.onboarding.budget_review: %w", extractErr))
+		}
+		return activateAllocationValues(ctx, budgets, dist, state, kind, values)
+	default:
+		state.ReviewAwait = reviewAwaitDistribution
+		return suspendStep(state, methodologyReprompt("não entendi sua resposta.", preview)), nil
+	}
+}
+
+func handleReviewAwaitPersonalize(ctx context.Context, a agent.Agent, budgets interfaces.BudgetPlanner, dist observability.Counter, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+	resumeText := state.ResumeText
+	state.ResumeText = ""
+	kind, values, mixedUnit, extractErr := extractAllocationValues(ctx, a, resumeText)
+	if extractErr != nil {
+		return failStep(state, fmt.Errorf("agents.onboarding.budget_review: %w", extractErr))
+	}
+	if mixedUnit {
+		state.ReviewAwait = reviewAwaitPersonalize
+		recordDistributionOutcome(ctx, dist, distributionOutcomeMixedUnit)
+		return suspendStep(state, distributionMixedUnitPrompt), nil
+	}
+	if kind == allocationInputConfirm && sumAllocationValues(values) <= 0 {
+		state.ReviewAwait = reviewAwaitPersonalize
+		return suspendStep(state, personalizeReprompt(state.MonthlyBudgetCents)), nil
+	}
+	out, err := activateAllocationValues(ctx, budgets, dist, state, kind, values)
+	if err != nil {
+		return out, err
+	}
+	if out.Status == workflow.StepStatusSuspended && out.State.ReviewAwait == reviewAwaitDistribution {
+		out.State.ReviewAwait = reviewAwaitPersonalize
+	}
+	return out, nil
 }
 
 func handleReviewAwaitConfirm(ctx context.Context, a agent.Agent, budgets interfaces.BudgetPlanner, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
@@ -1186,9 +1581,14 @@ func BuildOnboardingWorkflow(
 	workingMem memory.WorkingMemory,
 	threads memory.ThreadGateway,
 	messages memory.MessageStore,
+	o11y observability.Observability,
 ) workflow.Definition[OnboardingState] {
 	wrap := func(fn func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error)) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		return wrapStepWithMessages(fn, threads, messages)
+	}
+	var dist observability.Counter
+	if o11y != nil {
+		dist = newDistributionOutcomeCounter(o11y)
 	}
 	return workflow.Definition[OnboardingState]{
 		ID: OnboardingWorkflowID,
@@ -1196,7 +1596,7 @@ func BuildOnboardingWorkflow(
 			workflow.NewStepFunc(stepWelcomeID, wrap(BuildWelcomeStep())),
 			workflow.NewStepFunc(stepGoalID, wrap(BuildGoalStep(a))),
 			workflow.NewStepFunc(stepMonthlyBudgetID, wrap(BuildMonthlyBudgetStep(a))),
-			workflow.NewStepFunc(stepBudgetReviewID, wrap(BuildBudgetReviewStep(a, budgets))),
+			workflow.NewStepFunc(stepBudgetReviewID, wrap(BuildBudgetReviewStep(a, budgets, dist))),
 			workflow.NewStepFunc(stepActivationID, wrap(BuildActivationStep(budgets))),
 			workflow.NewStepFunc(stepRecurrenceID, wrap(BuildRecurrenceStep(a, budgets))),
 			workflow.NewStepFunc(stepCardsID, wrap(BuildCardsStep(a, cards))),

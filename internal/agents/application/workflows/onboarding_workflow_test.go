@@ -471,7 +471,7 @@ func (s *OnboardingWorkflowSuite) TestDecideAllocationsBP() {
 			},
 		},
 		{
-			name: "percent que nao soma 100 deve retornar erro amigavel",
+			name: "percent que nao soma 100 deve retornar erro fora da tolerancia",
 			args: args{kind: allocationInputPercent, values: map[string]float64{
 				"expense.custo_fixo": 40, "expense.conhecimento": 10, "expense.prazeres": 10,
 				"expense.metas": 10, "expense.liberdade_financeira": 20,
@@ -479,7 +479,7 @@ func (s *OnboardingWorkflowSuite) TestDecideAllocationsBP() {
 			expect: func(bp map[string]int, err error) {
 				s.Error(err)
 				s.Nil(bp)
-				s.Contains(err.Error(), "90%")
+				s.ErrorIs(err, errAllocationOutOfTolerance)
 			},
 		},
 		{
@@ -497,7 +497,7 @@ func (s *OnboardingWorkflowSuite) TestDecideAllocationsBP() {
 			},
 		},
 		{
-			name: "reais que nao somam ao orcamento mensal deve retornar erro amigavel",
+			name: "reais que nao somam ao orcamento mensal deve retornar erro fora da tolerancia",
 			args: args{kind: allocationInputReais, values: map[string]float64{
 				"expense.custo_fixo": 5400, "expense.conhecimento": 1350, "expense.prazeres": 1350,
 				"expense.metas": 1350, "expense.liberdade_financeira": 2700,
@@ -505,7 +505,7 @@ func (s *OnboardingWorkflowSuite) TestDecideAllocationsBP() {
 			expect: func(bp map[string]int, err error) {
 				s.Error(err)
 				s.Nil(bp)
-				s.Contains(err.Error(), "orçamento mensal")
+				s.ErrorIs(err, errAllocationOutOfTolerance)
 			},
 		},
 	}
@@ -513,6 +513,215 @@ func (s *OnboardingWorkflowSuite) TestDecideAllocationsBP() {
 		s.Run(scenario.name, func() {
 			bp, err := DecideAllocationsBP(scenario.args.kind, scenario.args.values, scenario.args.incomeCents)
 			scenario.expect(bp, err)
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestDecideAllocationsBP_NR01_PreservesExactBP() {
+	type args struct {
+		kind        allocationInputKind
+		values      map[string]float64
+		incomeCents int64
+	}
+	scenarios := []struct {
+		name string
+		args args
+		want map[string]int
+	}{
+		{
+			name: "percent exato 40/10/10/10/30 permanece identico",
+			args: args{kind: allocationInputPercent, values: map[string]float64{
+				"expense.custo_fixo": 40, "expense.conhecimento": 10, "expense.prazeres": 10,
+				"expense.metas": 10, "expense.liberdade_financeira": 30,
+			}, incomeCents: 1350000},
+			want: map[string]int{
+				"expense.custo_fixo": 4000, "expense.conhecimento": 1000, "expense.prazeres": 1000,
+				"expense.metas": 1000, "expense.liberdade_financeira": 3000,
+			},
+		},
+		{
+			name: "reais exatos ao orcamento mensal permanece identico ao caminho centsToBasisPoints",
+			args: args{kind: allocationInputReais, values: map[string]float64{
+				"expense.custo_fixo": 5400, "expense.conhecimento": 1350, "expense.prazeres": 1350,
+				"expense.metas": 1350, "expense.liberdade_financeira": 4050,
+			}, incomeCents: 1350000},
+			want: map[string]int{
+				"expense.custo_fixo": 4000, "expense.conhecimento": 1000, "expense.prazeres": 1000,
+				"expense.metas": 1000, "expense.liberdade_financeira": 3000,
+			},
+		},
+	}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			bp, err := DecideAllocationsBP(scenario.args.kind, scenario.args.values, scenario.args.incomeCents)
+			s.NoError(err)
+			s.Equal(scenario.want, bp)
+			s.NoError(DecideDistribution(bp))
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestDecideAllocationsBP_ToleranceAbsorbedAlwaysClosesInvariant() {
+	type args struct {
+		kind        allocationInputKind
+		values      map[string]float64
+		incomeCents int64
+	}
+	scenarios := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "percent 33,3+33,3+33,4 absorve resto e fecha 10000",
+			args: args{kind: allocationInputPercent, values: map[string]float64{
+				"expense.custo_fixo": 33.3, "expense.conhecimento": 33.3, "expense.prazeres": 33.4,
+				"expense.metas": 0, "expense.liberdade_financeira": 0,
+			}, incomeCents: 1350000},
+		},
+		{
+			name: "percent 99,7 (dentro da tolerancia 0,5) absorve resto e fecha 10000",
+			args: args{kind: allocationInputPercent, values: map[string]float64{
+				"expense.custo_fixo": 40, "expense.conhecimento": 10, "expense.prazeres": 10,
+				"expense.metas": 10, "expense.liberdade_financeira": 29.7,
+			}, incomeCents: 1350000},
+		},
+		{
+			name: "percent 100,3 (dentro da tolerancia 0,5) absorve resto e fecha 10000",
+			args: args{kind: allocationInputPercent, values: map[string]float64{
+				"expense.custo_fixo": 40, "expense.conhecimento": 10, "expense.prazeres": 10,
+				"expense.metas": 10, "expense.liberdade_financeira": 30.3,
+			}, incomeCents: 1350000},
+		},
+		{
+			name: "reais a R$0,04 do orcamento (dentro da tolerancia R$0,05) absorve resto e fecha 10000",
+			args: args{kind: allocationInputReais, values: map[string]float64{
+				"expense.custo_fixo": 5400.04, "expense.conhecimento": 1350, "expense.prazeres": 1350,
+				"expense.metas": 1350, "expense.liberdade_financeira": 4050,
+			}, incomeCents: 1350000},
+		},
+	}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			bp, err := DecideAllocationsBP(scenario.args.kind, scenario.args.values, scenario.args.incomeCents)
+			s.NoError(err)
+			s.NoError(DecideDistribution(bp))
+			total := 0
+			for _, v := range bp {
+				total += v
+			}
+			s.Equal(10000, total)
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestDecideDistributionBalance() {
+	type args struct {
+		kind        allocationInputKind
+		values      map[string]float64
+		incomeCents int64
+	}
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(balance DistributionBalance)
+	}{
+		{
+			name: "percent exato 100 fica balanced",
+			args: args{kind: allocationInputPercent, values: map[string]float64{
+				"expense.custo_fixo": 40, "expense.conhecimento": 10, "expense.prazeres": 10,
+				"expense.metas": 10, "expense.liberdade_financeira": 30,
+			}, incomeCents: 1350000},
+			expect: func(balance DistributionBalance) {
+				s.Equal(distributionBalanced, balance.Status)
+				s.Equal(allocationInputPercent, balance.Unit)
+				s.Equal(100.0, balance.Target)
+				s.Equal(100.0, balance.Sum)
+				s.Equal(0.0, balance.DeltaAbs)
+			},
+		},
+		{
+			name: "percent 33,3+33,3+33,4 dentro da tolerancia fica balanced",
+			args: args{kind: allocationInputPercent, values: map[string]float64{
+				"expense.custo_fixo": 33.3, "expense.conhecimento": 33.3, "expense.prazeres": 33.4,
+				"expense.metas": 0, "expense.liberdade_financeira": 0,
+			}, incomeCents: 1350000},
+			expect: func(balance DistributionBalance) {
+				s.Equal(distributionBalanced, balance.Status)
+			},
+		},
+		{
+			name: "percent acima do total fica over com delta em pontos percentuais",
+			args: args{kind: allocationInputPercent, values: map[string]float64{
+				"expense.custo_fixo": 40, "expense.conhecimento": 10, "expense.prazeres": 10,
+				"expense.metas": 10, "expense.liberdade_financeira": 40,
+			}, incomeCents: 1350000},
+			expect: func(balance DistributionBalance) {
+				s.Equal(distributionOver, balance.Status)
+				s.Equal(allocationInputPercent, balance.Unit)
+				s.Equal(10.0, balance.DeltaAbs)
+			},
+		},
+		{
+			name: "percent abaixo do total fica under com delta em pontos percentuais",
+			args: args{kind: allocationInputPercent, values: map[string]float64{
+				"expense.custo_fixo": 40, "expense.conhecimento": 10, "expense.prazeres": 10,
+				"expense.metas": 10, "expense.liberdade_financeira": 20,
+			}, incomeCents: 1350000},
+			expect: func(balance DistributionBalance) {
+				s.Equal(distributionUnder, balance.Status)
+				s.Equal(10.0, balance.DeltaAbs)
+			},
+		},
+		{
+			name: "reais exatos ao orcamento mensal fica balanced",
+			args: args{kind: allocationInputReais, values: map[string]float64{
+				"expense.custo_fixo": 5400, "expense.conhecimento": 1350, "expense.prazeres": 1350,
+				"expense.metas": 1350, "expense.liberdade_financeira": 4050,
+			}, incomeCents: 1350000},
+			expect: func(balance DistributionBalance) {
+				s.Equal(distributionBalanced, balance.Status)
+				s.Equal(allocationInputReais, balance.Unit)
+				s.Equal(13500.0, balance.Target)
+			},
+		},
+		{
+			name: "reais a R$0,04 do orcamento fica balanced (dentro da tolerancia R$0,05)",
+			args: args{kind: allocationInputReais, values: map[string]float64{
+				"expense.custo_fixo": 5400.04, "expense.conhecimento": 1350, "expense.prazeres": 1350,
+				"expense.metas": 1350, "expense.liberdade_financeira": 4050,
+			}, incomeCents: 1350000},
+			expect: func(balance DistributionBalance) {
+				s.Equal(distributionBalanced, balance.Status)
+			},
+		},
+		{
+			name: "reais a R$0,06 do orcamento fica over (fora da tolerancia R$0,05)",
+			args: args{kind: allocationInputReais, values: map[string]float64{
+				"expense.custo_fixo": 5400.06, "expense.conhecimento": 1350, "expense.prazeres": 1350,
+				"expense.metas": 1350, "expense.liberdade_financeira": 4050,
+			}, incomeCents: 1350000},
+			expect: func(balance DistributionBalance) {
+				s.Equal(distributionOver, balance.Status)
+				s.Equal(allocationInputReais, balance.Unit)
+			},
+		},
+		{
+			name: "reais abaixo do orcamento mensal fica under com delta em reais",
+			args: args{kind: allocationInputReais, values: map[string]float64{
+				"expense.custo_fixo": 5400, "expense.conhecimento": 1350, "expense.prazeres": 1350,
+				"expense.metas": 1350, "expense.liberdade_financeira": 2700,
+			}, incomeCents: 1350000},
+			expect: func(balance DistributionBalance) {
+				s.Equal(distributionUnder, balance.Status)
+				s.Equal(allocationInputReais, balance.Unit)
+				s.Equal(1350.0, balance.DeltaAbs)
+			},
+		},
+	}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			balance := DecideDistributionBalance(scenario.args.kind, scenario.args.values, scenario.args.incomeCents)
+			scenario.expect(balance)
 		})
 	}
 }
@@ -722,6 +931,273 @@ func (s *OnboardingWorkflowSuite) TestReviewAwaitKind_IsValid_ZeroValue() {
 	s.Equal("unknown", zero.String())
 	s.True(reviewAwaitDistribution.IsValid())
 	s.True(reviewAwaitConfirm.IsValid())
+	s.True(reviewAwaitPersonalize.IsValid())
+	s.Equal("distribution", reviewAwaitDistribution.String())
+	s.Equal("confirm", reviewAwaitConfirm.String())
+	s.Equal("personalize", reviewAwaitPersonalize.String())
+}
+
+func (s *OnboardingWorkflowSuite) TestDistributionIntentKind_IsValid_ZeroValue() {
+	var zero distributionIntentKind
+	s.False(zero.IsValid())
+	s.Equal("unknown", zero.String())
+	s.True(distributionIntentAccept.IsValid())
+	s.True(distributionIntentPersonalize.IsValid())
+	s.True(distributionIntentValues.IsValid())
+	s.Equal("accept", distributionIntentAccept.String())
+	s.Equal("personalize", distributionIntentPersonalize.String())
+	s.Equal("values", distributionIntentValues.String())
+}
+
+func (s *OnboardingWorkflowSuite) TestParseDistributionIntentKind() {
+	type args struct {
+		input string
+	}
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(kind distributionIntentKind, err error)
+	}{
+		{
+			name: "accept valido",
+			args: args{input: "accept"},
+			expect: func(kind distributionIntentKind, err error) {
+				s.NoError(err)
+				s.Equal(distributionIntentAccept, kind)
+			},
+		},
+		{
+			name: "personalize valido case-insensitive com espacos",
+			args: args{input: "  Personalize  "},
+			expect: func(kind distributionIntentKind, err error) {
+				s.NoError(err)
+				s.Equal(distributionIntentPersonalize, kind)
+			},
+		},
+		{
+			name: "values valido",
+			args: args{input: "values"},
+			expect: func(kind distributionIntentKind, err error) {
+				s.NoError(err)
+				s.Equal(distributionIntentValues, kind)
+			},
+		},
+		{
+			name: "invalido retorna erro tipado",
+			args: args{input: "bogus"},
+			expect: func(kind distributionIntentKind, err error) {
+				s.Error(err)
+				s.True(errors.Is(err, errInvalidDistributionIntent))
+				s.Equal(distributionIntentKind(0), kind)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			kind, err := ParseDistributionIntentKind(scenario.args.input)
+			scenario.expect(kind, err)
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestDistributionBalanceKind_IsValid_ZeroValue() {
+	var zero distributionBalanceKind
+	s.False(zero.IsValid())
+	s.Equal("unknown", zero.String())
+	s.True(distributionBalanced.IsValid())
+	s.True(distributionOver.IsValid())
+	s.True(distributionUnder.IsValid())
+	s.Equal("balanced", distributionBalanced.String())
+	s.Equal("over", distributionOver.String())
+	s.Equal("under", distributionUnder.String())
+}
+
+func (s *OnboardingWorkflowSuite) TestParseDistributionBalanceKind() {
+	type args struct {
+		input string
+	}
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(kind distributionBalanceKind, err error)
+	}{
+		{
+			name: "balanced valido",
+			args: args{input: "balanced"},
+			expect: func(kind distributionBalanceKind, err error) {
+				s.NoError(err)
+				s.Equal(distributionBalanced, kind)
+			},
+		},
+		{
+			name: "over valido case-insensitive com espacos",
+			args: args{input: "  Over  "},
+			expect: func(kind distributionBalanceKind, err error) {
+				s.NoError(err)
+				s.Equal(distributionOver, kind)
+			},
+		},
+		{
+			name: "under valido",
+			args: args{input: "under"},
+			expect: func(kind distributionBalanceKind, err error) {
+				s.NoError(err)
+				s.Equal(distributionUnder, kind)
+			},
+		},
+		{
+			name: "invalido retorna erro tipado",
+			args: args{input: "bogus"},
+			expect: func(kind distributionBalanceKind, err error) {
+				s.Error(err)
+				s.True(errors.Is(err, errInvalidDistributionBalance))
+				s.Equal(distributionBalanceKind(0), kind)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			kind, err := ParseDistributionBalanceKind(scenario.args.input)
+			scenario.expect(kind, err)
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestAllocationInputSystemPrompt_ContainsExtensoExamples() {
+	s.Contains(allocationInputSystemPrompt, "mil reais")
+	s.Contains(allocationInputSystemPrompt, "quinhentos")
+	s.Contains(allocationInputSystemPrompt, "action='confirm'")
+	s.Contains(allocationInputSystemPrompt, "action='reais'")
+	s.Contains(allocationInputSystemPrompt, "action='percent'")
+}
+
+func (s *OnboardingWorkflowSuite) TestDistributionIntentExtract_UnmarshalsIntoExtractStruct() {
+	payload, err := json.Marshal(distributionIntentExtract{Action: "values", MixedUnit: true})
+	s.NoError(err)
+	var extract distributionIntentExtract
+	s.NoError(json.Unmarshal(payload, &extract))
+	s.Equal("values", extract.Action)
+	s.True(extract.MixedUnit)
+}
+
+func (s *OnboardingWorkflowSuite) TestDistributionIntentSchema_HasOnlyActionAndMixedUnit() {
+	props, ok := distributionIntentSchema["properties"].(map[string]any)
+	s.True(ok)
+	s.Len(props, 2)
+	s.Contains(props, "action")
+	s.Contains(props, "mixed_unit")
+	required, ok := distributionIntentSchema["required"].([]any)
+	s.True(ok)
+	s.ElementsMatch([]any{"action", "mixed_unit"}, required)
+	s.Equal(false, distributionIntentSchema["additionalProperties"])
+	action, ok := props["action"].(map[string]any)
+	s.True(ok)
+	s.ElementsMatch([]any{"accept", "personalize", "values"}, action["enum"])
+}
+
+func (s *OnboardingWorkflowSuite) TestDistributionIntentSystemPrompt_HasPrecedenceAndExtensoExamples() {
+	s.Contains(distributionIntentSystemPrompt, "'values' > 'personalize' > 'accept'")
+	s.Contains(distributionIntentSystemPrompt, "action='accept'")
+	s.Contains(distributionIntentSystemPrompt, "action='personalize'")
+	s.Contains(distributionIntentSystemPrompt, "action='values'")
+	s.Contains(distributionIntentSystemPrompt, "mixed_unit")
+	s.Contains(distributionIntentSystemPrompt, "mil reais")
+	s.Contains(distributionIntentSystemPrompt, "quinhentos")
+	s.NotContains(distributionIntentSystemPrompt, "renda")
+}
+
+func (s *OnboardingWorkflowSuite) TestPersonalizePrompt_AnchorsBudgetAndListsCategoriesWithZeroRule() {
+	prompt := personalizePrompt(350000)
+	s.Contains(prompt, "R$ 3.500,00")
+	for _, slug := range canonicalSlugs {
+		s.Contains(prompt, categoryLabels[slug])
+	}
+	s.Contains(prompt, "ZERO")
+	s.NotContains(prompt, "renda")
+}
+
+func (s *OnboardingWorkflowSuite) TestMethodologyPrompt_AnnouncesPersonalizeAndKeepsAcceptCopy() {
+	items := suggestReturn(500000, defaultDistributionBP)
+	prompt := methodologyPrompt(items)
+	s.Contains(prompt, "Aceita esta sugestão")
+	s.Contains(prompt, "não")
+	s.Contains(prompt, "personaliz")
+	s.NotContains(prompt, "renda")
+}
+
+func (s *OnboardingWorkflowSuite) TestRenderBalanceMessage() {
+	type args struct {
+		balance      DistributionBalance
+		valuesBySlug map[string]float64
+	}
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(msg string)
+	}{
+		{
+			name: "over em percentual ecoa valores e informa quanto passou",
+			args: args{
+				balance: DistributionBalance{Status: distributionOver, Unit: allocationInputPercent, Target: 100, Sum: 110, DeltaAbs: 10},
+				valuesBySlug: map[string]float64{
+					"expense.custo_fixo": 40, "expense.conhecimento": 20, "expense.prazeres": 20,
+					"expense.metas": 20, "expense.liberdade_financeira": 10,
+				},
+			},
+			expect: func(msg string) {
+				s.Contains(msg, "10%")
+				s.Contains(msg, "100%")
+				s.Contains(msg, "💰 Custo Fixo: 40%")
+				s.Contains(msg, "passou")
+				s.NotContains(msg, "renda")
+			},
+		},
+		{
+			name: "under em reais ecoa valores em BRL e informa quanto falta",
+			args: args{
+				balance: DistributionBalance{Status: distributionUnder, Unit: allocationInputReais, Target: 3500, Sum: 3000, DeltaAbs: 500},
+				valuesBySlug: map[string]float64{
+					"expense.custo_fixo": 1500, "expense.conhecimento": 500, "expense.prazeres": 500,
+					"expense.metas": 300, "expense.liberdade_financeira": 200,
+				},
+			},
+			expect: func(msg string) {
+				s.Contains(msg, "R$ 500,00")
+				s.Contains(msg, "R$ 3.500,00")
+				s.Contains(msg, "💰 Custo Fixo: R$ 1.500,00")
+				s.Contains(msg, "falta")
+				s.NotContains(msg, "renda")
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			msg := renderBalanceMessage(scenario.args.balance, scenario.args.valuesBySlug)
+			scenario.expect(msg)
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestSummaryPrompt_ZeroedCategoryWarning() {
+	state := OnboardingState{UserID: "u1", Goal: "economizar", MonthlyBudgetCents: 500000}
+
+	withZero := map[string]int{
+		"expense.custo_fixo": 10000, "expense.conhecimento": 0, "expense.prazeres": 0,
+		"expense.metas": 0, "expense.liberdade_financeira": 0,
+	}
+	promptWithZero := summaryPrompt(state, suggestReturn(500000, withZero))
+	s.Contains(promptWithZero, "zeradas")
+	s.Contains(promptWithZero, "🎓 Conhecimento")
+	s.Contains(promptWithZero, "🎉 Prazeres")
+	s.Equal(1, strings.Count(promptWithZero, "zeradas"), "aviso de categorias zeradas deve aparecer uma unica vez (RF-07)")
+	s.Contains(promptWithZero, "🎓 Conhecimento: R$ 0,00 (0%)", "categoria zerada deve aparecer no resumo com o literal monetario exato R$ 0,00 (0%) (RF-07)")
+	s.Contains(promptWithZero, "🎉 Prazeres: R$ 0,00 (0%)", "categoria zerada deve aparecer no resumo com o literal monetario exato R$ 0,00 (0%) (RF-07)")
+
+	promptWithoutZero := summaryPrompt(state, suggestReturn(500000, defaultDistributionBP))
+	s.NotContains(promptWithoutZero, "zeradas")
 }
 
 func (s *OnboardingWorkflowSuite) TestBuildWelcomeStep() {
@@ -1251,10 +1727,10 @@ func (s *OnboardingWorkflowSuite) TestBuildBudgetReviewStep() {
 			}},
 			dependencies: dependencies{
 				agentMock: func() *agentmocks.Agent {
-					payload, _ := json.Marshal(allocationInputExtract{Action: "confirm"})
+					intentPayload, _ := json.Marshal(distributionIntentExtract{Action: "accept"})
 					s.agentMock.EXPECT().
 						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
-						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+						Return(agentpkg.Result{RawJSON: intentPayload}, nil).Once()
 					return s.agentMock
 				}(),
 				budgetsMock: func() *interfacemocks.BudgetPlanner {
@@ -1295,13 +1771,17 @@ func (s *OnboardingWorkflowSuite) TestBuildBudgetReviewStep() {
 			}},
 			dependencies: dependencies{
 				agentMock: func() *agentmocks.Agent {
-					payload, _ := json.Marshal(allocationInputExtract{
+					intentPayload, _ := json.Marshal(distributionIntentExtract{Action: "values"})
+					allocationPayload, _ := json.Marshal(allocationInputExtract{
 						Action: "reais", CustoFixo: 5400, Conhecimento: 1350,
 						Prazeres: 1350, Metas: 1350, LiberdadeFinanceira: 4050,
 					})
 					s.agentMock.EXPECT().
 						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
-						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+						Return(agentpkg.Result{RawJSON: intentPayload}, nil).Once()
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: allocationPayload}, nil).Once()
 					return s.agentMock
 				}(),
 				budgetsMock: func() *interfacemocks.BudgetPlanner {
@@ -1328,19 +1808,63 @@ func (s *OnboardingWorkflowSuite) TestBuildBudgetReviewStep() {
 			},
 		},
 		{
+			name: "BUG-001 regressao: resume em reviewAwaitDistribution com action=confirm cuja soma bate o orcamento em reais deve reportar saldo/delta em R$, nao em percentual",
+			args: args{state: OnboardingState{
+				UserID: "11111111-1111-1111-1111-111111111111", MonthlyBudgetCents: 1350000, ResumeText: "13500 no total", ReviewAwait: reviewAwaitDistribution,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					intentPayload, _ := json.Marshal(distributionIntentExtract{Action: "values"})
+					allocationPayload, _ := json.Marshal(allocationInputExtract{
+						Action: "confirm", CustoFixo: 5400, Conhecimento: 1350,
+						Prazeres: 1350, Metas: 1350, LiberdadeFinanceira: 4050,
+					})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: intentPayload}, nil).Once()
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: allocationPayload}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					s.budgetsMock.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Twice()
+					s.budgetsMock.EXPECT().
+						GetMonthlySummary(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+						Return(interfaces.BudgetSummary{}, interfaces.ErrBudgetNotFound).Once()
+					s.budgetsMock.EXPECT().
+						CreateBudget(mock.Anything, mock.AnythingOfType("interfaces.DraftBudget")).
+						Return(interfaces.BudgetRef{}, nil).Once()
+					return s.budgetsMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(reviewAwaitConfirm, out.State.ReviewAwait)
+				s.Equal(4000, out.State.Allocations["expense.custo_fixo"])
+			},
+		},
+		{
 			name: "resume em reviewAwaitDistribution com soma que nao fecha deve reprompt sem ativar, mantendo mesmo sub-estado",
 			args: args{state: OnboardingState{
 				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "40 10 10 10 20", ReviewAwait: reviewAwaitDistribution,
 			}},
 			dependencies: dependencies{
 				agentMock: func() *agentmocks.Agent {
-					payload, _ := json.Marshal(allocationInputExtract{
+					intentPayload, _ := json.Marshal(distributionIntentExtract{Action: "values"})
+					allocationPayload, _ := json.Marshal(allocationInputExtract{
 						Action: "percent", CustoFixo: 40, Conhecimento: 10,
 						Prazeres: 10, Metas: 10, LiberdadeFinanceira: 20,
 					})
 					s.agentMock.EXPECT().
 						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
-						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+						Return(agentpkg.Result{RawJSON: intentPayload}, nil).Once()
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: allocationPayload}, nil).Once()
 					return s.agentMock
 				}(),
 				budgetsMock: func() *interfacemocks.BudgetPlanner {
@@ -1354,11 +1878,363 @@ func (s *OnboardingWorkflowSuite) TestBuildBudgetReviewStep() {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
 				s.NotNil(out.Suspend)
-				s.Contains(out.Suspend.Prompt, "90%")
+				s.Contains(out.Suspend.Prompt, "falta")
+				s.Contains(out.Suspend.Prompt, "10%")
+				s.Contains(out.Suspend.Prompt, "20%")
 				s.NotContains(out.Suspend.Prompt, "o usuário")
 				s.NotContains(out.Suspend.Prompt, "você orienta")
 				s.Empty(out.State.ResumeText)
 				s.Equal(reviewAwaitDistribution, out.State.ReviewAwait)
+			},
+		},
+		{
+			name: "RF-06 regressao: resume em reviewAwaitDistribution com valores em reais que passam do orcamento deve reportar o delta em R$ e nao em percentual, sem ativar",
+			args: args{state: OnboardingState{
+				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "5900 1350 1350 1350 4050", ReviewAwait: reviewAwaitDistribution,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					intentPayload, _ := json.Marshal(distributionIntentExtract{Action: "values"})
+					allocationPayload, _ := json.Marshal(allocationInputExtract{
+						Action: "reais", CustoFixo: 5900, Conhecimento: 1350,
+						Prazeres: 1350, Metas: 1350, LiberdadeFinanceira: 4050,
+					})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: intentPayload}, nil).Once()
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: allocationPayload}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					s.budgetsMock.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
+					return s.budgetsMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.NotNil(out.Suspend)
+				s.Contains(out.Suspend.Prompt, "passou")
+				s.Contains(out.Suspend.Prompt, "R$ 500,00")
+				s.Contains(out.Suspend.Prompt, "R$ 13.500,00")
+				s.NotContains(out.Suspend.Prompt, "%")
+				s.Nil(out.State.Allocations)
+				s.Equal(reviewAwaitDistribution, out.State.ReviewAwait)
+			},
+		},
+		{
+			name: "RF-06 regressao: resume em reviewAwaitDistribution com valores em reais abaixo do orcamento deve reportar quanto falta em R$, sem ativar",
+			args: args{state: OnboardingState{
+				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "4900 1350 1350 1350 4050", ReviewAwait: reviewAwaitDistribution,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					intentPayload, _ := json.Marshal(distributionIntentExtract{Action: "values"})
+					allocationPayload, _ := json.Marshal(allocationInputExtract{
+						Action: "reais", CustoFixo: 4900, Conhecimento: 1350,
+						Prazeres: 1350, Metas: 1350, LiberdadeFinanceira: 4050,
+					})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: intentPayload}, nil).Once()
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: allocationPayload}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					s.budgetsMock.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
+					return s.budgetsMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.NotNil(out.Suspend)
+				s.Contains(out.Suspend.Prompt, "falta")
+				s.Contains(out.Suspend.Prompt, "R$ 500,00")
+				s.NotContains(out.Suspend.Prompt, "%")
+				s.Nil(out.State.Allocations)
+				s.Equal(reviewAwaitDistribution, out.State.ReviewAwait)
+			},
+		},
+		{
+			name: "resume em reviewAwaitDistribution com recusa deve entrar em personalizar sem aplicar default",
+			args: args{state: OnboardingState{
+				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "não, quero escolher", ReviewAwait: reviewAwaitDistribution,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					intentPayload, _ := json.Marshal(distributionIntentExtract{Action: "personalize"})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: intentPayload}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					s.budgetsMock.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
+					return s.budgetsMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Contains(out.Suspend.Prompt, "R$ 13.500,00")
+				s.Contains(out.Suspend.Prompt, "ZERO")
+				s.Equal(reviewAwaitPersonalize, out.State.ReviewAwait)
+				s.Empty(out.State.ResumeText)
+				s.Nil(out.State.Allocations)
+			},
+		},
+		{
+			name: "resume em reviewAwaitDistribution com unidades mistas deve pedir unidade unica sem ativar",
+			args: args{state: OnboardingState{
+				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "custo fixo 40%, prazeres R$ 300", ReviewAwait: reviewAwaitDistribution,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					intentPayload, _ := json.Marshal(distributionIntentExtract{Action: "values", MixedUnit: true})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: intentPayload}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					s.budgetsMock.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
+					return s.budgetsMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(distributionMixedUnitPrompt, out.Suspend.Prompt)
+				s.Equal(reviewAwaitDistribution, out.State.ReviewAwait)
+				s.Empty(out.State.ResumeText)
+			},
+		},
+		{
+			name: "resume em reviewAwaitDistribution com intencao nao reconhecida deve reprompt sem ativar",
+			args: args{state: OnboardingState{
+				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "???", ReviewAwait: reviewAwaitDistribution,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					intentPayload, _ := json.Marshal(distributionIntentExtract{Action: "desconhecido"})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: intentPayload}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					s.budgetsMock.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
+					return s.budgetsMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Contains(out.Suspend.Prompt, "não entendi sua resposta.")
+				s.Equal(reviewAwaitDistribution, out.State.ReviewAwait)
+				s.Empty(out.State.ResumeText)
+			},
+		},
+		{
+			name: "deve falhar quando a classificacao de intencao retorna erro",
+			args: args{state: OnboardingState{
+				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "sim", ReviewAwait: reviewAwaitDistribution,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{}, errors.New("llm error")).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					s.budgetsMock.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
+					return s.budgetsMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.Error(err)
+				s.Equal(workflow.StepStatusFailed, out.Status)
+			},
+		},
+		{
+			name: "resume em reviewAwaitPersonalize com valores validos deve ativar e suspender no resumo",
+			args: args{state: OnboardingState{
+				UserID: "11111111-1111-1111-1111-111111111111", Goal: "economizar",
+				MonthlyBudgetCents: 1350000, ResumeText: "custo fixo 40%, conhecimento 10%, prazeres 10%, metas 10%, liberdade 30%",
+				ReviewAwait: reviewAwaitPersonalize,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					allocationPayload, _ := json.Marshal(allocationInputExtract{
+						Action: "percent", CustoFixo: 40, Conhecimento: 10,
+						Prazeres: 10, Metas: 10, LiberdadeFinanceira: 30,
+					})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: allocationPayload}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					s.budgetsMock.EXPECT().
+						GetMonthlySummary(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+						Return(interfaces.BudgetSummary{}, interfaces.ErrBudgetNotFound).Once()
+					s.budgetsMock.EXPECT().
+						CreateBudget(mock.Anything, mock.AnythingOfType("interfaces.DraftBudget")).
+						Return(interfaces.BudgetRef{}, nil).Once()
+					s.budgetsMock.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
+					return s.budgetsMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(4000, out.State.Allocations["expense.custo_fixo"])
+				s.Equal(reviewAwaitConfirm, out.State.ReviewAwait)
+				s.Empty(out.State.ResumeText)
+			},
+		},
+		{
+			name: "BUG-002 regressao: resume em reviewAwaitPersonalize com unidades mistas na mesma mensagem deve pedir unidade unica sem ativar nem avancar",
+			args: args{state: OnboardingState{
+				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "custo fixo 40%, prazeres R$ 300",
+				ReviewAwait: reviewAwaitPersonalize,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					allocationPayload, _ := json.Marshal(allocationInputExtract{
+						Action: "percent", CustoFixo: 40, Prazeres: 300, MixedUnit: true,
+					})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: allocationPayload}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: s.budgetsMock,
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(distributionMixedUnitPrompt, out.Suspend.Prompt)
+				s.Equal(reviewAwaitPersonalize, out.State.ReviewAwait)
+				s.Empty(out.State.ResumeText)
+				s.Nil(out.State.Allocations)
+			},
+		},
+		{
+			name: "resume em reviewAwaitPersonalize com categoria negativa dentro da tolerancia deve reprompt com o motivo estrutural, mantendo mesmo sub-estado",
+			args: args{state: OnboardingState{
+				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "custo fixo 50%, conhecimento -10%, prazeres 20%, metas 20%, liberdade 20%",
+				ReviewAwait: reviewAwaitPersonalize,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					allocationPayload, _ := json.Marshal(allocationInputExtract{
+						Action: "percent", CustoFixo: 50, Conhecimento: -10,
+						Prazeres: 20, Metas: 20, LiberdadeFinanceira: 20,
+					})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: allocationPayload}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: s.budgetsMock,
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Contains(out.Suspend.Prompt, "não pode ser negativo")
+				s.Equal(reviewAwaitPersonalize, out.State.ReviewAwait)
+				s.Nil(out.State.Allocations)
+			},
+		},
+		{
+			name: "resume em reviewAwaitPersonalize com soma que nao fecha deve reprompt permanecendo em personalizar",
+			args: args{state: OnboardingState{
+				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "custo fixo 40%, conhecimento 10%, prazeres 10%, metas 10%, liberdade 20%",
+				ReviewAwait: reviewAwaitPersonalize,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					allocationPayload, _ := json.Marshal(allocationInputExtract{
+						Action: "percent", CustoFixo: 40, Conhecimento: 10,
+						Prazeres: 10, Metas: 10, LiberdadeFinanceira: 20,
+					})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: allocationPayload}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: s.budgetsMock,
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Contains(out.Suspend.Prompt, "falta")
+				s.Equal(reviewAwaitPersonalize, out.State.ReviewAwait)
+				s.Empty(out.State.ResumeText)
+			},
+		},
+		{
+			name: "resume em reviewAwaitPersonalize com recusa ou resposta ambigua deve repetir a orientacao permanecendo em personalizar",
+			args: args{state: OnboardingState{
+				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "não sei", ReviewAwait: reviewAwaitPersonalize,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					allocationPayload, _ := json.Marshal(allocationInputExtract{Action: "confirm"})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: allocationPayload}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: s.budgetsMock,
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Contains(out.Suspend.Prompt, "Não consegui identificar valores")
+				s.Contains(out.Suspend.Prompt, "ZERO")
+				s.Equal(reviewAwaitPersonalize, out.State.ReviewAwait)
+				s.Empty(out.State.ResumeText)
+			},
+		},
+		{
+			name: "deve falhar quando a extracao de valores em reviewAwaitPersonalize retorna erro",
+			args: args{state: OnboardingState{
+				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "custo fixo 40%", ReviewAwait: reviewAwaitPersonalize,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{}, errors.New("llm error")).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: s.budgetsMock,
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.Error(err)
+				s.Equal(workflow.StepStatusFailed, out.Status)
 			},
 		},
 		{
@@ -1458,9 +2334,261 @@ func (s *OnboardingWorkflowSuite) TestBuildBudgetReviewStep() {
 	}
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			step := workflow.NewStepFunc(stepBudgetReviewID, BuildBudgetReviewStep(scenario.dependencies.agentMock, scenario.dependencies.budgetsMock))
+			step := workflow.NewStepFunc(stepBudgetReviewID, BuildBudgetReviewStep(scenario.dependencies.agentMock, scenario.dependencies.budgetsMock, nil))
 			out, err := step.Execute(s.ctx, scenario.args.state)
 			scenario.expect(out, err)
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildBudgetReviewStep_DistributionOutcomeMetric() {
+	type args struct {
+		state OnboardingState
+	}
+	type dependencies struct {
+		agentMock   *agentmocks.Agent
+		budgetsMock *interfacemocks.BudgetPlanner
+	}
+	scenarios := []struct {
+		name            string
+		args            args
+		dependencies    dependencies
+		expectedOutcome string
+	}{
+		{
+			name: "personalize_entered",
+			args: args{state: OnboardingState{
+				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "quero escolher", ReviewAwait: reviewAwaitDistribution,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					intentPayload, _ := json.Marshal(distributionIntentExtract{Action: "personalize"})
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: intentPayload}, nil).Once()
+					return m
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					m := interfacemocks.NewBudgetPlanner(s.T())
+					m.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
+					return m
+				}(),
+			},
+			expectedOutcome: distributionOutcomePersonalizeEntered,
+		},
+		{
+			name: "accepted_default",
+			args: args{state: OnboardingState{
+				UserID: "11111111-1111-1111-1111-111111111111", Goal: "economizar",
+				MonthlyBudgetCents: 1350000, ResumeText: "sim", ReviewAwait: reviewAwaitDistribution,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					intentPayload, _ := json.Marshal(distributionIntentExtract{Action: "accept"})
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: intentPayload}, nil).Once()
+					return m
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					m := interfacemocks.NewBudgetPlanner(s.T())
+					m.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Twice()
+					m.EXPECT().
+						GetMonthlySummary(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+						Return(interfaces.BudgetSummary{}, interfaces.ErrBudgetNotFound).Once()
+					m.EXPECT().
+						CreateBudget(mock.Anything, mock.AnythingOfType("interfaces.DraftBudget")).
+						Return(interfaces.BudgetRef{}, nil).Once()
+					return m
+				}(),
+			},
+			expectedOutcome: distributionOutcomeAcceptedDefault,
+		},
+		{
+			name: "accepted_values",
+			args: args{state: OnboardingState{
+				UserID: "11111111-1111-1111-1111-111111111111", Goal: "economizar",
+				MonthlyBudgetCents: 1350000, ResumeText: "custo 5400...", ReviewAwait: reviewAwaitDistribution,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					intentPayload, _ := json.Marshal(distributionIntentExtract{Action: "values"})
+					allocationPayload, _ := json.Marshal(allocationInputExtract{
+						Action: "reais", CustoFixo: 5400, Conhecimento: 1350,
+						Prazeres: 1350, Metas: 1350, LiberdadeFinanceira: 4050,
+					})
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: intentPayload}, nil).Once()
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: allocationPayload}, nil).Once()
+					return m
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					m := interfacemocks.NewBudgetPlanner(s.T())
+					m.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Twice()
+					m.EXPECT().
+						GetMonthlySummary(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+						Return(interfaces.BudgetSummary{}, interfaces.ErrBudgetNotFound).Once()
+					m.EXPECT().
+						CreateBudget(mock.Anything, mock.AnythingOfType("interfaces.DraftBudget")).
+						Return(interfaces.BudgetRef{}, nil).Once()
+					return m
+				}(),
+			},
+			expectedOutcome: distributionOutcomeAcceptedValues,
+		},
+		{
+			name: "over",
+			args: args{state: OnboardingState{
+				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "custo 40, conhecimento 20, prazeres 20, metas 20, liberdade 20", ReviewAwait: reviewAwaitDistribution,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					intentPayload, _ := json.Marshal(distributionIntentExtract{Action: "values"})
+					allocationPayload, _ := json.Marshal(allocationInputExtract{
+						Action: "percent", CustoFixo: 40, Conhecimento: 20,
+						Prazeres: 20, Metas: 20, LiberdadeFinanceira: 20,
+					})
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: intentPayload}, nil).Once()
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: allocationPayload}, nil).Once()
+					return m
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					m := interfacemocks.NewBudgetPlanner(s.T())
+					m.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
+					return m
+				}(),
+			},
+			expectedOutcome: distributionOutcomeOver,
+		},
+		{
+			name: "under",
+			args: args{state: OnboardingState{
+				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "40 10 10 10 20", ReviewAwait: reviewAwaitDistribution,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					intentPayload, _ := json.Marshal(distributionIntentExtract{Action: "values"})
+					allocationPayload, _ := json.Marshal(allocationInputExtract{
+						Action: "percent", CustoFixo: 40, Conhecimento: 10,
+						Prazeres: 10, Metas: 10, LiberdadeFinanceira: 20,
+					})
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: intentPayload}, nil).Once()
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: allocationPayload}, nil).Once()
+					return m
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					m := interfacemocks.NewBudgetPlanner(s.T())
+					m.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
+					return m
+				}(),
+			},
+			expectedOutcome: distributionOutcomeUnder,
+		},
+		{
+			name: "mixed_unit",
+			args: args{state: OnboardingState{
+				UserID: "u1", MonthlyBudgetCents: 1350000, ResumeText: "custo fixo 40%, prazeres R$ 300", ReviewAwait: reviewAwaitDistribution,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					intentPayload, _ := json.Marshal(distributionIntentExtract{Action: "values", MixedUnit: true})
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: intentPayload}, nil).Once()
+					return m
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					m := interfacemocks.NewBudgetPlanner(s.T())
+					m.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Once()
+					return m
+				}(),
+			},
+			expectedOutcome: distributionOutcomeMixedUnit,
+		},
+		{
+			name: "tolerance_absorbed",
+			args: args{state: OnboardingState{
+				UserID: "11111111-1111-1111-1111-111111111111", Goal: "economizar",
+				MonthlyBudgetCents: 1350000, ResumeText: "custo fixo 40%, conhecimento 10%, prazeres 10%, metas 10%, liberdade 29,7%", ReviewAwait: reviewAwaitDistribution,
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					intentPayload, _ := json.Marshal(distributionIntentExtract{Action: "values"})
+					allocationPayload, _ := json.Marshal(allocationInputExtract{
+						Action: "percent", CustoFixo: 40, Conhecimento: 10,
+						Prazeres: 10, Metas: 10, LiberdadeFinanceira: 29.7,
+					})
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: intentPayload}, nil).Once()
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: allocationPayload}, nil).Once()
+					return m
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					m := interfacemocks.NewBudgetPlanner(s.T())
+					m.EXPECT().
+						SuggestAllocation(mock.Anything, int64(1350000), mock.Anything).
+						Return(suggestReturn(1350000, defaultDistributionBP), nil).Twice()
+					m.EXPECT().
+						GetMonthlySummary(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+						Return(interfaces.BudgetSummary{}, interfaces.ErrBudgetNotFound).Once()
+					m.EXPECT().
+						CreateBudget(mock.Anything, mock.AnythingOfType("interfaces.DraftBudget")).
+						Return(interfaces.BudgetRef{}, nil).Once()
+					return m
+				}(),
+			},
+			expectedOutcome: distributionOutcomeToleranceAbsorbed,
+		},
+	}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			provider := fake.NewProvider()
+			counter := provider.Metrics().Counter(distributionOutcomeMetric, "", "1")
+			step := workflow.NewStepFunc(stepBudgetReviewID, BuildBudgetReviewStep(scenario.dependencies.agentMock, scenario.dependencies.budgetsMock, counter))
+			_, err := step.Execute(s.ctx, scenario.args.state)
+			s.NoError(err)
+
+			fakeCounter := provider.Metrics().(*fake.FakeMetrics).GetCounter(distributionOutcomeMetric)
+			s.Require().NotNil(fakeCounter)
+			values := fakeCounter.GetValues()
+			s.Require().Len(values, 1)
+			s.Equal(int64(1), values[0].Value)
+			s.Require().Len(values[0].Fields, 1)
+			s.Equal("outcome", values[0].Fields[0].Key)
+			s.Equal(scenario.expectedOutcome, values[0].Fields[0].StringValue())
 		})
 	}
 }
@@ -2325,7 +3453,7 @@ func (s *OnboardingWorkflowSuite) TestConclusionFinalMessage_DoesNotRepeatGoalAn
 
 func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_IDAndStructure() {
 	s.agentMock.EXPECT().ID().Return("onboarding-agent").Maybe()
-	def := BuildOnboardingWorkflow(s.agentMock, s.cardsMock, s.budgetsMock, s.wmMock, s.threadsMock, s.messagesMock)
+	def := BuildOnboardingWorkflow(s.agentMock, s.cardsMock, s.budgetsMock, s.wmMock, s.threadsMock, s.messagesMock, nil)
 	s.Equal(OnboardingWorkflowID, def.ID)
 	s.NotNil(def.Root)
 	s.True(def.Durable)
@@ -2337,7 +3465,7 @@ func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_SequenceStartsAtWe
 		Return(memory.Thread{ID: uuid.New()}, nil).Maybe()
 	s.messagesMock.EXPECT().Append(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
-	def := BuildOnboardingWorkflow(s.agentMock, s.cardsMock, s.budgetsMock, s.wmMock, s.threadsMock, s.messagesMock)
+	def := BuildOnboardingWorkflow(s.agentMock, s.cardsMock, s.budgetsMock, s.wmMock, s.threadsMock, s.messagesMock, nil)
 	out, err := def.Root.Execute(s.ctx, OnboardingState{UserID: "user-x", PeerID: "peer-x"})
 
 	s.NoError(err)
@@ -2352,7 +3480,7 @@ func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_SequenceAdvancesWe
 		Return(memory.Thread{ID: uuid.New()}, nil).Maybe()
 	s.messagesMock.EXPECT().Append(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
-	def := BuildOnboardingWorkflow(s.agentMock, s.cardsMock, s.budgetsMock, s.wmMock, s.threadsMock, s.messagesMock)
+	def := BuildOnboardingWorkflow(s.agentMock, s.cardsMock, s.budgetsMock, s.wmMock, s.threadsMock, s.messagesMock, nil)
 	out, err := def.Root.Execute(s.ctx, OnboardingState{UserID: "user-x", PeerID: "peer-x", ResumeText: "vamos comecar"})
 
 	s.NoError(err)
@@ -2369,7 +3497,7 @@ func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_LegacyWelcomeResum
 
 	// Simula run legado suspenso no step welcome: ao retomar com "Oi",
 	// welcome completa, goal suspende com a mensagem combinada.
-	def := BuildOnboardingWorkflow(s.agentMock, s.cardsMock, s.budgetsMock, s.wmMock, s.threadsMock, s.messagesMock)
+	def := BuildOnboardingWorkflow(s.agentMock, s.cardsMock, s.budgetsMock, s.wmMock, s.threadsMock, s.messagesMock, nil)
 	out, err := def.Root.Execute(s.ctx, OnboardingState{UserID: "user-x", PeerID: "peer-x", ResumeText: "Oi"})
 
 	s.NoError(err)
