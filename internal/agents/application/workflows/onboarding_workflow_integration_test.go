@@ -24,6 +24,7 @@ import (
 	agentmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/httpclient"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/money"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
@@ -190,6 +191,11 @@ func (s *OnboardingWorkflowRealLLMSuite) TestGoalValueCombinedExtractionGate() {
 			expected: expected{goalPresent: true, valueCents: 3000000},
 		},
 		{
+			name:     "junto-celular-cinco-mil",
+			args:     args{resumeText: "comprar um celular, meta de R$ 5.000"},
+			expected: expected{goalPresent: true, valueCents: 500000},
+		},
+		{
 			name:     "so-meta-sem-valor",
 			args:     args{resumeText: "quero quitar minhas dívidas", refusalText: "não sei"},
 			expected: expected{goalPresent: true, valueCents: 0},
@@ -255,11 +261,17 @@ func (s *OnboardingWorkflowRealLLMSuite) TestGoalValueCombinedExtractionGate() {
 					ok = false
 				}
 			}
+			if ok && out.State.GoalValueCents > 0 {
+				expectedBRL := money.FromCents(out.State.GoalValueCents).BRL()
+				if !strings.Contains(out.State.GoalConfirmation, expectedBRL) {
+					ok = false
+				}
+			}
 			if ok {
 				hits++
 			}
-			s.T().Logf("caso=%q modelo=%q status=%v goal=%q valueCents=%d esperado(goalPresent=%v,valueCents=%d) err=%v ok=%v",
-				scenario.name, s.model, out.Status, out.State.Goal, out.State.GoalValueCents,
+			s.T().Logf("caso=%q modelo=%q status=%v goal=%q valueCents=%d goalConfirmation=%q esperado(goalPresent=%v,valueCents=%d) err=%v ok=%v",
+				scenario.name, s.model, out.Status, out.State.Goal, out.State.GoalValueCents, out.State.GoalConfirmation,
 				scenario.expected.goalPresent, scenario.expected.valueCents, err, ok)
 		})
 	}
@@ -547,11 +559,12 @@ func (s *OnboardingWorkflowRealLLMSuite) TestMonthlyBudgetExtractionGate() {
 		{name: "coloquial-mil-e-quebrado", args: args{resumeText: "6 mil e quinhentos"}, expected: expected{cents: 650000}},
 		{name: "numero-redondo-grande", args: args{resumeText: "10000"}, expected: expected{cents: 1000000}},
 		{name: "valor-pequeno-redondo", args: args{resumeText: "1200"}, expected: expected{cents: 120000}},
+		{name: "coloquial-mil-e-quinhentos-reais", args: args{resumeText: "mil e quinhentos reais"}, expected: expected{cents: 150000}},
 	}
 
 	hits := 0
 	total := len(scenarios)
-	step := workflows.BuildMonthlyBudgetStep(a)
+	step := workflows.BuildMonthlyBudgetStep(a, nil)
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {

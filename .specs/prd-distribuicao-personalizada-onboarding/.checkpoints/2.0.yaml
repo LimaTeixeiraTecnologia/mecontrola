@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-distribuicao-personalizada-onboarding/2.0_execution_report.md
-summary: DecideDistributionBalance puro + refactor DecideAllocationsBP por maior-resto, bug critico de invariante encontrado e corrigido, review APPROVED.
-timestamp: 2026-07-14T01:04:54Z

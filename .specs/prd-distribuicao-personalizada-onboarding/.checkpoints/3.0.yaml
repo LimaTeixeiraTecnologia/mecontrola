@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-distribuicao-personalizada-onboarding/3.0_execution_report.md
-summary: Classificacao de intencao onboarding-only (schema/prompt), renderBalanceMessage, personalizePrompt e aviso de zero no summaryPrompt; review APPROVED_WITH_REMARKS (2 low, 1 corrigido).
-timestamp: 2026-07-14T01:35:00Z

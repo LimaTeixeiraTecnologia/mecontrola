@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-distribuicao-personalizada-onboarding/6.0_execution_report.md
-summary: budget_creation_workflow consome DecideDistributionBalance para mensagens de over/under com delta, sem duplicar nucleo e sem introduzir personalizar
-timestamp: 2026-07-14T02:10:00Z

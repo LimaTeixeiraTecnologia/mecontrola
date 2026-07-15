@@ -230,6 +230,31 @@
         }
       ],
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+      "id": 9,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" } },
+      "title": "Orcamento mensal do onboarding por outcome",
+      "description": "Resultado do passo de orcamento mensal do onboarding: parsed_ok, reprompt, parse_error (RF-10, ADR-003).",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum by (outcome) (agents_onboarding_monthly_budget_total{job=~\"$job\"})",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -274,5 +299,5 @@
   "timezone": "browser",
   "title": "MeControla — Observabilidade WhatsApp Ordenacao e Idempotencia",
   "uid": "mecontrola-wa-ord-idem",
-  "version": 1
+  "version": 2
 }

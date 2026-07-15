@@ -321,6 +321,7 @@ type OnboardingState struct {
 	Recurrence         bool            `json:"recurrence"`
 	ResumeText         string          `json:"resumeText"`
 	FinalMessage       string          `json:"finalMessage"`
+	GoalConfirmation   string          `json:"goalConfirmation"`
 }
 
 func DecideGoal(text string) (string, error) {
@@ -711,6 +712,10 @@ func goalConfirmationReprompt(goal string) string {
 	)
 }
 
+const goalWithValueConfirmation = "Perfeito! Anotei seu objetivo: \"%s\" com meta de %s 🎯 Vamos juntos tornar isso realidade! 💪"
+
+const goalValueLaterConfirmation = "Show! Meta de %s anotada. 🎯"
+
 const monthlyBudgetPrompt = `📊 Antes de montar seu planejamento, deixa eu te mostrar como organizamos o dinheiro por aqui.
 
 O dinheiro vive em apenas 5 categorias:
@@ -802,7 +807,14 @@ const goalWithValueSystemPrompt = "Extraia o objetivo financeiro principal do te
 	"\"1,5 milhão\" -> amountBRL=1500000. " +
 	"Se o usuário não mencionar nenhum valor, ou disser que não sabe, ou recusar informar, defina hasAmount=false e amountBRL=0 — nunca invente um valor que não esteja no texto."
 
-const monthlyBudgetSystemPrompt = "Extraia o valor do orcamento mensal em reais (BRL) do texto do usuario. Retorne como numero decimal."
+const monthlyBudgetSystemPrompt = "Extraia o valor do orcamento mensal em reais (BRL) do texto do usuario. Retorne como numero decimal. " +
+	"Converta o valor mencionado para um número em reais (amountBRL), sempre em ponto decimal, nunca com símbolo de moeda ou separador de milhar. Exemplos de conversão: " +
+	"\"R$ 3.500,00\" -> 3500; " +
+	"\"3500\" -> 3500; " +
+	"\"mil e quinhentos reais\" -> 1500; " +
+	"\"mil reais\" -> 1000; " +
+	"\"dois mil e quinhentos\" -> 2500; " +
+	"\"dez mil\" -> 10000."
 
 const cardsSystemPrompt = "Extraia do texto do usuario se ele quer adicionar um 💳 (wantsCard), o apelido (nickname), o banco emissor (bank) e o dia de vencimento (dueDay, inteiro 1-31). Se nao quiser 💳, retorne wantsCard=false, nickname vazio, bank vazio e dueDay=0."
 
@@ -1038,6 +1050,9 @@ func BuildGoalStep(a agent.Agent) func(context.Context, OnboardingState) (workfl
 				state.GoalValueAsked = true
 				return suspendStep(state, goalConfirmationReprompt(state.Goal)), nil
 			}
+			if state.GoalValueCents > 0 {
+				state.GoalConfirmation = fmt.Sprintf(goalWithValueConfirmation, state.Goal, money.FromCents(state.GoalValueCents).BRL())
+			}
 			return completeStep(state), nil
 		}
 
@@ -1062,15 +1077,44 @@ func BuildGoalStep(a agent.Agent) func(context.Context, OnboardingState) (workfl
 		}
 		if cents, ok := DecideGoalValueCents(extract.HasAmount, extract.AmountBRL); ok {
 			state.GoalValueCents = cents
+			state.GoalConfirmation = fmt.Sprintf(goalValueLaterConfirmation, money.FromCents(state.GoalValueCents).BRL())
 		}
 		return completeStep(state), nil
 	}
 }
 
-func BuildMonthlyBudgetStep(a agent.Agent) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+const monthlyBudgetOutcomeMetric = "agents_onboarding_monthly_budget_total"
+
+const (
+	monthlyBudgetOutcomeParsedOK   = "parsed_ok"
+	monthlyBudgetOutcomeReprompt   = "reprompt"
+	monthlyBudgetOutcomeParseError = "parse_error"
+)
+
+func newMonthlyBudgetOutcomeCounter(o11y observability.Observability) observability.Counter {
+	return o11y.Metrics().Counter(
+		monthlyBudgetOutcomeMetric,
+		"Total de resultados do passo de orcamento mensal do onboarding",
+		"1",
+	)
+}
+
+func recordMonthlyBudgetOutcome(ctx context.Context, mb observability.Counter, outcome string) {
+	if mb == nil {
+		return
+	}
+	mb.Add(ctx, 1, observability.String("outcome", outcome))
+}
+
+func BuildMonthlyBudgetStep(a agent.Agent, mb observability.Counter) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		if state.ResumeText == "" {
 			state.Phase = PhaseMonthlyBudget
+			if state.GoalConfirmation != "" {
+				prompt := state.GoalConfirmation + "\n\n" + monthlyBudgetPrompt
+				state.GoalConfirmation = ""
+				return suspendStep(state, prompt), nil
+			}
 			return suspendStep(state, monthlyBudgetPrompt), nil
 		}
 		resumeText := state.ResumeText
@@ -1083,17 +1127,21 @@ func BuildMonthlyBudgetStep(a agent.Agent) func(context.Context, OnboardingState
 			Schema: &llm.Schema{Name: "monthly_budget_extract", Strict: true, Schema: monthlyBudgetSchema},
 		})
 		if err != nil {
+			recordMonthlyBudgetOutcome(ctx, mb, monthlyBudgetOutcomeParseError)
 			return failStep(state, fmt.Errorf("agents.onboarding.monthly_budget: parse: %w", err))
 		}
 		var extract monthlyBudgetExtract
 		if err := json.Unmarshal(extracted.RawJSON, &extract); err != nil {
+			recordMonthlyBudgetOutcome(ctx, mb, monthlyBudgetOutcomeParseError)
 			return failStep(state, fmt.Errorf("agents.onboarding.monthly_budget: unmarshal: %w", err))
 		}
 		cents, err := DecideMonthlyBudgetCents(extract.AmountBRL)
 		if err != nil {
+			recordMonthlyBudgetOutcome(ctx, mb, monthlyBudgetOutcomeReprompt)
 			return suspendStep(state, monthlyBudgetReprompt), nil
 		}
 		state.MonthlyBudgetCents = cents
+		recordMonthlyBudgetOutcome(ctx, mb, monthlyBudgetOutcomeParsedOK)
 		return completeStep(state), nil
 	}
 }
@@ -1587,15 +1635,17 @@ func BuildOnboardingWorkflow(
 		return wrapStepWithMessages(fn, threads, messages)
 	}
 	var dist observability.Counter
+	var mb observability.Counter
 	if o11y != nil {
 		dist = newDistributionOutcomeCounter(o11y)
+		mb = newMonthlyBudgetOutcomeCounter(o11y)
 	}
 	return workflow.Definition[OnboardingState]{
 		ID: OnboardingWorkflowID,
 		Root: workflow.Sequence("root",
 			workflow.NewStepFunc(stepWelcomeID, wrap(BuildWelcomeStep())),
 			workflow.NewStepFunc(stepGoalID, wrap(BuildGoalStep(a))),
-			workflow.NewStepFunc(stepMonthlyBudgetID, wrap(BuildMonthlyBudgetStep(a))),
+			workflow.NewStepFunc(stepMonthlyBudgetID, wrap(BuildMonthlyBudgetStep(a, mb))),
 			workflow.NewStepFunc(stepBudgetReviewID, wrap(BuildBudgetReviewStep(a, budgets, dist))),
 			workflow.NewStepFunc(stepActivationID, wrap(BuildActivationStep(budgets))),
 			workflow.NewStepFunc(stepRecurrenceID, wrap(BuildRecurrenceStep(a, budgets))),

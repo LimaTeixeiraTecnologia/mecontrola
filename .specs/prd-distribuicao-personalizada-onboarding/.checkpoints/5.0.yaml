@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-distribuicao-personalizada-onboarding/5.0_execution_report.md
-summary: Contador agents_onboarding_distribution_total wired com 7 outcomes, precedencia tolerance_absorbed, nil-safe; build/vet/test race/lint verdes.
-timestamp: 2026-07-14T02:18:27Z

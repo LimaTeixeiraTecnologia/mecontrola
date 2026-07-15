@@ -1289,6 +1289,10 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 				s.Equal(int64(40000000), out.State.GoalValueCents)
 				s.False(out.State.GoalValueAsked)
 				s.Empty(out.State.ResumeText)
+				s.Equal(
+					"Perfeito! Anotei seu objetivo: \"comprar uma casa\" com meta de R$ 400.000,00 🎯 Vamos juntos tornar isso realidade! 💪",
+					out.State.GoalConfirmation,
+				)
 			},
 		},
 		{
@@ -1310,6 +1314,7 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 				s.Equal("quitar minhas dividas", out.State.Goal)
 				s.Equal(int64(0), out.State.GoalValueCents)
 				s.True(out.State.GoalValueAsked)
+				s.Empty(out.State.GoalConfirmation)
 			},
 		},
 		{
@@ -1351,6 +1356,7 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 				s.Equal("viajar", out.State.Goal)
 				s.Equal(int64(0), out.State.GoalValueCents)
 				s.True(out.State.GoalValueAsked)
+				s.Empty(out.State.GoalConfirmation)
 			},
 		},
 		{
@@ -1371,6 +1377,7 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 				s.Equal("quitar minhas dividas", out.State.Goal)
 				s.Equal(int64(40000000), out.State.GoalValueCents)
 				s.Empty(out.State.ResumeText)
+				s.Equal("Show! Meta de R$ 400.000,00 anotada. 🎯", out.State.GoalConfirmation)
 			},
 		},
 		{
@@ -1390,6 +1397,7 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 				s.Equal(workflow.StepStatusCompleted, out.Status)
 				s.Equal("viajar", out.State.Goal)
 				s.Equal(int64(0), out.State.GoalValueCents)
+				s.Empty(out.State.GoalConfirmation)
 			},
 		},
 		{
@@ -1598,6 +1606,25 @@ func (s *OnboardingWorkflowSuite) TestBuildMonthlyBudgetStep() {
 				idxOrcamento := strings.Index(out.Suspend.Prompt, "Qual é o seu orçamento mensal?")
 				s.Greater(idxOrcamento, idxCategorias)
 				s.Equal(PhaseMonthlyBudget, out.State.Phase)
+				s.Empty(out.State.GoalConfirmation)
+			},
+		},
+		{
+			name: "primeira chamada com confirmacao de meta pendente deve prefixar a confirmacao ao prompt e limpar o estado",
+			args: args{state: OnboardingState{
+				UserID:           "u1",
+				GoalConfirmation: "Perfeito! Anotei seu objetivo: \"comprar uma casa\" com meta de R$ 400.000,00 🎯 Vamos juntos tornar isso realidade! 💪",
+			}},
+			dependencies: dependencies{agentMock: s.agentMock},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(
+					"Perfeito! Anotei seu objetivo: \"comprar uma casa\" com meta de R$ 400.000,00 🎯 Vamos juntos tornar isso realidade! 💪\n\n"+monthlyBudgetPrompt,
+					out.Suspend.Prompt,
+				)
+				s.Equal(PhaseMonthlyBudget, out.State.Phase)
+				s.Empty(out.State.GoalConfirmation)
 			},
 		},
 		{
@@ -1675,9 +1702,212 @@ func (s *OnboardingWorkflowSuite) TestBuildMonthlyBudgetStep() {
 	}
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			step := workflow.NewStepFunc(stepMonthlyBudgetID, BuildMonthlyBudgetStep(scenario.dependencies.agentMock))
+			step := workflow.NewStepFunc(stepMonthlyBudgetID, BuildMonthlyBudgetStep(scenario.dependencies.agentMock, nil))
 			out, err := step.Execute(s.ctx, scenario.args.state)
 			scenario.expect(out, err)
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildMonthlyBudgetStep_ByExtensoAndNumeric() {
+	type args struct {
+		state OnboardingState
+	}
+	type dependencies struct {
+		agentMock *agentmocks.Agent
+	}
+	scenarios := []struct {
+		name          string
+		args          args
+		dependencies  dependencies
+		expectedCents int64
+	}{
+		{
+			name: "por extenso: mil e quinhentos reais",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "mil e quinhentos reais"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(monthlyBudgetExtract{AmountBRL: 1500})
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return m
+				}(),
+			},
+			expectedCents: 150000,
+		},
+		{
+			name: "por extenso: tres mil e quinhentos",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "três mil e quinhentos"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(monthlyBudgetExtract{AmountBRL: 3500})
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return m
+				}(),
+			},
+			expectedCents: 350000,
+		},
+		{
+			name: "por extenso: dez mil",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "dez mil"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(monthlyBudgetExtract{AmountBRL: 10000})
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return m
+				}(),
+			},
+			expectedCents: 1000000,
+		},
+		{
+			name: "numerico puro: 3500 permanece identico ao comportamento atual",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "3500"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(monthlyBudgetExtract{AmountBRL: 3500})
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return m
+				}(),
+			},
+			expectedCents: 350000,
+		},
+		{
+			name: "mascarado com R$: R$ 3.500,00 permanece identico ao comportamento atual",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "R$ 3.500,00"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(monthlyBudgetExtract{AmountBRL: 3500})
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return m
+				}(),
+			},
+			expectedCents: 350000,
+		},
+	}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			provider := fake.NewProvider()
+			counter := provider.Metrics().Counter(monthlyBudgetOutcomeMetric, "", "1")
+			step := workflow.NewStepFunc(stepMonthlyBudgetID, BuildMonthlyBudgetStep(scenario.dependencies.agentMock, counter))
+			out, err := step.Execute(s.ctx, scenario.args.state)
+
+			s.NoError(err)
+			s.Equal(workflow.StepStatusCompleted, out.Status)
+			s.Equal(scenario.expectedCents, out.State.MonthlyBudgetCents)
+
+			fakeCounter := provider.Metrics().(*fake.FakeMetrics).GetCounter(monthlyBudgetOutcomeMetric)
+			s.Require().NotNil(fakeCounter)
+			values := fakeCounter.GetValues()
+			s.Require().Len(values, 1)
+			s.Equal(int64(1), values[0].Value)
+			s.Require().Len(values[0].Fields, 1)
+			s.Equal("outcome", values[0].Fields[0].Key)
+			s.Equal(monthlyBudgetOutcomeParsedOK, values[0].Fields[0].StringValue())
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildMonthlyBudgetStep_OutcomeMetric() {
+	type args struct {
+		state OnboardingState
+	}
+	type dependencies struct {
+		agentMock *agentmocks.Agent
+	}
+	scenarios := []struct {
+		name            string
+		args            args
+		dependencies    dependencies
+		expectedOutcome string
+	}{
+		{
+			name: "sucesso na extracao registra parsed_ok",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "R$ 13.500,00"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(monthlyBudgetExtract{AmountBRL: 13500})
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return m
+				}(),
+			},
+			expectedOutcome: monthlyBudgetOutcomeParsedOK,
+		},
+		{
+			name: "entrada sem valor identificavel registra reprompt",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "nao sei ainda"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(monthlyBudgetExtract{AmountBRL: 0})
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return m
+				}(),
+			},
+			expectedOutcome: monthlyBudgetOutcomeReprompt,
+		},
+		{
+			name: "erro do LLM registra parse_error",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "R$ 3.000"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{}, errors.New("llm error")).Once()
+					return m
+				}(),
+			},
+			expectedOutcome: monthlyBudgetOutcomeParseError,
+		},
+		{
+			name: "json invalido registra parse_error",
+			args: args{state: OnboardingState{UserID: "u1", ResumeText: "R$ 3.000"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: []byte("nao-e-json")}, nil).Once()
+					return m
+				}(),
+			},
+			expectedOutcome: monthlyBudgetOutcomeParseError,
+		},
+	}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			provider := fake.NewProvider()
+			counter := provider.Metrics().Counter(monthlyBudgetOutcomeMetric, "", "1")
+			step := workflow.NewStepFunc(stepMonthlyBudgetID, BuildMonthlyBudgetStep(scenario.dependencies.agentMock, counter))
+			_, _ = step.Execute(s.ctx, scenario.args.state)
+
+			fakeCounter := provider.Metrics().(*fake.FakeMetrics).GetCounter(monthlyBudgetOutcomeMetric)
+			s.Require().NotNil(fakeCounter)
+			values := fakeCounter.GetValues()
+			s.Require().Len(values, 1)
+			s.Equal(int64(1), values[0].Value)
+			s.Require().Len(values[0].Fields, 1)
+			s.Equal("outcome", values[0].Fields[0].Key)
+			s.Equal(scenario.expectedOutcome, values[0].Fields[0].StringValue())
 		})
 	}
 }
