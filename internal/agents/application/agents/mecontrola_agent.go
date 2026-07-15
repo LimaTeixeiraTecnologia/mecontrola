@@ -290,6 +290,9 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 	if createCard := findTool(tools, "create_card"); createCard != nil {
 		pre = append(pre, guards.NewCreateCardShortcutGuard(createCard))
 	}
+	if listCards := findTool(tools, "list_cards"); listCards != nil {
+		pre = append(pre, guards.NewListCardsShortcutGuard(listCards))
+	}
 	if hasEntryRegistrationTool(tools) {
 		pre = append(pre, guards.NewMultiItemGuard())
 	}
