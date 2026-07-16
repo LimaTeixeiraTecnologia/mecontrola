@@ -208,12 +208,14 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	cardManageEngine := workflow.NewEngine[workflows.CardManageState](workflowStore, deps.O11y)
 	goalEditEngine := workflow.NewEngine[workflows.GoalEditState](workflowStore, deps.O11y)
 	destructiveManageEngine := workflow.NewEngine[workflows.DestructiveManageState](workflowStore, deps.O11y)
+	treatmentNameEditEngine := workflow.NewEngine[workflows.TreatmentNameEditState](workflowStore, deps.O11y)
 
 	transactionWriteDef := workflows.BuildTransactionWriteWorkflowWithObservability(txLedger, cardManager, categoriesReader, idemAdapter, deps.O11y)
 	budgetManageDef := workflows.BuildBudgetManageWorkflow(budgetManageAgent, budgetPlanner)
 	cardManageDef := workflows.BuildCardManageWorkflow(cardManager, idemAdapter)
 	goalEditDef := workflows.BuildGoalEditWorkflow(workingMem)
 	destructiveManageDef := workflows.BuildDestructiveManageWorkflow(cardManager, recurrenceManager, txLedger)
+	treatmentNameEditDef := workflows.BuildTreatmentNameEditWorkflow(workingMem, onboardingAgent)
 
 	transactionWriteStarter := usecases.NewTransactionWriteStarter(categoriesReader, txLedger, transactionWriteEngine, transactionWriteDef, deps.O11y)
 
@@ -223,6 +225,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		cardManageEngine, cardManageDef,
 		budgetManageEngine, budgetManageDef,
 		goalEditEngine, goalEditDef,
+		treatmentNameEditEngine, treatmentNameEditDef,
 	)
 	meControlaAgent := agentapplication.BuildMeControlaAgent(provider, financialTools, scoringHooks, deps.O11y, deps.AgentMaxTokens)
 
@@ -249,7 +252,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 			"register_expense", "register_income", "create_recurrence", "edit_entry",
 			"create_card", "update_card",
 			"create_budget", "edit_budget_total", "adjust_allocation",
-			"edit_goal",
+			"edit_goal", "edit_treatment_name",
 			"delete_entry", "delete_recurrence", "update_recurrence",
 		),
 	)
@@ -267,6 +270,8 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	goalEditRegistry.Register(goalEditDef)
 	destructiveManageRegistry := agent.NewWorkflowRegistry[workflows.DestructiveManageState]()
 	destructiveManageRegistry.Register(destructiveManageDef)
+	treatmentNameEditRegistry := agent.NewWorkflowRegistry[workflows.TreatmentNameEditState]()
+	treatmentNameEditRegistry.Register(treatmentNameEditDef)
 
 	transactionWriteResumer, err := usecases.NewWorkflowResumer(
 		workflows.TransactionWriteWorkflowID, transactionWriteRegistry, transactionWriteEngine,
@@ -303,6 +308,13 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	if err != nil {
 		return Module{}, fmt.Errorf("agents.module: destructive_manage resumer: %w", err)
 	}
+	treatmentNameEditResumer, err := usecases.NewWorkflowResumer(
+		workflows.TreatmentNameEditWorkflowID, treatmentNameEditRegistry, treatmentNameEditEngine,
+		workflows.TreatmentNameEditKey, workflows.ContinueTreatmentNameEdit,
+	)
+	if err != nil {
+		return Module{}, fmt.Errorf("agents.module: treatment_name_edit resumer: %w", err)
+	}
 
 	suspendedRunIndex := usecases.NewSuspendedRunIndex(
 		workflowStore,
@@ -311,10 +323,12 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		workflows.CardManageWorkflowID,
 		workflows.GoalEditWorkflowID,
 		workflows.DestructiveManageWorkflowID,
+		workflows.TreatmentNameEditWorkflowID,
 	)
 	resumeDispatcher, err := usecases.NewResumeDispatcher(
 		suspendedRunIndex, threadGateway, runStore, deps.O11y,
 		transactionWriteResumer, budgetManageResumer, cardManageResumer, goalEditResumer, destructiveManageResumer,
+		treatmentNameEditResumer,
 	)
 	if err != nil {
 		return Module{}, fmt.Errorf("agents.module: resume dispatcher: %w", err)
@@ -333,6 +347,8 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	goalEditReaperJob := jobhandlers.NewConfirmReaperJob("agents-goal-edit-reaper", goalEditReaper, "")
 	destructiveManageReaper := workflows.BuildDestructiveManageReaper(workflowStore, deps.O11y)
 	destructiveManageReaperJob := jobhandlers.NewConfirmReaperJob("agents-destructive-manage-reaper", destructiveManageReaper, "")
+	treatmentNameEditReaper := workflows.BuildTreatmentNameEditReaper(workflowStore, deps.O11y)
+	treatmentNameEditReaperJob := jobhandlers.NewConfirmReaperJob("agents-treatment-name-edit-reaper", treatmentNameEditReaper, "")
 	onboardingReaper := workflows.BuildOnboardingReaper(workflowStore, deps.O11y)
 	onboardingReaperJob := jobhandlers.NewConfirmReaperJob("agents-onboarding-reaper", onboardingReaper, "")
 
@@ -378,6 +394,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		Jobs: []worker.Job{
 			ledgerRetentionJob,
 			transactionWriteReaperJob, budgetManageReaperJob, cardManageReaperJob, goalEditReaperJob, destructiveManageReaperJob,
+			treatmentNameEditReaperJob,
 			onboardingReaperJob,
 		},
 		scorerRunner: scorerRunner,
@@ -399,6 +416,8 @@ func buildFinancialTools(
 	budgetManageDef workflow.Definition[workflows.BudgetManageState],
 	goalEditEngine workflow.Engine[workflows.GoalEditState],
 	goalEditDef workflow.Definition[workflows.GoalEditState],
+	treatmentNameEditEngine workflow.Engine[workflows.TreatmentNameEditState],
+	treatmentNameEditDef workflow.Definition[workflows.TreatmentNameEditState],
 ) []tool.ToolHandle {
 	return []tool.ToolHandle{
 		agenttools.BuildRegisterExpenseTool(transactionWriteStarter, cards),
@@ -431,6 +450,7 @@ func buildFinancialTools(
 		agenttools.BuildCancelPlanInfoTool(),
 		agenttools.BuildSupportInfoTool(),
 		agenttools.BuildEditGoalTool(goalEditEngine, goalEditDef),
+		agenttools.BuildEditTreatmentNameTool(treatmentNameEditEngine, treatmentNameEditDef),
 	}
 }
 

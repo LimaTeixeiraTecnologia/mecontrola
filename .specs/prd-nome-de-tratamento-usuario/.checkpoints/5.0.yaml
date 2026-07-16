@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-nome-de-tratamento-usuario/5.0_execution_report.md
+summary: Tool fina edit_treatment_name implementada delegando a engine.Start do workflow treatment-name-edit, com testes de fake engine verdes.
+timestamp: 2026-07-16T00:00:00Z

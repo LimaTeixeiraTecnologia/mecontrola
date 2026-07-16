@@ -26,6 +26,7 @@ const (
 	CategorySupport         Category = "support"
 	CategoryCategoryDetail  Category = "category_detail"
 	CategoryGeneralSummary  Category = "general_summary"
+	CategoryTreatmentName   Category = "treatment_name"
 )
 
 func (c Category) String() string {
@@ -38,7 +39,7 @@ func (c Category) IsValid() bool {
 		CategoryOnboarding, CategoryPending, CategoryConfirmation, CategoryFollowUp,
 		CategoryToolError, CategoryAmbiguity, CategoryWhatsAppFormat, CategoryNoInternalTerms,
 		CategoryBudgetTotal, CategoryGoal, CategoryCancelPlan, CategorySupport,
-		CategoryCategoryDetail, CategoryGeneralSummary:
+		CategoryCategoryDetail, CategoryGeneralSummary, CategoryTreatmentName:
 		return true
 	default:
 		return false
@@ -66,6 +67,7 @@ func AllCategories() []Category {
 		CategorySupport,
 		CategoryCategoryDetail,
 		CategoryGeneralSummary,
+		CategoryTreatmentName,
 	}
 }
 

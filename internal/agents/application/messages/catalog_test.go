@@ -48,6 +48,18 @@ func TestWriteSuccess_UnspecifiedFallsBackToExpense(t *testing.T) {
 	assert.Contains(t, got, "Prontinho! ✅")
 }
 
+func TestTreatmentNameConfirmation(t *testing.T) {
+	got := messages.TreatmentNameConfirmation("Stef")
+	want := "Combinado, Stef! 💚 Vou te chamar assim daqui pra frente."
+	assert.Equal(t, want, got)
+}
+
+func TestTreatmentNameEditQuestion(t *testing.T) {
+	got := messages.TreatmentNameEditQuestion()
+	want := "Claro! Como você gostaria que eu te chamasse a partir de agora? 💚"
+	assert.Equal(t, want, got)
+}
+
 func TestMotivationSeed_DeterministicRotation(t *testing.T) {
 	seedA1 := messages.NewMotivationSeed("wamid-abc")
 	seedA2 := messages.NewMotivationSeed("wamid-abc")

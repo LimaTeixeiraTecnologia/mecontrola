@@ -45,6 +45,7 @@ func (s *RegistrySuite) TestAllRequiredCategoriesCovered() {
 		CategorySupport,
 		CategoryCategoryDetail,
 		CategoryGeneralSummary,
+		CategoryTreatmentName,
 	}
 	for _, category := range required {
 		cases := CasesByCategory(category)

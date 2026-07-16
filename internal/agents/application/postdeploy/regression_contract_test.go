@@ -25,6 +25,7 @@ func (s *RegressionContractSuite) TestRegisteredWorkflowIDsMatchProductionConsta
 		workflows.GoalEditWorkflowID,
 		workflows.OnboardingWorkflowID,
 		workflows.TransactionWriteWorkflowID,
+		workflows.TreatmentNameEditWorkflowID,
 	}
 
 	s.Empty(MissingFrom(RegisteredWorkflows, realIDs), "workflow removido/renomeado sem história própria (RF-27)")
@@ -102,7 +103,7 @@ func (s *RegressionContractSuite) TestExtraInDetectsUndocumentedAddition() {
 }
 
 func (s *RegressionContractSuite) TestRegisteredToolsCountMatchesInventory() {
-	s.Len(RegisteredTools, 30, "inventário de tools deve refletir exatamente as tools ativas em module.go (RF-27)")
+	s.Len(RegisteredTools, 31, "inventário de tools deve refletir exatamente as tools ativas em module.go (RF-27)")
 }
 
 func (s *RegressionContractSuite) TestRegisteredScorersCountMatchesInventory() {

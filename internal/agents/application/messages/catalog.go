@@ -220,6 +220,14 @@ func GoalEditMotivation(seed MotivationSeed) string {
 	return pick(seed, goalEditMotivationalPhrases)
 }
 
+func TreatmentNameConfirmation(name string) string {
+	return fmt.Sprintf("Combinado, %s! 💚 Vou te chamar assim daqui pra frente.", name)
+}
+
+func TreatmentNameEditQuestion() string {
+	return "Claro! Como você gostaria que eu te chamasse a partir de agora? 💚"
+}
+
 func ExpenseConfirmationBlock(v ConfirmationView) string {
 	return fmt.Sprintf(
 		"✅ Encontrei este lançamento:\n\n💰 Valor: %s\n💳 Pagamento: %s\n📂 Categoria: %s\n\nPosso registrar?",

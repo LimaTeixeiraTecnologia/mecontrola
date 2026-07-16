@@ -5,12 +5,15 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
+	interfacemocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/reconciliation"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
+	memorymocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/memory/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
@@ -160,4 +163,80 @@ func (s *JourneyGoldenSuite) TestInvariantNoDuplicateConfirmationOrTransaction()
 	violations := reconciliation.DecideViolations(falseSuccess)
 	s.Require().Len(violations, 1)
 	s.Equal(reconciliation.ViolationSucceededNoEffect, violations[0].Kind, "sucesso sem efeito financeiro é detectado como violação")
+}
+
+func (s *JourneyGoldenSuite) TestInvariantOnboardingConclusionPreservesGoalSentinelAndTreatmentNameSection() {
+	wm := memorymocks.NewWorkingMemory(s.T())
+	budgetsMock := interfacemocks.NewBudgetPlanner(s.T())
+	cardsMock := interfacemocks.NewCardManager(s.T())
+
+	state := workflows.OnboardingState{
+		UserID:        uuid.NewString(),
+		Goal:          "economizar",
+		TreatmentName: "Stef",
+	}
+
+	var capturedContent string
+	var capturedMetadata map[string]any
+	wm.EXPECT().
+		Upsert(mock.Anything, state.UserID, mock.AnythingOfType("string")).
+		Run(func(_ context.Context, _ string, content string) { capturedContent = content }).
+		Return(nil).Once()
+	wm.EXPECT().
+		UpsertMetadata(mock.Anything, state.UserID, mock.Anything).
+		Run(func(_ context.Context, _ string, metadata map[string]any) { capturedMetadata = metadata }).
+		Return(nil).Once()
+	budgetsMock.EXPECT().
+		SuggestAllocation(mock.Anything, state.MonthlyBudgetCents, mock.Anything).
+		Return(nil, nil).Once()
+	cardsMock.EXPECT().
+		ListCards(mock.Anything, uuid.MustParse(state.UserID)).
+		Return(nil, nil).Once()
+
+	conclusion := workflows.BuildConclusionStep(wm, budgetsMock, cardsMock)
+	out, err := conclusion(s.ctx, state)
+
+	s.Require().NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+	s.Contains(capturedContent, "## Objetivo Financeiro", "sentinel de onboarding concluído (RF-13/resolve_onboarding_or_agent) deve ser preservado")
+	s.Contains(capturedContent, "## Nome de Tratamento", "nova seção de nome de tratamento deve estar presente no mesmo Upsert (writer único, RF-03)")
+	s.Equal(state.TreatmentName, capturedMetadata["nome_tratamento"], "metadata mirror deve refletir o nome de tratamento capturado")
+}
+
+func (s *JourneyGoldenSuite) TestInvariantOnboardingConclusionWithoutTreatmentNameOmitsSection() {
+	wm := memorymocks.NewWorkingMemory(s.T())
+	budgetsMock := interfacemocks.NewBudgetPlanner(s.T())
+	cardsMock := interfacemocks.NewCardManager(s.T())
+
+	state := workflows.OnboardingState{
+		UserID: uuid.NewString(),
+		Goal:   "economizar",
+	}
+
+	var capturedContent string
+	var capturedMetadata map[string]any
+	wm.EXPECT().
+		Upsert(mock.Anything, state.UserID, mock.AnythingOfType("string")).
+		Run(func(_ context.Context, _ string, content string) { capturedContent = content }).
+		Return(nil).Once()
+	wm.EXPECT().
+		UpsertMetadata(mock.Anything, state.UserID, mock.Anything).
+		Run(func(_ context.Context, _ string, metadata map[string]any) { capturedMetadata = metadata }).
+		Return(nil).Once()
+	budgetsMock.EXPECT().
+		SuggestAllocation(mock.Anything, state.MonthlyBudgetCents, mock.Anything).
+		Return(nil, nil).Once()
+	cardsMock.EXPECT().
+		ListCards(mock.Anything, uuid.MustParse(state.UserID)).
+		Return(nil, nil).Once()
+
+	conclusion := workflows.BuildConclusionStep(wm, budgetsMock, cardsMock)
+	out, err := conclusion(s.ctx, state)
+
+	s.Require().NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+	s.Contains(capturedContent, "## Objetivo Financeiro")
+	s.NotContains(capturedContent, "## Nome de Tratamento", "sem nome capturado, a seção não deve ser gravada")
+	_, hasKey := capturedMetadata["nome_tratamento"]
+	s.False(hasKey, "sem nome capturado, a chave nome_tratamento não deve existir no metadata")
 }

@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-nome-de-tratamento-usuario/7.0_execution_report.md
+summary: Categoria golden CategoryTreatmentName criada e no gate ≥0,90 (1.0000/9), invariantes de composição da working memory e integração Postgres verdes, RF-10 comprovado.
+timestamp: 2026-07-16T09:10:38Z

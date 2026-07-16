@@ -23,13 +23,13 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Núcleo puro do fluxo de edição: estado fechado e funções Decide | pending | — | Com 2.0 | domain-modeling-production, design-patterns-mandatory |
-| 2.0 | Helpers de seção de working memory e mensagens determinísticas | pending | — | Com 1.0 | design-patterns-mandatory, mastra |
-| 3.0 | Workflow durável treatment-name-edit sem gate de confirmação | pending | 1.0, 2.0 | Com 4.0 | mastra, domain-modeling-production, design-patterns-mandatory |
-| 4.0 | Captura do nome no onboarding com writer único na conclusão | pending | 1.0, 2.0 | Com 3.0 | mastra, domain-modeling-production |
-| 5.0 | Tool fina edit_treatment_name delegando ao workflow | pending | 3.0 | — | mastra, design-patterns-mandatory |
-| 6.0 | Wiring do módulo, contrato de regressão e instruções do agente | pending | 3.0, 4.0, 5.0 | Não | mastra |
-| 7.0 | Validação: golden, invariantes, integração Postgres e gate real-LLM | pending | 6.0 | Não | mastra, postgresql-production-standards |
+| 1.0 | Núcleo puro do fluxo de edição: estado fechado e funções Decide | done | — | Com 2.0 | domain-modeling-production, design-patterns-mandatory |
+| 2.0 | Helpers de seção de working memory e mensagens determinísticas | done | — | Com 1.0 | design-patterns-mandatory, mastra |
+| 3.0 | Workflow durável treatment-name-edit sem gate de confirmação | done | 1.0, 2.0 | Com 4.0 | mastra, domain-modeling-production, design-patterns-mandatory |
+| 4.0 | Captura do nome no onboarding com writer único na conclusão | done | 1.0, 2.0 | Com 3.0 | mastra, domain-modeling-production |
+| 5.0 | Tool fina edit_treatment_name delegando ao workflow | done | 3.0 | — | mastra, design-patterns-mandatory |
+| 6.0 | Wiring do módulo, contrato de regressão e instruções do agente | done | 3.0, 4.0, 5.0 | Não | mastra |
+| 7.0 | Validação: golden, invariantes, integração Postgres e gate real-LLM | done | 6.0 | Não | mastra, postgresql-production-standards |
 
 ## Dependências Críticas
 - 1.0 e 2.0 são fundações puras (sem IO) e habilitam 3.0 e 4.0; devem vir primeiro.

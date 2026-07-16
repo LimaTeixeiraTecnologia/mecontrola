@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	agentsapp "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/agents"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/messages"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/httpclient"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
@@ -245,6 +246,34 @@ func goldenResolveCardNotFoundTool(sink ToolCaptureSink) tool.ToolHandle {
 	)
 }
 
+func goldenEditTreatmentNameTool(sink ToolCaptureSink) tool.ToolHandle {
+	in := llm.Schema{Name: "edit_treatment_name_input", Strict: false, Schema: goldenBaseSchema("name")}
+	out := llm.Schema{
+		Name:   "edit_treatment_name_output",
+		Strict: true,
+		Schema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{"status": map[string]any{"type": "string"}, "message": map[string]any{"type": "string"}},
+			"required":             []string{"status", "message"},
+			"additionalProperties": false,
+		},
+	}
+	type output struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+	return tool.NewTool[map[string]any, output]("edit_treatment_name", "Inicia a alteração do nome de tratamento do usuário. SEMPRE chame esta ferramenta quando o usuário pedir para trocar como é chamado, mesmo que o campo name venha vazio — NUNCA responda essa pergunta diretamente sem chamar a ferramenta, pois é ela quem persiste o estado necessário para aplicar o nome na resposta seguinte. Aplica imediatamente quando o nome já vier na mensagem (name preenchido) ou pergunta o novo nome antes de gravar na memória de trabalho (name vazio).", in, out,
+		func(_ context.Context, in map[string]any) (output, error) {
+			sink("edit_treatment_name", in)
+			name, _ := in["name"].(string)
+			if name == "" {
+				return output{Status: "started", Message: TreatmentNameEditQuestionMessage}, nil
+			}
+			return output{Status: "started", Message: messages.TreatmentNameConfirmation(name)}, nil
+		},
+	)
+}
+
 var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
 	"register_expense": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("register_expense", "Registra uma despesa", goldenBaseSchema("description", "amountCents", "paymentMethod", "occurredAt", "categoryId", "cardId"), sink)
@@ -338,6 +367,7 @@ var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
 	"category_detail": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("category_detail", "Detalha os lançamentos, planejado, gasto e disponível/excedente de uma categoria do orçamento no mês.", goldenMonthRefSchema("rootSlug"), sink)
 	},
+	"edit_treatment_name": goldenEditTreatmentNameTool,
 }
 
 func goldenToolsFor(c Case, sink ToolCaptureSink) []tool.ToolHandle {

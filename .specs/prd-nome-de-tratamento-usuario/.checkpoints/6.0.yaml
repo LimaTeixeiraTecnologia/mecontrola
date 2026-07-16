@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-nome-de-tratamento-usuario/6.0_execution_report.md
+summary: Wiring completo do treatment-name-edit (engine/registry/resumer/reaper/tool/write-set/index/dispatcher) + contrato de regressão + instrucoes do agente
+timestamp: 2026-07-16T08:47:09Z

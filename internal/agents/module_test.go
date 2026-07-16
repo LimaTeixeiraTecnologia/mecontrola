@@ -47,12 +47,13 @@ func testBuildFinancialToolsArgs() []tool.ToolHandle {
 		nil, workflow.Definition[workflows.CardManageState]{},
 		nil, workflow.Definition[workflows.BudgetManageState]{},
 		nil, workflow.Definition[workflows.GoalEditState]{},
+		nil, workflow.Definition[workflows.TreatmentNameEditState]{},
 	)
 }
 
-func TestBuildFinancialTools_ReturnsExactly30Tools(t *testing.T) {
+func TestBuildFinancialTools_ReturnsExactly31Tools(t *testing.T) {
 	tools := testBuildFinancialToolsArgs()
-	assert.Len(t, tools, 30)
+	assert.Len(t, tools, 31)
 }
 
 func TestBuildFinancialTools_RegistersCreateCardTool(t *testing.T) {
@@ -84,6 +85,7 @@ func TestBuildFinancialTools_RegistersNewTools(t *testing.T) {
 	assert.Contains(t, ids, "cancel_plan_info")
 	assert.Contains(t, ids, "support_info")
 	assert.Contains(t, ids, "edit_goal")
+	assert.Contains(t, ids, "edit_treatment_name")
 }
 
 func TestNewModule_RequiredDepsValidation(t *testing.T) {

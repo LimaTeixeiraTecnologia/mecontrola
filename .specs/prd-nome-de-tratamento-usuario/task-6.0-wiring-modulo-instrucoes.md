@@ -16,11 +16,11 @@ Ligar o fluxo treatment-name-edit no composition root (engine/registry/resumer/r
 
 ## Subtarefas
 
-- [ ] 6.1 Em `internal/agents/module.go`: `treatmentNameEditEngine := workflow.NewEngine[workflows.TreatmentNameEditState](workflowStore, o11y)`; `treatmentNameEditDef := workflows.BuildTreatmentNameEditWorkflow(workingMem, onboardingAgent)`; registry por tipo + Register; `NewWorkflowResumer(TreatmentNameEditWorkflowID, registry, engine, workflows.TreatmentNameEditKey, workflows.ContinueTreatmentNameEdit)`; incluir o workflowID no `SuspendedRunIndex` e o resumer no `ResumeDispatcher`; reaper job `agents-treatment-name-edit-reaper`.
-- [ ] 6.2 Anexar a tool `BuildEditTreatmentNameTool(...)` aos `financialTools` do agente diário; adicionar `"edit_treatment_name"` ao `agent.WithWriteToolSet(...)`.
-- [ ] 6.3 Adicionar `"edit_treatment_name"` ao `internal/agents/application/postdeploy/regression_contract.go`.
-- [ ] 6.4 Em `internal/agents/application/agents/mecontrola_agent.go`, estender `mecontrolaAgentInstructions`: orientar a chamar `edit_treatment_name` (com `name` quando informado) na intenção de troca; e usar o nome de tratamento vigente (seção `## Nome de Tratamento` da working memory) de forma natural, sem repetição excessiva; sem tocar dados cadastrais (RF-10). Nenhuma feature flag (RF-15).
-- [ ] 6.5 Ajustar/rodar testes de wiring/instruções afetados (ex.: regression_contract_test).
+- [x] 6.1 Em `internal/agents/module.go`: `treatmentNameEditEngine := workflow.NewEngine[workflows.TreatmentNameEditState](workflowStore, o11y)`; `treatmentNameEditDef := workflows.BuildTreatmentNameEditWorkflow(workingMem, onboardingAgent)`; registry por tipo + Register; `NewWorkflowResumer(TreatmentNameEditWorkflowID, registry, engine, workflows.TreatmentNameEditKey, workflows.ContinueTreatmentNameEdit)`; incluir o workflowID no `SuspendedRunIndex` e o resumer no `ResumeDispatcher`; reaper job `agents-treatment-name-edit-reaper`.
+- [x] 6.2 Anexar a tool `BuildEditTreatmentNameTool(...)` aos `financialTools` do agente diário; adicionar `"edit_treatment_name"` ao `agent.WithWriteToolSet(...)`.
+- [x] 6.3 Adicionar `"edit_treatment_name"` ao `internal/agents/application/postdeploy/regression_contract.go`.
+- [x] 6.4 Em `internal/agents/application/agents/mecontrola_agent.go`, estender `mecontrolaAgentInstructions`: orientar a chamar `edit_treatment_name` (com `name` quando informado) na intenção de troca; e usar o nome de tratamento vigente (seção `## Nome de Tratamento` da working memory) de forma natural, sem repetição excessiva; sem tocar dados cadastrais (RF-10). Nenhuma feature flag (RF-15).
+- [x] 6.5 Ajustar/rodar testes de wiring/instruções afetados (ex.: regression_contract_test).
 
 ## Detalhes de Implementação
 

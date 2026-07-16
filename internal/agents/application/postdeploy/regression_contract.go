@@ -31,6 +31,7 @@ var RegisteredTools = []string{
 	"cancel_plan_info",
 	"support_info",
 	"edit_goal",
+	"edit_treatment_name",
 }
 
 var RegisteredWorkflows = []string{
@@ -40,6 +41,7 @@ var RegisteredWorkflows = []string{
 	"goal-edit",
 	"onboarding-workflow",
 	"transaction-write",
+	"treatment-name-edit",
 }
 
 var RegisteredScorers = []string{

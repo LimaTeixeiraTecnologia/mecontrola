@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-nome-de-tratamento-usuario/3.0_execution_report.md
+summary: Workflow durável treatment-name-edit implementado e testado (turno único, dois turnos, reprompt, expiry, falha de persistência).
+timestamp: 2026-07-16T08:36:31Z

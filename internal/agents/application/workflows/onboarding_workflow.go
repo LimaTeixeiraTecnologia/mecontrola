@@ -314,6 +314,8 @@ type OnboardingState struct {
 	Goal                   string          `json:"goal"`
 	GoalValueCents         int64           `json:"goalValueCents"`
 	GoalValueAsked         bool            `json:"goalValueAsked"`
+	TreatmentName          string          `json:"treatmentName"`
+	TreatmentNameAsked     bool            `json:"treatmentNameAsked"`
 	MonthlyBudgetCents     int64           `json:"monthlyBudgetCents"`
 	ReviewAwait            reviewAwaitKind `json:"reviewAwait"`
 	CardsDone              bool            `json:"cardsDone"`
@@ -724,6 +726,21 @@ type recurrenceExtract struct {
 	Months    int    `json:"months"`
 }
 
+type treatmentNameExtract struct {
+	HasName bool   `json:"hasName"`
+	Name    string `json:"name"`
+}
+
+var treatmentNameSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"hasName": map[string]any{"type": "boolean"},
+		"name":    map[string]any{"type": "string"},
+	},
+	"required":             []any{"hasName", "name"},
+	"additionalProperties": false,
+}
+
 var goalWithValueSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
@@ -817,6 +834,22 @@ Estou aqui para te ajudar a organizar suas finanças e conquistar seus objetivos
 
 Vamos começar? Qual é o seu principal objetivo financeiro para este mês?
 (por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva; se quiser, já pode me contar o valor da meta, tipo "comprar um celular novo, meta de R$ 5.000,00")`
+
+const treatmentNameCapturePrompt = `🎉 Bem-vindo ao MeControla! 🎉
+
+Estou aqui para te ajudar a organizar suas finanças e conquistar seus objetivos. 💪💰
+
+Antes da gente começar, como você gostaria que eu te chamasse? 💚`
+
+const treatmentNameGoalPromptNoGreeting = `Vamos começar? Qual é o seu principal objetivo financeiro para este mês?
+(por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva; se quiser, já pode me contar o valor da meta, tipo "comprar um celular novo, meta de R$ 5.000,00")`
+
+const treatmentNameWMSectionHeading = "## Nome de Tratamento"
+
+const treatmentNameSystemPrompt = "Extraia como o usuário quer ser chamado (nome/apelido de tratamento) a partir do texto. " +
+	"Defina hasName=true quando o usuário indicar um nome, apelido ou forma de tratamento utilizável, cobrindo variações como nome direto, \"pode me chamar de X\", \"me chama de X\", \"prefiro X\", \"meu apelido é X\", \"só X mesmo\", \"X tá bom\". " +
+	"Quando o usuário indicar explicitamente como quer ser chamado, use esse apelido em name; quando informar apenas um nome completo/composto sem indicar apelido, use o primeiro nome em name. " +
+	"Defina hasName=false e name vazio quando o usuário recusar (ex.: \"não\", \"tanto faz\", \"prefiro não dizer\") ou responder diretamente sobre outro assunto sem mencionar nenhum nome/apelido utilizável — nunca invente um nome que não esteja no texto."
 
 const goalReprompt = "Não consegui identificar seu objetivo. Qual é o seu principal objetivo financeiro para este mês? Por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva. Se souber, pode me contar também o valor da meta — mas isso é totalmente opcional."
 
@@ -1158,10 +1191,61 @@ func failStep(state OnboardingState, err error) (workflow.StepOutput[OnboardingS
 	return workflow.StepOutput[OnboardingState]{State: state, Status: workflow.StepStatusFailed}, err
 }
 
-func BuildWelcomeStep() func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
-	return func(_ context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+const treatmentNameOutcomeMetric = "agents_onboarding_treatment_name_total"
+
+const (
+	treatmentNameOutcomeCaptured   = "captured"
+	treatmentNameOutcomeSkipped    = "skipped"
+	treatmentNameOutcomeParseError = "parse_error"
+)
+
+func newTreatmentNameOutcomeCounter(o11y observability.Observability) observability.Counter {
+	return o11y.Metrics().Counter(
+		treatmentNameOutcomeMetric,
+		"Total de resultados da captura do nome de tratamento no onboarding",
+		"1",
+	)
+}
+
+func recordTreatmentNameOutcome(ctx context.Context, tn observability.Counter, outcome string) {
+	if tn == nil {
+		return
+	}
+	tn.Add(ctx, 1, observability.String("outcome", outcome))
+}
+
+func BuildWelcomeStep(a agent.Agent, tn observability.Counter) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		state.Phase = PhaseWelcome
+		if state.ResumeText == "" {
+			state.TreatmentNameAsked = true
+			return suspendStep(state, treatmentNameCapturePrompt), nil
+		}
+		resumeText := state.ResumeText
 		state.ResumeText = ""
+		extracted, err := a.Execute(ctx, agent.Request{
+			Messages: []llm.Message{
+				{Role: "system", Content: treatmentNameSystemPrompt},
+				{Role: "user", Content: resumeText},
+			},
+			Schema: &llm.Schema{Name: "treatment_name_extract", Strict: true, Schema: treatmentNameSchema},
+		})
+		if err != nil {
+			recordTreatmentNameOutcome(ctx, tn, treatmentNameOutcomeParseError)
+			return completeStep(state), nil
+		}
+		var extract treatmentNameExtract
+		if err := json.Unmarshal(extracted.RawJSON, &extract); err != nil {
+			recordTreatmentNameOutcome(ctx, tn, treatmentNameOutcomeParseError)
+			return completeStep(state), nil
+		}
+		name, ok := DecideTreatmentName(extract.HasName, extract.Name)
+		if !ok {
+			recordTreatmentNameOutcome(ctx, tn, treatmentNameOutcomeSkipped)
+			return completeStep(state), nil
+		}
+		state.TreatmentName = name
+		recordTreatmentNameOutcome(ctx, tn, treatmentNameOutcomeCaptured)
 		return completeStep(state), nil
 	}
 }
@@ -1170,7 +1254,7 @@ func BuildGoalStep(a agent.Agent) func(context.Context, OnboardingState) (workfl
 	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		if state.ResumeText == "" {
 			state.Phase = PhaseGoal
-			return suspendStep(state, welcomeCombinedPrompt), nil
+			return suspendStep(state, treatmentNameGoalPromptNoGreeting), nil
 		}
 		resumeText := state.ResumeText
 		state.ResumeText = ""
@@ -1744,6 +1828,15 @@ func BuildRecurrenceStep(a agent.Agent, budgets interfaces.BudgetPlanner, rec ob
 	}
 }
 
+func conclusionWorkingMemoryContent(state OnboardingState) string {
+	var b strings.Builder
+	if state.TreatmentName != "" {
+		fmt.Fprintf(&b, "%s\n\n%s\n\n", treatmentNameWMSectionHeading, state.TreatmentName)
+	}
+	fmt.Fprintf(&b, "## Objetivo Financeiro\n\n%s", state.Goal)
+	return b.String()
+}
+
 func BuildConclusionStep(
 	workingMem memory.WorkingMemory,
 	budgets interfaces.BudgetPlanner,
@@ -1751,12 +1844,15 @@ func BuildConclusionStep(
 ) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		state.Phase = PhaseConclusion
-		if err := workingMem.Upsert(ctx, state.UserID, "## Objetivo Financeiro\n\n"+state.Goal); err != nil {
+		if err := workingMem.Upsert(ctx, state.UserID, conclusionWorkingMemoryContent(state)); err != nil {
 			return failStep(state, fmt.Errorf("agents.onboarding.conclusion: upsert_wm: %w", err))
 		}
 		metadata := map[string]any{"objetivo_financeiro": state.Goal}
 		if state.GoalValueCents > 0 {
 			metadata["objetivo_financeiro_valor_centavos"] = state.GoalValueCents
+		}
+		if state.TreatmentName != "" {
+			metadata["nome_tratamento"] = state.TreatmentName
 		}
 		if err := workingMem.UpsertMetadata(ctx, state.UserID, metadata); err != nil {
 			return failStep(state, fmt.Errorf("agents.onboarding.conclusion: upsert_metadata: %w", err))
@@ -1828,15 +1924,17 @@ func BuildOnboardingWorkflow(
 	var dist observability.Counter
 	var mb observability.Counter
 	var rec observability.Counter
+	var tn observability.Counter
 	if o11y != nil {
 		dist = newDistributionOutcomeCounter(o11y)
 		mb = newMonthlyBudgetOutcomeCounter(o11y)
 		rec = newRecurrenceOutcomeCounter(o11y)
+		tn = newTreatmentNameOutcomeCounter(o11y)
 	}
 	return workflow.Definition[OnboardingState]{
 		ID: OnboardingWorkflowID,
 		Root: workflow.Sequence("root",
-			workflow.NewStepFunc(stepWelcomeID, wrap(BuildWelcomeStep())),
+			workflow.NewStepFunc(stepWelcomeID, wrap(BuildWelcomeStep(a, tn))),
 			workflow.NewStepFunc(stepGoalID, wrap(BuildGoalStep(a))),
 			workflow.NewStepFunc(stepMonthlyBudgetID, wrap(BuildMonthlyBudgetStep(a, mb))),
 			workflow.NewStepFunc(stepBudgetReviewID, wrap(BuildBudgetReviewStep(a, budgets, dist))),

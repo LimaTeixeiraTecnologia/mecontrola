@@ -12,9 +12,9 @@ RF-02 (extração/validação do nome de tratamento), RF-11 (normalização + li
 
 ## Subtarefas
 
-- [ ] 1.1 Criar `internal/agents/application/workflows/treatment_name_edit_state.go` com o tipo fechado `TreatmentNameEditStatus` (constantes `TreatmentNameEditActive`=iota+1, `TreatmentNameEditCompleted`, `TreatmentNameEditCancelled`, `TreatmentNameEditExpired`) + `String()`/`IsValid()`/`ParseTreatmentNameEditStatus` com sentinel error; e o struct `TreatmentNameEditState` (campos e tags JSON conforme techspec seção Modelos de Dados).
-- [ ] 1.2 Criar `internal/agents/application/workflows/treatment_name_edit_decisions.go` com `DecideTreatmentName(hasName bool, raw string) (string, bool)` (trim, rejeita vazio/!hasName, rejeita > `treatmentNameMaxLen`=40 via `utf8.RuneCountInString`) e `DecideTreatmentNameEditExpiry(state, now time.Time) bool` (usa `treatmentNameEditTTL`=15min); ambas puras (sem ctx, sem IO). `now` injetado (proibido abstrair tempo).
-- [ ] 1.3 Suíte canônica testify (whitebox `package workflows`) cobrindo: nome direto; vazio/recusa→(",false); >40→(",false); trim; expiry zero/dentro/fora da TTL.
+- [x] 1.1 Criar `internal/agents/application/workflows/treatment_name_edit_state.go` com o tipo fechado `TreatmentNameEditStatus` (constantes `TreatmentNameEditActive`=iota+1, `TreatmentNameEditCompleted`, `TreatmentNameEditCancelled`, `TreatmentNameEditExpired`) + `String()`/`IsValid()`/`ParseTreatmentNameEditStatus` com sentinel error; e o struct `TreatmentNameEditState` (campos e tags JSON conforme techspec seção Modelos de Dados).
+- [x] 1.2 Criar `internal/agents/application/workflows/treatment_name_edit_decisions.go` com `DecideTreatmentName(hasName bool, raw string) (string, bool)` (trim, rejeita vazio/!hasName, rejeita > `treatmentNameMaxLen`=40 via `utf8.RuneCountInString`) e `DecideTreatmentNameEditExpiry(state, now time.Time) bool` (usa `treatmentNameEditTTL`=15min); ambas puras (sem ctx, sem IO). `now` injetado (proibido abstrair tempo).
+- [x] 1.3 Suíte canônica testify (whitebox `package workflows`) cobrindo: nome direto; vazio/recusa→(",false); >40→(",false); trim; expiry zero/dentro/fora da TTL.
 
 ## Detalhes de Implementação
 

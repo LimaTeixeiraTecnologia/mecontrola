@@ -1454,35 +1454,105 @@ func (s *OnboardingWorkflowSuite) TestBuildWelcomeStep() {
 	type args struct {
 		state OnboardingState
 	}
+	type dependencies struct {
+		agentMock *agentmocks.Agent
+	}
 	scenarios := []struct {
-		name   string
-		args   args
-		expect func(out workflow.StepOutput[OnboardingState], err error)
+		name         string
+		args         args
+		dependencies dependencies
+		expect       func(out workflow.StepOutput[OnboardingState], err error)
 	}{
 		{
-			name: "primeira entrada deve completar sem suspender para que goal envie mensagem combinada",
-			args: args{state: OnboardingState{UserID: "u1"}},
+			name:         "primeira entrada suspende com boas-vindas e pergunta do nome (RF-01)",
+			args:         args{state: OnboardingState{UserID: "u1"}},
+			dependencies: dependencies{agentMock: s.agentMock},
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
-				s.Equal(workflow.StepStatusCompleted, out.Status)
-				s.Empty(out.State.ResumeText)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.NotNil(out.Suspend)
+				s.Equal(treatmentNameCapturePrompt, out.Suspend.Prompt)
 				s.Equal(PhaseWelcome, out.State.Phase)
+				s.True(out.State.TreatmentNameAsked)
 			},
 		},
 		{
-			name: "resume com qualquer texto deve completar ignorando o conteudo (D-07)",
-			args: args{state: OnboardingState{UserID: "u1", Phase: PhaseWelcome, ResumeText: "texto irrelevante que nao deve virar objetivo"}},
+			name: "resume com nome direto usavel grava TreatmentName e nao bloqueia (RF-02)",
+			args: args{state: OnboardingState{UserID: "u1", Phase: PhaseWelcome, ResumeText: "pode me chamar de Stef"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(treatmentNameExtract{HasName: true, Name: "Stef"})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+			},
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusCompleted, out.Status)
 				s.Empty(out.State.ResumeText)
-				s.Empty(out.State.Goal)
+				s.Equal("Stef", out.State.TreatmentName)
+			},
+		},
+		{
+			name: "resume sem nome utilizavel segue sem bloquear o onboarding (RF-04)",
+			args: args{state: OnboardingState{UserID: "u1", Phase: PhaseWelcome, ResumeText: "nao, tanto faz"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(treatmentNameExtract{HasName: false, Name: ""})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.Empty(out.State.ResumeText)
+				s.Empty(out.State.TreatmentName)
+			},
+		},
+		{
+			name: "resume com nome acima de 40 caracteres nao e persistido e nao bloqueia (RF-11)",
+			args: args{state: OnboardingState{UserID: "u1", Phase: PhaseWelcome, ResumeText: "me chama de um nome gigantesco que passa de quarenta caracteres"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					payload, _ := json.Marshal(treatmentNameExtract{HasName: true, Name: strings.Repeat("a", 41)})
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.Empty(out.State.TreatmentName)
+			},
+		},
+		{
+			name: "falha de extracao LLM nao bloqueia o onboarding (RF-04)",
+			args: args{state: OnboardingState{UserID: "u1", Phase: PhaseWelcome, ResumeText: "oi"}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{}, errors.New("llm indisponivel")).Once()
+					return s.agentMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.Empty(out.State.TreatmentName)
 			},
 		},
 	}
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			step := workflow.NewStepFunc(stepWelcomeID, BuildWelcomeStep())
+			step := workflow.NewStepFunc(stepWelcomeID, BuildWelcomeStep(scenario.dependencies.agentMock, nil))
 			out, err := step.Execute(s.ctx, scenario.args.state)
 			scenario.expect(out, err)
 		})
@@ -1503,15 +1573,15 @@ func (s *OnboardingWorkflowSuite) TestBuildGoalStep() {
 		expect       func(out workflow.StepOutput[OnboardingState], err error)
 	}{
 		{
-			name:         "primeira mensagem deve combinar boas-vindas e pergunta de objetivo",
+			name:         "primeira mensagem nao re-sauda (boas-vindas ja ocorreu no step-welcome)",
 			args:         args{state: OnboardingState{UserID: "u1"}},
 			dependencies: dependencies{agentMock: s.agentMock},
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusSuspended, out.Status)
 				s.NotNil(out.Suspend)
-				s.Equal(welcomeCombinedPrompt, out.Suspend.Prompt)
-				s.Contains(out.Suspend.Prompt, "🎉 Bem-vindo ao MeControla! 🎉")
+				s.Equal(treatmentNameGoalPromptNoGreeting, out.Suspend.Prompt)
+				s.NotContains(out.Suspend.Prompt, "🎉 Bem-vindo ao MeControla! 🎉")
 				s.Contains(out.Suspend.Prompt, "Vamos começar?")
 				s.Contains(out.Suspend.Prompt, "objetivo")
 				s.Contains(out.Suspend.Prompt, "valor da meta")
@@ -3843,6 +3913,68 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WithoutGoalValueOmitsM
 	s.NotContains(out.State.FinalMessage, "meta de")
 }
 
+func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WithTreatmentNameComposesBothSectionsInSingleUpsert() {
+	state := OnboardingState{
+		UserID:        "11111111-1111-1111-1111-111111111111",
+		Goal:          "economizar",
+		TreatmentName: "Stef",
+	}
+	s.wmMock.EXPECT().
+		Upsert(mock.Anything, state.UserID, "## Nome de Tratamento\n\nStef\n\n## Objetivo Financeiro\n\neconomizar").
+		Return(nil).Once()
+	s.wmMock.EXPECT().
+		UpsertMetadata(mock.Anything, state.UserID, map[string]any{
+			"objetivo_financeiro": state.Goal,
+			"nome_tratamento":     state.TreatmentName,
+		}).
+		Return(nil).Once()
+	s.budgetsMock.EXPECT().
+		SuggestAllocation(mock.Anything, state.MonthlyBudgetCents, allocationBPList(state.Allocations)).
+		Return(suggestReturn(state.MonthlyBudgetCents, defaultDistributionBP), nil).Once()
+	s.cardsMock.EXPECT().
+		ListCards(mock.Anything, uuid.MustParse(state.UserID)).
+		Return(nil, nil).Once()
+
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock, s.budgetsMock, s.cardsMock))
+	out, err := step.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+	s.Contains(conclusionWorkingMemoryContent(state), "## Objetivo Financeiro")
+	s.Contains(conclusionWorkingMemoryContent(state), "## Nome de Tratamento")
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_WithoutTreatmentNameOmitsSectionAndMetadataKey() {
+	state := OnboardingState{
+		UserID: "11111111-1111-1111-1111-111111111111",
+		Goal:   "economizar",
+	}
+	content := conclusionWorkingMemoryContent(state)
+	s.Equal("## Objetivo Financeiro\n\neconomizar", content)
+	s.NotContains(content, "## Nome de Tratamento")
+
+	s.wmMock.EXPECT().
+		Upsert(mock.Anything, state.UserID, content).
+		Return(nil).Once()
+	s.wmMock.EXPECT().
+		UpsertMetadata(mock.Anything, state.UserID, map[string]any{"objetivo_financeiro": state.Goal}).
+		Return(nil).Once()
+	s.budgetsMock.EXPECT().
+		SuggestAllocation(mock.Anything, state.MonthlyBudgetCents, allocationBPList(state.Allocations)).
+		Return(suggestReturn(state.MonthlyBudgetCents, defaultDistributionBP), nil).Once()
+	s.cardsMock.EXPECT().
+		ListCards(mock.Anything, uuid.MustParse(state.UserID)).
+		Return(nil, nil).Once()
+
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock, s.budgetsMock, s.cardsMock))
+	out, err := step.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+	_, hasKey := map[string]any{"objetivo_financeiro": state.Goal}["nome_tratamento"]
+	s.False(hasKey)
+}
+
 func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_DoesNotReopenDistributionSummaryOrActivation() {
 	state := OnboardingState{
 		UserID:      "11111111-1111-1111-1111-111111111111",
@@ -4109,15 +4241,20 @@ func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_SequenceStartsAtWe
 
 	s.NoError(err)
 	s.Equal(workflow.StepStatusSuspended, out.Status)
-	s.Equal(PhaseGoal, out.State.Phase)
+	s.Equal(PhaseWelcome, out.State.Phase)
 	s.NotNil(out.Suspend)
-	s.Equal(welcomeCombinedPrompt, out.Suspend.Prompt)
+	s.Equal(treatmentNameCapturePrompt, out.Suspend.Prompt)
+	s.True(out.State.TreatmentNameAsked)
 }
 
 func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_SequenceAdvancesWelcomeToGoalOnResume() {
 	s.threadsMock.EXPECT().GetOrCreate(mock.Anything, mock.Anything, mock.Anything).
 		Return(memory.Thread{ID: uuid.New()}, nil).Maybe()
 	s.messagesMock.EXPECT().Append(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	payload, _ := json.Marshal(treatmentNameExtract{HasName: false, Name: ""})
+	s.agentMock.EXPECT().
+		Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+		Return(agentpkg.Result{RawJSON: payload}, nil).Once()
 
 	def := BuildOnboardingWorkflow(s.agentMock, s.cardsMock, s.budgetsMock, s.wmMock, s.threadsMock, s.messagesMock, nil)
 	out, err := def.Root.Execute(s.ctx, OnboardingState{UserID: "user-x", PeerID: "peer-x", ResumeText: "vamos comecar"})
@@ -4125,24 +4262,29 @@ func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_SequenceAdvancesWe
 	s.NoError(err)
 	s.Equal(workflow.StepStatusSuspended, out.Status)
 	s.Equal(PhaseGoal, out.State.Phase)
-	s.Equal(welcomeCombinedPrompt, out.Suspend.Prompt)
+	s.Equal(treatmentNameGoalPromptNoGreeting, out.Suspend.Prompt)
+	s.Empty(out.State.TreatmentName)
 	s.Equal("", out.State.ResumeText)
 }
 
-func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_LegacyWelcomeResume_ReceivesCombinedPrompt() {
+func (s *OnboardingWorkflowSuite) TestBuildOnboardingWorkflow_LegacyWelcomeResume_AdvancesWithoutReGreeting() {
 	s.threadsMock.EXPECT().GetOrCreate(mock.Anything, mock.Anything, mock.Anything).
 		Return(memory.Thread{ID: uuid.New()}, nil).Maybe()
 	s.messagesMock.EXPECT().Append(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	payload, _ := json.Marshal(treatmentNameExtract{HasName: false, Name: ""})
+	s.agentMock.EXPECT().
+		Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+		Return(agentpkg.Result{RawJSON: payload}, nil).Once()
 
 	// Simula run legado suspenso no step welcome: ao retomar com "Oi",
-	// welcome completa, goal suspende com a mensagem combinada.
+	// welcome extrai (sem nome usavel) e completa, goal suspende sem re-saudar.
 	def := BuildOnboardingWorkflow(s.agentMock, s.cardsMock, s.budgetsMock, s.wmMock, s.threadsMock, s.messagesMock, nil)
 	out, err := def.Root.Execute(s.ctx, OnboardingState{UserID: "user-x", PeerID: "peer-x", ResumeText: "Oi"})
 
 	s.NoError(err)
 	s.Equal(workflow.StepStatusSuspended, out.Status)
 	s.Equal(PhaseGoal, out.State.Phase)
-	s.Equal(welcomeCombinedPrompt, out.Suspend.Prompt)
+	s.Equal(treatmentNameGoalPromptNoGreeting, out.Suspend.Prompt)
 	s.Equal("", out.State.ResumeText)
 }
 
