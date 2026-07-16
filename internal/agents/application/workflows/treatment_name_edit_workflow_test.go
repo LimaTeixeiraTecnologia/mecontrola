@@ -242,6 +242,9 @@ func (s *TreatmentNameEditWorkflowSuite) TestExpiredResumeCompletesWithoutApplyi
 func (s *TreatmentNameEditWorkflowSuite) TestUpsertFailureReturnsFailedStatusWithoutConfirming() {
 	s.wmMock.EXPECT().Get(mock.Anything, s.resourceID).Return("", nil).Once()
 	s.wmMock.EXPECT().
+		UpsertMetadata(mock.Anything, s.resourceID, map[string]any{"nome_tratamento": "Stef"}).
+		Return(nil).Once()
+	s.wmMock.EXPECT().
 		Upsert(mock.Anything, s.resourceID, mock.AnythingOfType("string")).
 		Return(errors.New("db down")).Once()
 
@@ -256,11 +259,8 @@ func (s *TreatmentNameEditWorkflowSuite) TestUpsertFailureReturnsFailedStatusWit
 	s.NotEmpty(out.State.ResponseText)
 }
 
-func (s *TreatmentNameEditWorkflowSuite) TestUpsertMetadataFailureReturnsFailedStatus() {
-	s.wmMock.EXPECT().Get(mock.Anything, s.resourceID).Return("", nil).Once()
-	s.wmMock.EXPECT().
-		Upsert(mock.Anything, s.resourceID, mock.AnythingOfType("string")).
-		Return(nil).Once()
+func (s *TreatmentNameEditWorkflowSuite) TestMetadataFailureLeavesObservableNameUnchanged() {
+	s.wmMock.EXPECT().Get(mock.Anything, s.resourceID).Return("## Nome de Tratamento\n\nJailton", nil).Once()
 	s.wmMock.EXPECT().
 		UpsertMetadata(mock.Anything, s.resourceID, map[string]any{"nome_tratamento": "Stef"}).
 		Return(errors.New("db down")).Once()
@@ -272,6 +272,43 @@ func (s *TreatmentNameEditWorkflowSuite) TestUpsertMetadataFailureReturnsFailedS
 
 	s.Error(err)
 	s.Equal(workflow.StepStatusFailed, out.Status)
+	s.NotEqual("Combinado, Stef! 💚 Vou te chamar assim daqui pra frente.", out.State.ResponseText)
+	s.wmMock.AssertNotCalled(s.T(), "Upsert", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func (s *TreatmentNameEditWorkflowSuite) TestProvidedNameTooLongAsksForShorterForm() {
+	def := BuildTreatmentNameEditWorkflow(s.wmMock, s.agentMock)
+	state := TreatmentNameEditState{ResourceID: s.resourceID, ProvidedName: strings.Repeat("a", 41)}
+
+	out, err := def.Root.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusSuspended, out.Status)
+	s.NotNil(out.Suspend)
+	s.Equal("Esse nome ficou um pouco longo. 😊 Pode me dizer uma forma mais curta pra eu te chamar? 💚", out.Suspend.Prompt)
+	s.False(out.State.SuspendedAt.IsZero())
+}
+
+func (s *TreatmentNameEditWorkflowSuite) TestResumeNameTooLongRepromptsForShorterForm() {
+	payload, marshalErr := json.Marshal(treatmentNameEditExtract{HasName: true, Name: strings.Repeat("a", 41)})
+	s.Require().NoError(marshalErr)
+	s.agentMock.EXPECT().
+		Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+		Return(agentpkg.Result{RawJSON: payload}, nil).Once()
+
+	def := BuildTreatmentNameEditWorkflow(s.wmMock, s.agentMock)
+	state := TreatmentNameEditState{
+		ResourceID:  s.resourceID,
+		SuspendedAt: time.Now().UTC(),
+		ResumeText:  strings.Repeat("a", 41),
+	}
+
+	out, err := def.Root.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusSuspended, out.Status)
+	s.Equal(1, out.State.RepromptCount)
+	s.Equal("Esse nome ficou um pouco longo. 😊 Pode me dizer uma forma mais curta pra eu te chamar? 💚", out.Suspend.Prompt)
 }
 
 func (s *TreatmentNameEditWorkflowSuite) TestBuildTreatmentNameEditReaper() {

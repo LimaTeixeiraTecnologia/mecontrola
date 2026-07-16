@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/messages"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
@@ -137,7 +138,7 @@ func buildCreateCardExec(engine wf.Engine[workflows.CardManageState], def wf.Def
 		if errors.Is(err, wf.ErrRunAlreadyExists) {
 			return CreateCardOutput{
 				Outcome:       createCardOutcomePendingConfirmationExists,
-				ClarifyPrompt: "Há uma confirmação pendente. Por favor, responda sim ou não antes de solicitar outro cadastro.",
+				ClarifyPrompt: messages.PendingCardCreationExists(),
 			}, nil
 		}
 

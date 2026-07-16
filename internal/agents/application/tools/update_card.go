@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/messages"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
@@ -113,7 +114,7 @@ func buildUpdateCardExec(engine wf.Engine[workflows.CardManageState], def wf.Def
 		if errors.Is(startErr, wf.ErrRunAlreadyExists) {
 			return UpdateCardOutput{
 				Outcome:            updateCardOutcomePendingConfirmationExists,
-				ConfirmationPrompt: "Há uma confirmação pendente. Por favor, responda sim ou não antes de solicitar outra operação.",
+				ConfirmationPrompt: messages.PendingConfirmationExists(),
 			}, nil
 		}
 

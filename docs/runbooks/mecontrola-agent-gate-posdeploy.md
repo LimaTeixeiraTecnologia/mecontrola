@@ -257,25 +257,25 @@ corrigir a regressão antes.
 
 ## 11. Troubleshooting de falso sucesso financeiro (RF-31/RF-34)
 
-Alerta: `PendingEntryFalseSuccess` (`agents_pending_entry_false_success_total` > 0).
+Alerta: `FinancialWriteFalseSuccess` (família `agents_.+_false_success_total` > 0).
 
 ### Quando este runbook se aplica
 
-O alerta dispara quando o workflow `pending-entry` registra uma confirmação positiva do
-usuário (resposta "sim"/"confirmar"/"ok"/"pode") mas não obtém um `resourceID` de transação
-ativa como resultado. Isso caracteriza **falso sucesso financeiro**: o usuário aceitou a
-operação, mas não há transação durável rastreável.
+O alerta dispara quando um workflow de escrita financeira (ex.: `transaction-write`,
+`card-manage`) registra uma confirmação positiva do usuário (resposta "sim"/"confirmar"/"ok"/"pode")
+mas não obtém um `resourceID` de recurso durável como resultado. Isso caracteriza **falso
+sucesso financeiro**: o usuário aceitou a operação, mas não há recurso durável rastreável.
 
 ### Investigação imediata (sem ler mensagens do usuário)
 
 1. **Confirmar o incremento da métrica** no Prometheus:
    ```promql
-   increase(agents_pending_entry_false_success_total{workflow="pending-entry"}[5m])
+   sum by (workflow) (increase({__name__=~"agents_.+_false_success_total"}[5m]))
    ```
    Qualquer valor > 0 é crítico.
 
 2. **Correlacionar com spans** no Tempo:
-   - `agents.usecase.pending_entry_continuer`
+   - `agents.usecase.resume_dispatcher`
    - `agents.usecase.idempotent_write`
    - `transactions.usecase.create_transaction` (ou `.update_transaction`)
    Use `trace_id` para ligar o evento ao run correspondente.
@@ -284,7 +284,7 @@ operação, mas não há transação durável rastreável.
    ```sql
    SELECT id, workflow, status, stage, error, started_at, ended_at
    FROM mecontrola.workflow_runs
-   WHERE workflow = 'pending-entry'
+   WHERE workflow IN ('transaction-write', 'card-manage', 'budget-manage', 'goal-edit', 'destructive-confirm')
      AND status = 'failed'
      AND started_at >= now() - interval '30 minutes'
    ORDER BY started_at DESC;
@@ -316,11 +316,12 @@ operação, mas não há transação durável rastreável.
   resolvido): documentar o `trace_id`/run_id e ajustar o threshold somente após revisão do
   PRD.
 - Após correção, garantir que testes de regressão cobrem confirmação positiva com e sem
-  transação ativa (`pending_entry_no_false_success_test.go`).
+  recurso durável (`transaction_write_workflow_test.go`, `card_manage_decisions_test.go`).
 
 ### Métricas e labels permitidos
 
-- `agents_pending_entry_false_success_total`: labels `workflow`, `step`.
+- Família `agents_.+_false_success_total` (ex.: `agents_transaction_write_false_success_total`,
+  `agents_card_manage_false_success_total`): labels `workflow`, `step`.
 - Proibido como label: `user_id`, telefone, `wamid`, categoria, `run_id`, `thread_id`,
   `resource_id` ou IDs de entidade.
 
@@ -336,8 +337,9 @@ operação, mas não há transação durável rastreável.
   de tools/workflows/scorers/fluxos cobertos (RF-54..RF-57).
 - `internal/agents/application/postdeploy/regression_contract_test.go` +
   `module_wiring_source_test.go` — verificação executável do contrato de regressão.
-- `internal/agents/application/workflows/pending_entry_workflow.go` — métrica de falso
-  sucesso financeiro.
+- `internal/agents/application/workflows/transaction_write_workflow.go` e
+  `internal/agents/application/workflows/card_manage_workflow.go` — métrica de falso
+  sucesso financeiro por workflow de escrita.
 - `.specs/prd-orquestracao-conversacional-confiavel/adr-005-golden-harness-gate.md`.
 - `.specs/prd-onboarding-sem-friccao-ate-primeiro-lancamento/prd.md` (RF-31..RF-34).
 - `docs/runbooks/onboarding-rollout-checklist.md` — checklist de rollout sem feature flag,

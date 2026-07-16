@@ -77,18 +77,19 @@ groups:
             conectado ou substituido silenciosamente (regressao de RF-01/RF-54/RF-55).
             Runbook: docs/runbooks/mecontrola-agent-gate-posdeploy.md
 
-      - alert: PendingEntryFalseSuccess
-        expr: increase(agents_pending_entry_false_success_total[5m]) > 0
+      - alert: FinancialWriteFalseSuccess
+        expr: sum(increase({__name__=~"agents_.+_false_success_total"}[5m])) > 0
         for: 0m
         labels:
           severity: critical
           team: agents
-          prd: prd-onboarding-sem-friccao-ate-primeiro-lancamento
+          prd: prd-operacao-conversacional-diaria
         annotations:
-          summary: "Confirmacao positiva sem transacao ativa detectada no pending-entry"
+          summary: "Confirmacao positiva sem recurso duravel detectada em workflow de escrita financeira"
           description: |
-            RF-31/RF-34: o workflow pending-entry registrou uma confirmacao positiva
-            (aceite do usuario) sem resourceID de transacao ativa. Isso indica falso
+            RF-07: um workflow de escrita financeira (familia agents_*_false_success_total,
+            ex.: transaction-write, card-manage) registrou uma confirmacao positiva
+            (aceite do usuario) sem resourceID de recurso duravel. Isso indica falso
             sucesso financeiro e deve ser investigado imediatamente.
-            Verificar: logs do continuer com workflow=pending-entry e spans no Tempo.
+            Verificar: logs do continuer com o label workflow do run e spans no Tempo.
             Runbook: docs/runbooks/mecontrola-agent-gate-posdeploy.md

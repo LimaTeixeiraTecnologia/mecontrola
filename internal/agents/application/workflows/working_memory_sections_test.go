@@ -14,29 +14,6 @@ func TestWorkingMemorySectionsSuite(t *testing.T) {
 	suite.Run(t, new(WorkingMemorySectionsSuite))
 }
 
-func (s *WorkingMemorySectionsSuite) TestParseWorkingMemorySectionsDelegatesToGoalEditParser() {
-	content := "## Nome de Tratamento\n\nStef\n\n## Objetivo Financeiro\n\nComprar uma casa"
-
-	sections := parseWorkingMemorySections(content)
-
-	s.Equal(goalEditParseSections(content), sections)
-}
-
-func (s *WorkingMemorySectionsSuite) TestWorkingMemorySectionBodyDelegatesToGoalEditSectionBody() {
-	content := "## Nome de Tratamento\n\nStef\n\n## Objetivo Financeiro\n\nComprar uma casa"
-
-	body := workingMemorySectionBody(content, "## Nome de Tratamento")
-
-	s.Equal("Stef", body)
-	s.Equal(goalEditSectionBody(content, "## Nome de Tratamento"), body)
-}
-
-func (s *WorkingMemorySectionsSuite) TestWorkingMemorySectionBodyMissingHeading() {
-	content := "## Objetivo Financeiro\n\nComprar uma casa"
-
-	s.Equal("", workingMemorySectionBody(content, "## Nome de Tratamento"))
-}
-
 func (s *WorkingMemorySectionsSuite) TestReplaceWorkingMemorySectionPreservesSiblingSections() {
 	content := "## Nome de Tratamento\n\nStef\n\n## Objetivo Financeiro\n\nComprar uma casa"
 

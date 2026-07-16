@@ -1,11 +1,15 @@
 package workflows
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
 type CardManageDecisionsSuite struct {
@@ -102,6 +106,52 @@ func (s *CardManageDecisionsSuite) TestDecideCardManageConfirmation() {
 			a := scenario.args()
 			action := DecideCardManageConfirmation(a.state, a.msg, a.now)
 			s.Equal(scenario.expect, action)
+		})
+	}
+}
+
+func (s *CardManageDecisionsSuite) TestDecideCardManagePostWrite() {
+	type args struct {
+		outcome    agent.ToolOutcome
+		resourceID uuid.UUID
+	}
+
+	scenarios := []struct {
+		name       string
+		args       args
+		expectStep workflow.StepStatus
+		expectErr  bool
+	}{
+		{
+			name:       "resourceID nulo sem replay eh falso sucesso",
+			args:       args{outcome: agent.ToolOutcomeRouted, resourceID: uuid.Nil},
+			expectStep: workflow.StepStatusFailed,
+			expectErr:  true,
+		},
+		{
+			name:       "resourceID valido completa",
+			args:       args{outcome: agent.ToolOutcomeRouted, resourceID: uuid.New()},
+			expectStep: workflow.StepStatusCompleted,
+			expectErr:  false,
+		},
+		{
+			name:       "replay com resourceID nulo nao eh falso sucesso",
+			args:       args{outcome: agent.ToolOutcomeReplay, resourceID: uuid.Nil},
+			expectStep: workflow.StepStatusCompleted,
+			expectErr:  false,
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			step, err := DecideCardManagePostWrite(scenario.args.outcome, scenario.args.resourceID)
+			s.Equal(scenario.expectStep, step)
+			if scenario.expectErr {
+				s.Error(err)
+				s.True(errors.Is(err, ErrCardManageAcceptedWithoutResource))
+			} else {
+				s.NoError(err)
+			}
 		})
 	}
 }

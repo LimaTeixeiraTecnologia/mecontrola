@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/messages"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
@@ -109,7 +110,7 @@ func buildDeleteEntryExec(engine wf.Engine[workflows.DestructiveManageState], de
 		if errors.Is(err, wf.ErrRunAlreadyExists) {
 			return DeleteEntryOutput{
 				NeedsConfirmation: true,
-				ImpactNote:        "Há uma confirmação pendente. Por favor, responda sim ou não antes de solicitar outra operação.",
+				ImpactNote:        messages.PendingConfirmationExists(),
 				TargetRef:         in.EntryID,
 				TargetKind:        in.EntryKind,
 			}, nil

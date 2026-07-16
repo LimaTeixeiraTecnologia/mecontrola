@@ -24,12 +24,26 @@ const (
 	CardManageReaperBatch = 100
 )
 
+const cardManageFalseSuccessMetric = "agents_card_manage_false_success_total"
+
+type cardManageMetrics struct {
+	falseSuccess observability.Counter
+}
+
 func CardManageKey(resourceID, threadID string) string {
 	return CorrelationKey(resourceID, threadID, CardManageWorkflowID)
 }
 
-func BuildCardManageWorkflow(cards interfaces.CardManager, idem IdempotentWriter) workflow.Definition[CardManageState] {
-	step := workflow.NewStepFunc(stepCardManageID, buildCardManageStep(cards, idem))
+func BuildCardManageWorkflowWithObservability(cards interfaces.CardManager, idem IdempotentWriter, o11y observability.Observability) workflow.Definition[CardManageState] {
+	var metrics cardManageMetrics
+	if o11y != nil {
+		metrics.falseSuccess = o11y.Metrics().Counter(
+			cardManageFalseSuccessMetric,
+			"Confirmacao positiva sem cartao duravel no workflow card-manage",
+			"1",
+		)
+	}
+	step := workflow.NewStepFunc(stepCardManageID, buildCardManageStep(cards, idem, &metrics))
 	return workflow.Definition[CardManageState]{
 		ID:          CardManageWorkflowID,
 		Root:        step,
@@ -42,7 +56,7 @@ func BuildCardManageReaper(store workflow.Store, o11y observability.Observabilit
 	return workflow.NewStaleSuspendedReaper(store, CardManageWorkflowID, CardManageStaleAfter, CardManageReaperBatch, o11y)
 }
 
-type cardManageExecFn func(ctx context.Context, state CardManageState, cards interfaces.CardManager, idem IdempotentWriter) (workflow.StepOutput[CardManageState], error)
+type cardManageExecFn func(ctx context.Context, state CardManageState, cards interfaces.CardManager, idem IdempotentWriter, metrics *cardManageMetrics) (workflow.StepOutput[CardManageState], error)
 
 func cardManageExecMap() map[CardManageOperationKind]cardManageExecFn {
 	return map[CardManageOperationKind]cardManageExecFn{
@@ -51,7 +65,7 @@ func cardManageExecMap() map[CardManageOperationKind]cardManageExecFn {
 	}
 }
 
-func buildCardManageStep(cards interfaces.CardManager, idem IdempotentWriter) func(context.Context, CardManageState) (workflow.StepOutput[CardManageState], error) {
+func buildCardManageStep(cards interfaces.CardManager, idem IdempotentWriter, metrics *cardManageMetrics) func(context.Context, CardManageState) (workflow.StepOutput[CardManageState], error) {
 	execMap := cardManageExecMap()
 	return func(ctx context.Context, state CardManageState) (workflow.StepOutput[CardManageState], error) {
 		if state.ResumeText == "" {
@@ -69,7 +83,7 @@ func buildCardManageStep(cards interfaces.CardManager, idem IdempotentWriter) fu
 				state.ResponseText = "🚫 Não foi possível identificar a operação de cartão solicitada."
 				return workflow.StepOutput[CardManageState]{State: state, Status: workflow.StepStatusCompleted}, nil
 			}
-			return fn(ctx, state, cards, idem)
+			return fn(ctx, state, cards, idem, metrics)
 		case CardManageActionCancel:
 			state.Status = CardManageCancelled
 			state.ResponseText = "🚫 Operação de cartão cancelada conforme solicitado."
@@ -168,7 +182,7 @@ func cardManageConfirmQuestion(state CardManageState) string {
 	return base + "\n\nResponda *sim* para confirmar ou *não* para cancelar."
 }
 
-func executeCardManageCreate(ctx context.Context, state CardManageState, cards interfaces.CardManager, idem IdempotentWriter) (workflow.StepOutput[CardManageState], error) {
+func executeCardManageCreate(ctx context.Context, state CardManageState, cards interfaces.CardManager, idem IdempotentWriter, metrics *cardManageMetrics) (workflow.StepOutput[CardManageState], error) {
 	writeFn := IdempotentWriteFn(func(c context.Context) (uuid.UUID, bool, error) {
 		ref, createErr := cards.CreateCard(c, interfaces.NewCard{
 			UserID:             state.UserID,
@@ -215,6 +229,13 @@ func executeCardManageCreate(ctx context.Context, state CardManageState, cards i
 		return workflow.StepOutput[CardManageState]{State: state, Status: workflow.StepStatusFailed}, fmt.Errorf("agents.card_manage.create: idempotent_write: %w", idemErr)
 	}
 
+	if stepStatus, postErr := DecideCardManagePostWrite(outcome, resourceID); postErr != nil {
+		recordCardManageFalseSuccessIfNeeded(ctx, metrics, postErr)
+		state.Status = CardManageActive
+		state.ResponseText = messages.WriteFailure()
+		return workflow.StepOutput[CardManageState]{State: state, Status: stepStatus}, fmt.Errorf("agents.card_manage.create: %w", postErr)
+	}
+
 	state.Status = CardManageCompleted
 	state.ProcessedMessageID = state.MessageID
 	state.CardID = resourceID.String()
@@ -227,7 +248,7 @@ func executeCardManageCreate(ctx context.Context, state CardManageState, cards i
 	return workflow.StepOutput[CardManageState]{State: state, Status: workflow.StepStatusCompleted}, nil
 }
 
-func executeCardManageEdit(ctx context.Context, state CardManageState, cards interfaces.CardManager, _ IdempotentWriter) (workflow.StepOutput[CardManageState], error) {
+func executeCardManageEdit(ctx context.Context, state CardManageState, cards interfaces.CardManager, _ IdempotentWriter, _ *cardManageMetrics) (workflow.StepOutput[CardManageState], error) {
 	cardID, err := uuid.Parse(state.CardID)
 	if err != nil {
 		state.Status = CardManageCancelled
@@ -263,6 +284,18 @@ func executeCardManageEdit(ctx context.Context, state CardManageState, cards int
 	state.ProcessedMessageID = state.MessageID
 	state.ResponseText = "✅ 💳 atualizado com sucesso."
 	return workflow.StepOutput[CardManageState]{State: state, Status: workflow.StepStatusCompleted}, nil
+}
+
+func recordCardManageFalseSuccessIfNeeded(ctx context.Context, metrics *cardManageMetrics, postErr error) {
+	if metrics == nil || metrics.falseSuccess == nil {
+		return
+	}
+	if errors.Is(postErr, ErrCardManageAcceptedWithoutResource) {
+		metrics.falseSuccess.Increment(ctx,
+			observability.String("workflow", CardManageWorkflowID),
+			observability.String("step", stepCardManageID),
+		)
+	}
 }
 
 func isCardManageDomainError(err error) bool {

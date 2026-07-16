@@ -51,3 +51,4 @@ internal/agents/application/workflows/transaction_write_decisions.go:DecideNewTr
 internal/agents/application/workflows/transaction_write_state.go:ParseTransactionWriteStatus
 internal/agents/application/workflows/transaction_write_state.go:ParseTransactionAwaitingSlot
 internal/agents/application/workflows/transaction_write_state.go:ParseTransactionOperationKind
+internal/agents/application/workflows/treatment_name_edit_state.go:ParseTreatmentNameEditStatus

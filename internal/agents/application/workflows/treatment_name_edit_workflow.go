@@ -106,6 +106,9 @@ func buildTreatmentNameEditStep(workingMem memory.WorkingMemory, a agent.Agent) 
 		}
 
 		if state.ResumeText == "" {
+			if DecideTreatmentNameTooLong(state.ProvidedName != "", state.ProvidedName) {
+				return treatmentNameEditSuspend(state, messages.TreatmentNameTooLong())
+			}
 			return treatmentNameEditSuspend(state, messages.TreatmentNameEditQuestion())
 		}
 
@@ -140,6 +143,9 @@ func buildTreatmentNameEditStep(workingMem memory.WorkingMemory, a agent.Agent) 
 				return treatmentNameEditComplete(state)
 			}
 			state.RepromptCount++
+			if DecideTreatmentNameTooLong(extract.HasName, extract.Name) {
+				return treatmentNameEditSuspend(state, messages.TreatmentNameTooLong())
+			}
 			return treatmentNameEditSuspend(state, treatmentNameEditReprompt())
 		}
 
@@ -155,15 +161,15 @@ func executeTreatmentNameEdit(ctx context.Context, state TreatmentNameEditState,
 		return workflow.StepOutput[TreatmentNameEditState]{State: state, Status: workflow.StepStatusFailed}, fmt.Errorf("agents.treatment_name_edit: get_working_memory: %w", err)
 	}
 
+	if err := workingMem.UpsertMetadata(ctx, state.ResourceID, map[string]any{treatmentNameMetadataKey: state.NewName}); err != nil {
+		state.ResponseText = "Não consegui atualizar seu nome de tratamento. Tente novamente em breve."
+		return workflow.StepOutput[TreatmentNameEditState]{State: state, Status: workflow.StepStatusFailed}, fmt.Errorf("agents.treatment_name_edit: upsert_metadata: %w", err)
+	}
+
 	updated := replaceWorkingMemorySection(content, treatmentNameSectionHeading, state.NewName)
 	if err := workingMem.Upsert(ctx, state.ResourceID, updated); err != nil {
 		state.ResponseText = "Não consegui atualizar seu nome de tratamento. Tente novamente em breve."
 		return workflow.StepOutput[TreatmentNameEditState]{State: state, Status: workflow.StepStatusFailed}, fmt.Errorf("agents.treatment_name_edit: upsert_working_memory: %w", err)
-	}
-
-	if err := workingMem.UpsertMetadata(ctx, state.ResourceID, map[string]any{treatmentNameMetadataKey: state.NewName}); err != nil {
-		state.ResponseText = "Não consegui atualizar seu nome de tratamento. Tente novamente em breve."
-		return workflow.StepOutput[TreatmentNameEditState]{State: state, Status: workflow.StepStatusFailed}, fmt.Errorf("agents.treatment_name_edit: upsert_metadata: %w", err)
 	}
 
 	state.Status = TreatmentNameEditCompleted

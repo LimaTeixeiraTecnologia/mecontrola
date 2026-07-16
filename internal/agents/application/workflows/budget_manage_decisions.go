@@ -3,12 +3,23 @@ package workflows
 import (
 	"strings"
 	"time"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
 const (
 	budgetManageTTL          = 30 * time.Minute
 	budgetManageMaxReprompts = 1
 )
+
+var ErrBudgetManageAcceptedWithoutResource = ErrWriteAcceptedWithoutResource
+
+func DecideBudgetManagePostWrite(resourceID string) (workflow.StepStatus, error) {
+	if strings.TrimSpace(resourceID) == "" {
+		return workflow.StepStatusFailed, ErrBudgetManageAcceptedWithoutResource
+	}
+	return workflow.StepStatusCompleted, nil
+}
 
 type BudgetManageAction int
 

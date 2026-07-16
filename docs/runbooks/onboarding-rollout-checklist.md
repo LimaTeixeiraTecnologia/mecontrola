@@ -239,7 +239,7 @@ LIMIT 20;
 | Métrica/SLO | Alvo | Consulta/exemplo |
 |---|---|---|
 | Ativação até primeira transação ativa | 95% em ≤ 5 minutos, excluindo espera do usuário | Ver seção 6.2 |
-| Confirmação positiva sem transação ativa | 0 em ≤ 30s | `increase(agents_pending_entry_false_success_total{workflow="pending-entry"}[5m])` |
+| Confirmação positiva sem recurso durável | 0 em ≤ 30s | `sum(increase({__name__=~"agents_.+_false_success_total"}[5m]))` |
 | Dead-letter/outbox | 0 durante jornada | `increase(whatsapp_dead_letter_total[5m])` e outbox failed |
 | Webhook inbound p95 | < 500ms | `histogram_quantile(0.95, rate(whatsapp_webhook_duration_seconds_bucket[5m]))` |
 | Regressão de custo por jornada | ≤ baseline + 30% | Comparar com baseline de staging |

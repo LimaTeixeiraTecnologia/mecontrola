@@ -1,10 +1,21 @@
 # Relatorio de Bugfix
 
-- Total de bugs no escopo: 1
-- Corrigidos: 1
-- Testes de regressao adicionados: 0 novos (teste existente estendido)
+- Total de bugs no escopo: 2
+- Corrigidos: 2
+- Testes de regressao adicionados: 1 novo (BUG-REVIEW-02) + 1 teste existente estendido (BUG-REVIEW-01)
 - Pendentes: nenhum
 - Estado final: done
+
+## Rodada 2 (review 2026-07-16 — foco 0 regressao e production-ready)
+- ID: BUG-REVIEW-02
+- Severidade: minor (low) — lacuna de cobertura de teste
+- Origem: finding de review confrontado contra PRD RF-16 (objetivo "Observabilidade de produto: 100% das saidas do step sao contabilizadas") e contra o relatorio 4.0_execution_report.md, que prometeu explicitamente que a tarefa 5.0 trocaria o `nil` dos testes pelo counter/asseçoes de outcome — promessa nao cumprida.
+- Estado: fixed
+- Causa raiz: o counter `agents_onboarding_recurrence_total` e chamado corretamente nos 5 desfechos em producao (`onboarding_workflow.go` linhas 1801/1804/1808/1823), mas nenhum teste comprovava o incremento com o rotulo `outcome` correto, ao contrario dos steps irmaos `monthly_budget` (`TestBuildMonthlyBudgetStep_OutcomeMetric`) e `distribution` (`TestBuildBudgetReviewStep_DistributionOutcomeMetric`), que possuem testes de metrica dedicados. `TestBuildRecurrenceStep` passa `nil` como counter, nao exercitando a instrumentacao.
+- Arquivos alterados: `internal/agents/application/workflows/onboarding_workflow_test.go` (novo `TestBuildRecurrenceStep_OutcomeMetric`, espelhando byte-a-byte o padrao do teste de metrica de distribution: `fake.NewProvider()` + `GetCounter` + assert `outcome`), cobrindo os 5 desfechos `no_recurrence`/`default_12`/`specific_months`/`invalid_reprompt`/`ambiguous_reprompt`.
+- Teste de regressao: `TestBuildRecurrenceStep_OutcomeMetric` (5 subcenarios, PASS) — prova que cada desfecho incrementa o counter uma vez com `Fields[0].Key=="outcome"` e o valor exato de `recurrenceOutcomeKind.String()`.
+- Validacao: `gofmt -l` (limpo); `go test ./internal/agents/application/workflows/ -race -run TestBuildRecurrenceStep_OutcomeMetric -v` (5/5 PASS); `go test ./internal/agents/... -race` (13 pacotes, 0 falhas); `golangci-lint run ./internal/agents/application/workflows/...` (0 issues); gate real-LLM `RUN_REAL_LLM=1 ...TestRecurrenceExtractionGate` reexecutado independentemente (hits=18 total=18 ratio=1.0000 falso_sucesso=0, modelo openai/gpt-4o-mini).
+- Nota de isolamento: a unica falha em `task lint:run` (`lint:deadcode` -> `BuildBudgetManageWorkflow` em `budget_manage_workflow.go`) pertence a feature `operacao-conversacional-diaria` presente no working tree sujo, NAO ao escopo da recorrencia; nenhum simbolo da recorrencia e sinalizado como codigo morto.
 
 ## Bugs
 - ID: BUG-REVIEW-01

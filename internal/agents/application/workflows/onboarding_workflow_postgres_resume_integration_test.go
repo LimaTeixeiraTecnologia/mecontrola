@@ -114,6 +114,12 @@ func (s *OnboardingWorkflowPostgresResumeIntegrationSuite) TestInteg_RetomadaPos
 	s.NotEmpty(startResult.Message, "RF-15: estado de espera persistido antes de pedir a primeira pergunta")
 
 	postDeployAgent := agentmocks.NewAgent(s.T())
+	nameExtract := struct {
+		HasName bool   `json:"hasName"`
+		Name    string `json:"name"`
+	}{HasName: true, Name: "Jailton"}
+	nameRawJSON, nameMarshalErr := json.Marshal(nameExtract)
+	s.Require().NoError(nameMarshalErr)
 	extract := struct {
 		Goal      string  `json:"goal"`
 		HasAmount bool    `json:"hasAmount"`
@@ -123,11 +129,20 @@ func (s *OnboardingWorkflowPostgresResumeIntegrationSuite) TestInteg_RetomadaPos
 	s.Require().NoError(marshalErr)
 	postDeployAgent.EXPECT().
 		Execute(mock.Anything, mock.Anything).
+		Return(agentResultRawJSON(nameRawJSON), nil).
+		Once()
+	postDeployAgent.EXPECT().
+		Execute(mock.Anything, mock.Anything).
 		Return(agentResultRawJSON(rawJSON), nil).
 		Once()
 	_, postDeployResolver := s.buildResolver(postDeployAgent)
 
-	resumeResult, resumeErr := postDeployResolver.Execute(s.ctx, userID.String(), peer, "quero comprar um carro, meta de R$ 50.000,00")
+	resumeResult, resumeErr := postDeployResolver.Execute(s.ctx, userID.String(), peer, "pode me chamar de Jailton")
+	s.Require().NoError(resumeErr)
+	s.True(resumeResult.Handled, "RF-45: novo Engine/Store apontando para o mesmo Postgres deve retomar o run suspenso")
+	s.False(resumeResult.Done, "onboarding pergunta objetivo no passo seguinte apos capturar nome de tratamento")
+
+	resumeResult, resumeErr = postDeployResolver.Execute(s.ctx, userID.String(), peer, "quero comprar um carro, meta de R$ 50.000,00")
 	s.Require().NoError(resumeErr)
 	s.True(resumeResult.Handled, "RF-45: novo Engine/Store apontando para o mesmo Postgres deve retomar o run suspenso")
 	s.False(resumeResult.Done, "onboarding tem múltiplos passos; primeira retomada não conclui o fluxo")
@@ -181,6 +196,12 @@ func (s *OnboardingWorkflowPostgresResumeIntegrationSuite) TestInteg_ReviewAwait
 	s.True(startResult.Handled)
 
 	goalAgent := agentmocks.NewAgent(s.T())
+	nameExtract := struct {
+		HasName bool   `json:"hasName"`
+		Name    string `json:"name"`
+	}{HasName: true, Name: "Jailton"}
+	nameRawJSON, nameMarshalErr := json.Marshal(nameExtract)
+	s.Require().NoError(nameMarshalErr)
 	goalExtract := struct {
 		Goal      string  `json:"goal"`
 		HasAmount bool    `json:"hasAmount"`
@@ -190,11 +211,20 @@ func (s *OnboardingWorkflowPostgresResumeIntegrationSuite) TestInteg_ReviewAwait
 	s.Require().NoError(marshalErr)
 	goalAgent.EXPECT().
 		Execute(mock.Anything, mock.Anything).
+		Return(agentResultRawJSON(nameRawJSON), nil).
+		Once()
+	goalAgent.EXPECT().
+		Execute(mock.Anything, mock.Anything).
 		Return(agentResultRawJSON(goalRawJSON), nil).
 		Once()
 	_, goalResolver := s.buildResolverWithBudgets(goalAgent, budgets)
 
-	goalResult, goalErr := goalResolver.Execute(s.ctx, userID.String(), peer, "quero juntar uma reserva de emergencia")
+	goalResult, goalErr := goalResolver.Execute(s.ctx, userID.String(), peer, "pode me chamar de Jailton")
+	s.Require().NoError(goalErr)
+	s.True(goalResult.Handled)
+	s.False(goalResult.Done)
+
+	goalResult, goalErr = goalResolver.Execute(s.ctx, userID.String(), peer, "quero juntar uma reserva de emergencia")
 	s.Require().NoError(goalErr)
 	s.True(goalResult.Handled)
 	s.False(goalResult.Done)

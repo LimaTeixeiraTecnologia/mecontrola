@@ -3482,6 +3482,133 @@ func (s *OnboardingWorkflowSuite) TestBuildRecurrenceStep() {
 	}
 }
 
+func (s *OnboardingWorkflowSuite) TestBuildRecurrenceStep_OutcomeMetric() {
+	type args struct {
+		state OnboardingState
+	}
+	type dependencies struct {
+		agentMock   *agentmocks.Agent
+		budgetsMock *interfacemocks.BudgetPlanner
+	}
+	baseState := OnboardingState{
+		UserID:             "11111111-1111-1111-1111-111111111111",
+		Phase:              PhaseRecurrence,
+		MonthlyBudgetCents: 1350000,
+	}
+	scenarios := []struct {
+		name            string
+		args            args
+		dependencies    dependencies
+		expectedOutcome string
+	}{
+		{
+			name: "no_recurrence",
+			args: args{state: func() OnboardingState { st := baseState; st.ResumeText = "não, obrigado"; return st }()},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: recurrenceDecisionJSON("negative", false, 0)}, nil).Once()
+					return m
+				}(),
+				budgetsMock: interfacemocks.NewBudgetPlanner(s.T()),
+			},
+			expectedOutcome: recurrenceOutcomeNone.String(),
+		},
+		{
+			name: "default_12",
+			args: args{state: func() OnboardingState { st := baseState; st.ResumeText = "sim, quero repetir"; return st }()},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: recurrenceDecisionJSON("positive", false, 0)}, nil).Once()
+					return m
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					m := interfacemocks.NewBudgetPlanner(s.T())
+					m.EXPECT().
+						CreateRecurrence(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string"), 12).
+						Return(nil).Once()
+					return m
+				}(),
+			},
+			expectedOutcome: recurrenceOutcomeDefault.String(),
+		},
+		{
+			name: "specific_months",
+			args: args{state: func() OnboardingState { st := baseState; st.ResumeText = "coloca só pra 3 meses"; return st }()},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: recurrenceDecisionJSON("positive", true, 3)}, nil).Once()
+					return m
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					m := interfacemocks.NewBudgetPlanner(s.T())
+					m.EXPECT().
+						CreateRecurrence(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string"), 3).
+						Return(nil).Once()
+					return m
+				}(),
+			},
+			expectedOutcome: recurrenceOutcomeSpecific.String(),
+		},
+		{
+			name: "invalid_reprompt",
+			args: args{state: func() OnboardingState { st := baseState; st.ResumeText = "coloca por 13 meses"; return st }()},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: recurrenceDecisionJSON("positive", true, 13)}, nil).Once()
+					return m
+				}(),
+				budgetsMock: interfacemocks.NewBudgetPlanner(s.T()),
+			},
+			expectedOutcome: recurrenceOutcomeInvalid.String(),
+		},
+		{
+			name: "ambiguous_reprompt",
+			args: args{state: func() OnboardingState { st := baseState; st.ResumeText = "sei lá, talvez"; return st }()},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					m := agentmocks.NewAgent(s.T())
+					m.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: recurrenceDecisionJSON("unclear", false, 0)}, nil).Once()
+					return m
+				}(),
+				budgetsMock: interfacemocks.NewBudgetPlanner(s.T()),
+			},
+			expectedOutcome: recurrenceOutcomeAmbiguous.String(),
+		},
+	}
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			provider := fake.NewProvider()
+			counter := provider.Metrics().Counter(recurrenceOutcomeMetric, "", "1")
+			step := workflow.NewStepFunc(stepRecurrenceID, BuildRecurrenceStep(scenario.dependencies.agentMock, scenario.dependencies.budgetsMock, counter))
+			_, err := step.Execute(s.ctx, scenario.args.state)
+			s.NoError(err)
+
+			fakeCounter := provider.Metrics().(*fake.FakeMetrics).GetCounter(recurrenceOutcomeMetric)
+			s.Require().NotNil(fakeCounter)
+			values := fakeCounter.GetValues()
+			s.Require().Len(values, 1)
+			s.Equal(int64(1), values[0].Value)
+			s.Require().Len(values[0].Fields, 1)
+			s.Equal("outcome", values[0].Fields[0].Key)
+			s.Equal(scenario.expectedOutcome, values[0].Fields[0].StringValue())
+		})
+	}
+}
+
 func cardExtractJSON(t *testing.T, extract cardExtract) []byte {
 	t.Helper()
 	b, err := json.Marshal(extract)

@@ -71,7 +71,7 @@ func (s *CardManageWorkflowSuite) SetupTest() {
 }
 
 func (s *CardManageWorkflowSuite) TestBuildCardManageWorkflow_Definition() {
-	def := BuildCardManageWorkflow(s.cardsMock, s.idem)
+	def := BuildCardManageWorkflowWithObservability(s.cardsMock, s.idem, nil)
 	s.Equal(CardManageWorkflowID, def.ID)
 	s.True(def.Durable)
 	s.Equal(1, def.MaxAttempts)
@@ -79,7 +79,7 @@ func (s *CardManageWorkflowSuite) TestBuildCardManageWorkflow_Definition() {
 }
 
 func (s *CardManageWorkflowSuite) TestCreateFirstEntrySuspendsWithConfirmQuestion() {
-	def := BuildCardManageWorkflow(s.cardsMock, s.idem)
+	def := BuildCardManageWorkflowWithObservability(s.cardsMock, s.idem, nil)
 	state := CardManageState{
 		UserID:    s.userID,
 		Operation: CardManageOpCreate,
@@ -110,7 +110,7 @@ func (s *CardManageWorkflowSuite) TestCreateConfirmExecutesCreateCard() {
 		CreateCard(mock.Anything, mock.AnythingOfType("interfaces.NewCard")).
 		Return(interfaces.CardRef{ID: s.cardID.String(), Nickname: "Nubank"}, nil).Once()
 
-	def := BuildCardManageWorkflow(s.cardsMock, s.idem)
+	def := BuildCardManageWorkflowWithObservability(s.cardsMock, s.idem, nil)
 	out, err := def.Root.Execute(s.ctx, state)
 
 	s.NoError(err)
@@ -137,7 +137,7 @@ func (s *CardManageWorkflowSuite) TestCreateConfirmIsIdempotentByWamid() {
 		CreateCard(mock.Anything, mock.AnythingOfType("interfaces.NewCard")).
 		Return(interfaces.CardRef{ID: s.cardID.String(), Nickname: "Nubank"}, nil).Once()
 
-	def := BuildCardManageWorkflow(s.cardsMock, s.idem)
+	def := BuildCardManageWorkflowWithObservability(s.cardsMock, s.idem, nil)
 
 	first, err := def.Root.Execute(s.ctx, newState())
 	s.NoError(err)
@@ -165,7 +165,7 @@ func (s *CardManageWorkflowSuite) TestCreateConfirmDomainErrorNicknameConflict()
 		CreateCard(mock.Anything, mock.AnythingOfType("interfaces.NewCard")).
 		Return(interfaces.CardRef{}, carddomain.ErrNicknameConflict).Once()
 
-	def := BuildCardManageWorkflow(s.cardsMock, s.idem)
+	def := BuildCardManageWorkflowWithObservability(s.cardsMock, s.idem, nil)
 	out, err := def.Root.Execute(s.ctx, state)
 
 	s.NoError(err)
@@ -178,7 +178,7 @@ func (s *CardManageWorkflowSuite) TestEditEntryFetchesCurrentCardForPreview() {
 		GetCard(mock.Anything, s.cardID, s.userID).
 		Return(interfaces.Card{ID: s.cardID.String(), Nickname: "Nubank", Bank: "nubank", DueDay: 10}, nil).Once()
 
-	def := BuildCardManageWorkflow(s.cardsMock, s.idem)
+	def := BuildCardManageWorkflowWithObservability(s.cardsMock, s.idem, nil)
 	state := CardManageState{
 		UserID:           s.userID,
 		Operation:        CardManageOpEdit,
@@ -215,7 +215,7 @@ func (s *CardManageWorkflowSuite) TestEditConfirmExecutesUpdateCard() {
 		UpdateCard(mock.Anything, mock.AnythingOfType("interfaces.CardUpdate")).
 		Return(interfaces.Card{}, nil).Once()
 
-	def := BuildCardManageWorkflow(s.cardsMock, s.idem)
+	def := BuildCardManageWorkflowWithObservability(s.cardsMock, s.idem, nil)
 	out, err := def.Root.Execute(s.ctx, state)
 
 	s.NoError(err)
@@ -232,7 +232,7 @@ func (s *CardManageWorkflowSuite) TestConfirmCancel() {
 		ResumeText:  "não",
 	}
 
-	def := BuildCardManageWorkflow(s.cardsMock, s.idem)
+	def := BuildCardManageWorkflowWithObservability(s.cardsMock, s.idem, nil)
 	out, err := def.Root.Execute(s.ctx, state)
 
 	s.NoError(err)

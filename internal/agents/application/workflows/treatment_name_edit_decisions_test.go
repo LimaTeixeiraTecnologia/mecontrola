@@ -44,6 +44,10 @@ func (s *TreatmentNameEditDecisionsSuite) TestDecideTreatmentName() {
 		{name: "recusa sem nome invalido", hasName: false, raw: "Stef", expectName: "", expectOK: false},
 		{name: "acima de 40 caracteres invalido", hasName: true, raw: strings.Repeat("a", 41), expectName: "", expectOK: false},
 		{name: "exatamente 40 caracteres valido", hasName: true, raw: strings.Repeat("a", 40), expectName: strings.Repeat("a", 40), expectOK: true},
+		{name: "somente simbolos invalido", hasName: true, raw: "!!!", expectName: "", expectOK: false},
+		{name: "somente pontuacao invalido", hasName: true, raw: "@#$ ...", expectName: "", expectOK: false},
+		{name: "numero valido", hasName: true, raw: "007", expectName: "007", expectOK: true},
+		{name: "emoji valido", hasName: true, raw: "Stef 💚", expectName: "Stef 💚", expectOK: true},
 	}
 
 	for _, scenario := range scenarios {
@@ -51,6 +55,26 @@ func (s *TreatmentNameEditDecisionsSuite) TestDecideTreatmentName() {
 			name, ok := DecideTreatmentName(scenario.hasName, scenario.raw)
 			s.Equal(scenario.expectName, name)
 			s.Equal(scenario.expectOK, ok)
+		})
+	}
+}
+
+func (s *TreatmentNameEditDecisionsSuite) TestDecideTreatmentNameTooLong() {
+	scenarios := []struct {
+		name    string
+		hasName bool
+		raw     string
+		expect  bool
+	}{
+		{name: "sem nome nunca e longo", hasName: false, raw: strings.Repeat("a", 41), expect: false},
+		{name: "dentro do limite", hasName: true, raw: strings.Repeat("a", 40), expect: false},
+		{name: "acima do limite", hasName: true, raw: strings.Repeat("a", 41), expect: true},
+		{name: "trim antes de medir", hasName: true, raw: "  " + strings.Repeat("a", 40) + "  ", expect: false},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			s.Equal(scenario.expect, DecideTreatmentNameTooLong(scenario.hasName, scenario.raw))
 		})
 	}
 }

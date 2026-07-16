@@ -3,6 +3,7 @@ package workflows
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -40,7 +41,7 @@ func (s *BudgetManageWorkflowSuite) SetupTest() {
 }
 
 func (s *BudgetManageWorkflowSuite) TestBuildBudgetManageWorkflow_Definition() {
-	def := BuildBudgetManageWorkflow(s.agentMock, s.budgetsMock)
+	def := BuildBudgetManageWorkflowWithObservability(s.agentMock, s.budgetsMock, nil)
 	s.Equal(BudgetManageWorkflowID, def.ID)
 	s.True(def.Durable)
 	s.Equal(1, def.MaxAttempts)
@@ -53,7 +54,7 @@ func (s *BudgetManageWorkflowSuite) TestEditTotalEntryFetchesSummaryAndSuspends(
 		GetMonthlySummary(mock.Anything, s.userID, "2026-07").
 		Return(interfaces.BudgetSummary{TotalCents: &totalCents}, nil).Once()
 
-	def := BuildBudgetManageWorkflow(s.agentMock, s.budgetsMock)
+	def := BuildBudgetManageWorkflowWithObservability(s.agentMock, s.budgetsMock, nil)
 	state := BudgetManageState{UserID: s.userID, Competence: "2026-07", Operation: BudgetManageOpEditTotal}
 
 	out, err := def.Root.Execute(s.ctx, state)
@@ -79,7 +80,7 @@ func (s *BudgetManageWorkflowSuite) TestEditTotalConfirmExecutesEditBudgetTotal(
 		EditBudgetTotal(mock.Anything, s.userID, "2026-07", int64(400000)).
 		Return(nil).Once()
 
-	def := BuildBudgetManageWorkflow(s.agentMock, s.budgetsMock)
+	def := BuildBudgetManageWorkflowWithObservability(s.agentMock, s.budgetsMock, nil)
 	out, err := def.Root.Execute(s.ctx, state)
 
 	s.NoError(err)
@@ -102,12 +103,65 @@ func (s *BudgetManageWorkflowSuite) TestEditTotalConfirmMapsDomainError() {
 		EditBudgetTotal(mock.Anything, s.userID, "2026-07", int64(400000)).
 		Return(budgetsentities.ErrBudgetNotActive).Once()
 
-	def := BuildBudgetManageWorkflow(s.agentMock, s.budgetsMock)
+	def := BuildBudgetManageWorkflowWithObservability(s.agentMock, s.budgetsMock, nil)
 	out, err := def.Root.Execute(s.ctx, state)
 
 	s.NoError(err)
 	s.Equal(workflow.StepStatusCompleted, out.Status)
 	s.Contains(out.State.ResponseText, "orçamento ativo")
+}
+
+func (s *BudgetManageWorkflowSuite) TestCreateRetroactiveConfirmFalseSuccessOnEmptyRef() {
+	state := BudgetManageState{
+		UserID:     s.userID,
+		Competence: "2026-07",
+		Operation:  BudgetManageOpCreateRetroactive,
+		Awaiting:   BudgetManageAwaitingConfirm,
+		TotalCents: 400000,
+		ResumeText: "sim",
+	}
+
+	s.budgetsMock.EXPECT().
+		CreateBudget(mock.Anything, mock.AnythingOfType("interfaces.DraftBudget")).
+		Return(interfaces.BudgetRef{ID: ""}, nil).Once()
+	s.budgetsMock.EXPECT().
+		ActivateBudget(mock.Anything, s.userID, "2026-07").
+		Return(nil).Once()
+
+	def := BuildBudgetManageWorkflowWithObservability(s.agentMock, s.budgetsMock, nil)
+	out, err := def.Root.Execute(s.ctx, state)
+
+	s.Error(err)
+	s.True(errors.Is(err, ErrBudgetManageAcceptedWithoutResource))
+	s.Equal(workflow.StepStatusFailed, out.Status)
+	s.NotEqual(BudgetManageCompleted, out.State.Status)
+	s.NotContains(out.State.ResponseText, "criado e ativado com sucesso")
+}
+
+func (s *BudgetManageWorkflowSuite) TestCreateRetroactiveConfirmPersistsAndSucceeds() {
+	state := BudgetManageState{
+		UserID:     s.userID,
+		Competence: "2026-07",
+		Operation:  BudgetManageOpCreateRetroactive,
+		Awaiting:   BudgetManageAwaitingConfirm,
+		TotalCents: 400000,
+		ResumeText: "sim",
+	}
+
+	s.budgetsMock.EXPECT().
+		CreateBudget(mock.Anything, mock.AnythingOfType("interfaces.DraftBudget")).
+		Return(interfaces.BudgetRef{ID: uuid.NewString()}, nil).Once()
+	s.budgetsMock.EXPECT().
+		ActivateBudget(mock.Anything, s.userID, "2026-07").
+		Return(nil).Once()
+
+	def := BuildBudgetManageWorkflowWithObservability(s.agentMock, s.budgetsMock, nil)
+	out, err := def.Root.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+	s.Equal(BudgetManageCompleted, out.State.Status)
+	s.Contains(out.State.ResponseText, "sucesso")
 }
 
 func (s *BudgetManageWorkflowSuite) TestConfirmCancel() {
@@ -120,7 +174,7 @@ func (s *BudgetManageWorkflowSuite) TestConfirmCancel() {
 		ResumeText: "não",
 	}
 
-	def := BuildBudgetManageWorkflow(s.agentMock, s.budgetsMock)
+	def := BuildBudgetManageWorkflowWithObservability(s.agentMock, s.budgetsMock, nil)
 	out, err := def.Root.Execute(s.ctx, state)
 
 	s.NoError(err)
@@ -135,7 +189,7 @@ func (s *BudgetManageWorkflowSuite) TestCreateRetroactiveTotalSlotAdvancesToDist
 		Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
 		Return(agentpkg.Result{RawJSON: payload}, nil).Once()
 
-	def := BuildBudgetManageWorkflow(s.agentMock, s.budgetsMock)
+	def := BuildBudgetManageWorkflowWithObservability(s.agentMock, s.budgetsMock, nil)
 	state := BudgetManageState{
 		UserID:     s.userID,
 		Competence: "2026-07",

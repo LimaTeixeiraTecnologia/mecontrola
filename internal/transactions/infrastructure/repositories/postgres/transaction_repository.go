@@ -387,6 +387,11 @@ func (r *transactionRepository) SearchByDescription(ctx context.Context, userID 
 	return txs, nil
 }
 
+func escapeLikeTerm(term string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return replacer.Replace(term)
+}
+
 func (r *transactionRepository) SearchEditCandidates(ctx context.Context, userID uuid.UUID, amountCents int64, term string, refMonth valueobjects.RefMonth, limit int) ([]*entities.Transaction, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "transactions.repository.transaction.search_edit_candidates")
 	defer span.End()
@@ -412,13 +417,13 @@ func (r *transactionRepository) SearchEditCandidates(ctx context.Context, userID
 		   AND ref_month = $2
 		   AND (
 		         ($3::bigint > 0 AND amount_cents = $3)
-		         OR ($4::text <> '' AND description ILIKE '%' || $4 || '%')
+		         OR ($4::text <> '' AND description ILIKE '%' || $4 || '%' ESCAPE '\')
 		       )
 		 ORDER BY created_at DESC
 		 LIMIT $5
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, userID, refMonth.String(), amountCents, term, limit)
+	rows, err := r.db.QueryContext(ctx, query, userID, refMonth.String(), amountCents, escapeLikeTerm(term), limit)
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("transactions/repository: buscar candidatos de edição: %w", err)

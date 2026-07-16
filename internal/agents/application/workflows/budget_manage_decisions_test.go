@@ -1,10 +1,13 @@
 package workflows
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/suite"
+
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
 type BudgetManageDecisionsSuite struct {
@@ -26,6 +29,47 @@ func (s *BudgetManageDecisionsSuite) baseState() BudgetManageState {
 		Operation:   BudgetManageOpEditTotal,
 		TotalCents:  350000,
 		SuspendedAt: s.now,
+	}
+}
+
+func (s *BudgetManageDecisionsSuite) TestDecideBudgetManagePostWrite() {
+	scenarios := []struct {
+		name       string
+		resourceID string
+		expectStep workflow.StepStatus
+		expectErr  bool
+	}{
+		{
+			name:       "id vazio sem recurso eh falso sucesso",
+			resourceID: "",
+			expectStep: workflow.StepStatusFailed,
+			expectErr:  true,
+		},
+		{
+			name:       "id em branco eh falso sucesso",
+			resourceID: "   ",
+			expectStep: workflow.StepStatusFailed,
+			expectErr:  true,
+		},
+		{
+			name:       "id valido completa",
+			resourceID: "8f2b1c5e-0000-0000-0000-000000000001",
+			expectStep: workflow.StepStatusCompleted,
+			expectErr:  false,
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			step, err := DecideBudgetManagePostWrite(scenario.resourceID)
+			s.Equal(scenario.expectStep, step)
+			if scenario.expectErr {
+				s.Error(err)
+				s.True(errors.Is(err, ErrBudgetManageAcceptedWithoutResource))
+			} else {
+				s.NoError(err)
+			}
+		})
 	}
 }
 

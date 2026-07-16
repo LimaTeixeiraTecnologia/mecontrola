@@ -221,7 +221,8 @@ func (s *WhatsAppInboundConsumerIntegrationSuite) TestInteg_ConsumerIniciaOnboar
 	s.Require().NoError(err)
 
 	gatewayMock.AssertExpectations(s.T())
-	s.Equal(expectedWelcomeCombinedMessage, sentText, "RF-01: primeira mensagem deve conter saudação e pergunta de objetivo exata")
+	s.Contains(sentText, "🎉 Bem-vindo ao MeControla! 🎉")
+	s.Contains(sentText, "como você gostaria que eu te chamasse")
 	inboundMock.AssertNotCalled(s.T(), "Execute")
 
 	var count int
@@ -324,6 +325,7 @@ func (s *WhatsAppInboundConsumerIntegrationSuite) TestInteg_OnboardingFluxoDeCar
 	userID := s.newUser()
 	peer := "+55119" + uuid.NewString()[:8]
 
+	treatmentNameExtract, _ := json.Marshal(map[string]any{"hasName": true, "name": "Stef"})
 	goalExtract, _ := json.Marshal(map[string]any{"goal": "comprar uma casa", "hasAmount": false, "amountBRL": 0})
 	goalValueExtract, _ := json.Marshal(map[string]any{"hasAmount": false, "amountBRL": 0})
 	budgetExtract, _ := json.Marshal(map[string]any{"amountBRL": 1000})
@@ -334,6 +336,7 @@ func (s *WhatsAppInboundConsumerIntegrationSuite) TestInteg_OnboardingFluxoDeCar
 	cardRefuseExtract, _ := json.Marshal(map[string]any{"wantsCard": false, "nickname": "", "bank": "", "dueDay": 0})
 
 	a := agentmocks.NewAgent(s.T())
+	a.On("Execute", mock.Anything, mock.Anything).Return(agentResultRawJSON(treatmentNameExtract), nil).Once()
 	a.On("Execute", mock.Anything, mock.Anything).Return(agentResultRawJSON(goalExtract), nil).Once()
 	a.On("Execute", mock.Anything, mock.Anything).Return(agentResultRawJSON(goalValueExtract), nil).Once()
 	a.On("Execute", mock.Anything, mock.Anything).Return(agentResultRawJSON(budgetExtract), nil).Once()
@@ -372,7 +375,7 @@ func (s *WhatsAppInboundConsumerIntegrationSuite) TestInteg_OnboardingFluxoDeCar
 		Run(func(args mock.Arguments) {
 			replies = append(replies, args.Get(2).(string))
 		}).
-		Return(nil).Times(9)
+		Return(nil).Times(10)
 
 	inboundMock := &mockHandleInbound{}
 
@@ -385,6 +388,7 @@ func (s *WhatsAppInboundConsumerIntegrationSuite) TestInteg_OnboardingFluxoDeCar
 
 	turns := []string{
 		"Ativar o meu plano",
+		"pode me chamar de Stef",
 		"comprar uma casa",
 		"não sei",
 		"R$ 1.000,00",
@@ -404,15 +408,15 @@ func (s *WhatsAppInboundConsumerIntegrationSuite) TestInteg_OnboardingFluxoDeCar
 	}
 
 	gatewayMock.AssertExpectations(s.T())
-	s.Require().GreaterOrEqual(len(replies), 9)
-	s.Contains(replies[6], "💳")
-	s.Contains(replies[7], "outro")
+	s.Require().GreaterOrEqual(len(replies), 10)
 	s.Contains(replies[7], "💳")
+	s.Contains(replies[8], "outro")
+	s.Contains(replies[8], "💳")
 	s.Equal("Nubank", createdCard.Nickname)
 	s.Equal("Nubank", createdCard.Bank)
 	s.Equal(10, createdCard.DueDay)
-	s.NotEmpty(replies[8])
-	s.Contains(replies[8], "Resumo de Onboarding")
+	s.NotEmpty(replies[9])
+	s.Contains(replies[9], "Resumo de Onboarding")
 	inboundMock.AssertNotCalled(s.T(), "Execute")
 
 	var onboardingStatus string

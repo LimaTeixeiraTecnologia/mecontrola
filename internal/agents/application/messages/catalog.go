@@ -220,12 +220,24 @@ func GoalEditMotivation(seed MotivationSeed) string {
 	return pick(seed, goalEditMotivationalPhrases)
 }
 
+func PendingConfirmationExists() string {
+	return "Há uma confirmação pendente. Por favor, responda sim ou não antes de solicitar outra operação."
+}
+
+func PendingCardCreationExists() string {
+	return "Há uma confirmação pendente. Por favor, responda sim ou não antes de solicitar outro cadastro."
+}
+
 func TreatmentNameConfirmation(name string) string {
 	return fmt.Sprintf("Combinado, %s! 💚 Vou te chamar assim daqui pra frente.", name)
 }
 
 func TreatmentNameEditQuestion() string {
 	return "Claro! Como você gostaria que eu te chamasse a partir de agora? 💚"
+}
+
+func TreatmentNameTooLong() string {
+	return "Esse nome ficou um pouco longo. 😊 Pode me dizer uma forma mais curta pra eu te chamar? 💚"
 }
 
 func ExpenseConfirmationBlock(v ConfirmationView) string {

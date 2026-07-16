@@ -60,6 +60,12 @@ func TestTreatmentNameEditQuestion(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
+func TestTreatmentNameTooLong(t *testing.T) {
+	got := messages.TreatmentNameTooLong()
+	want := "Esse nome ficou um pouco longo. 😊 Pode me dizer uma forma mais curta pra eu te chamar? 💚"
+	assert.Equal(t, want, got)
+}
+
 func TestMotivationSeed_DeterministicRotation(t *testing.T) {
 	seedA1 := messages.NewMotivationSeed("wamid-abc")
 	seedA2 := messages.NewMotivationSeed("wamid-abc")

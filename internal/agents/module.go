@@ -211,8 +211,8 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	treatmentNameEditEngine := workflow.NewEngine[workflows.TreatmentNameEditState](workflowStore, deps.O11y)
 
 	transactionWriteDef := workflows.BuildTransactionWriteWorkflowWithObservability(txLedger, cardManager, categoriesReader, idemAdapter, deps.O11y)
-	budgetManageDef := workflows.BuildBudgetManageWorkflow(budgetManageAgent, budgetPlanner)
-	cardManageDef := workflows.BuildCardManageWorkflow(cardManager, idemAdapter)
+	budgetManageDef := workflows.BuildBudgetManageWorkflowWithObservability(budgetManageAgent, budgetPlanner, deps.O11y)
+	cardManageDef := workflows.BuildCardManageWorkflowWithObservability(cardManager, idemAdapter, deps.O11y)
 	goalEditDef := workflows.BuildGoalEditWorkflow(workingMem)
 	destructiveManageDef := workflows.BuildDestructiveManageWorkflow(cardManager, recurrenceManager, txLedger)
 	treatmentNameEditDef := workflows.BuildTreatmentNameEditWorkflow(workingMem, onboardingAgent)

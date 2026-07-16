@@ -99,6 +99,8 @@ func (s *ResumeDispatcherSuite) TestContinue() {
 		store            *fakeSuspendedRunStore
 		indexWorkflowIDs []string
 		resumers         []WorkflowResumer
+		threads          *fakeDispatcherThreadGateway
+		runs             *fakeDispatcherRunStore
 	}
 
 	scenarios := []struct {
@@ -114,6 +116,8 @@ func (s *ResumeDispatcherSuite) TestContinue() {
 				store:            newFakeSuspendedRunStore(),
 				indexWorkflowIDs: []string{"transaction-write"},
 				resumers:         []WorkflowResumer{&mockWorkflowResumer{workflowID: "transaction-write"}},
+				threads:          &fakeDispatcherThreadGateway{thread: memory.Thread{ID: uuid.New()}},
+				runs:             &fakeDispatcherRunStore{},
 			},
 			expect: func(handled bool, reply string, err error) {
 				s.NoError(err)
@@ -139,6 +143,8 @@ func (s *ResumeDispatcherSuite) TestContinue() {
 						return m
 					}(),
 				},
+				threads: &fakeDispatcherThreadGateway{thread: memory.Thread{ID: uuid.New()}},
+				runs:    &fakeDispatcherRunStore{},
 			},
 			expect: func(handled bool, reply string, err error) {
 				s.NoError(err)
@@ -157,6 +163,8 @@ func (s *ResumeDispatcherSuite) TestContinue() {
 				}(),
 				indexWorkflowIDs: []string{"card-manage"},
 				resumers:         []WorkflowResumer{&mockWorkflowResumer{workflowID: "card-manage"}},
+				threads:          &fakeDispatcherThreadGateway{thread: memory.Thread{ID: uuid.New()}},
+				runs:             &fakeDispatcherRunStore{},
 			},
 			expect: func(handled bool, reply string, err error) {
 				s.Error(err)
@@ -175,6 +183,8 @@ func (s *ResumeDispatcherSuite) TestContinue() {
 				}(),
 				indexWorkflowIDs: []string{"goal-edit", "card-manage"},
 				resumers:         []WorkflowResumer{&mockWorkflowResumer{workflowID: "card-manage"}},
+				threads:          &fakeDispatcherThreadGateway{thread: memory.Thread{ID: uuid.New()}},
+				runs:             &fakeDispatcherRunStore{},
 			},
 			expect: func(handled bool, reply string, err error) {
 				s.Error(err)
@@ -200,6 +210,8 @@ func (s *ResumeDispatcherSuite) TestContinue() {
 						return m
 					}(),
 				},
+				threads: &fakeDispatcherThreadGateway{thread: memory.Thread{ID: uuid.New()}},
+				runs:    &fakeDispatcherRunStore{},
 			},
 			expect: func(handled bool, reply string, err error) {
 				s.Error(err)
@@ -211,9 +223,8 @@ func (s *ResumeDispatcherSuite) TestContinue() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			s.SetupTest()
 			index := NewSuspendedRunIndex(scenario.dependencies.store, scenario.dependencies.indexWorkflowIDs...)
-			dispatcher, err := NewResumeDispatcher(index, s.threads, s.runs, s.obs, scenario.dependencies.resumers...)
+			dispatcher, err := NewResumeDispatcher(index, scenario.dependencies.threads, scenario.dependencies.runs, s.obs, scenario.dependencies.resumers...)
 			s.Require().NoError(err)
 
 			handled, reply, dispatchErr := dispatcher.Continue(s.ctx, scenario.args.resourceID, scenario.args.threadID, "sim", "wamid-001")

@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/messages"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
@@ -101,7 +102,7 @@ func buildDeleteRecurrenceExec(engine wf.Engine[workflows.DestructiveManageState
 		if errors.Is(err, wf.ErrRunAlreadyExists) {
 			return DeleteRecurrenceOutput{
 				NeedsConfirmation: true,
-				ImpactNote:        "Há uma confirmação pendente. Por favor, responda sim ou não antes de solicitar outra operação.",
+				ImpactNote:        messages.PendingConfirmationExists(),
 				TargetRef:         in.TemplateID,
 				TargetKind:        "recurring_template",
 			}, nil

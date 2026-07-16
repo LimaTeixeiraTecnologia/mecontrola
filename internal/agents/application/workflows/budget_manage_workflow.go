@@ -27,12 +27,26 @@ const (
 	BudgetManageReaperBatch = 100
 )
 
+const budgetManageFalseSuccessMetric = "agents_budget_manage_false_success_total"
+
+type budgetManageMetrics struct {
+	falseSuccess observability.Counter
+}
+
 func BudgetManageKey(resourceID, threadID string) string {
 	return CorrelationKey(resourceID, threadID, BudgetManageWorkflowID)
 }
 
-func BuildBudgetManageWorkflow(a agent.Agent, planner interfaces.BudgetPlanner) workflow.Definition[BudgetManageState] {
-	step := workflow.NewStepFunc(stepBudgetManageID, buildBudgetManageStep(a, planner))
+func BuildBudgetManageWorkflowWithObservability(a agent.Agent, planner interfaces.BudgetPlanner, o11y observability.Observability) workflow.Definition[BudgetManageState] {
+	var metrics budgetManageMetrics
+	if o11y != nil {
+		metrics.falseSuccess = o11y.Metrics().Counter(
+			budgetManageFalseSuccessMetric,
+			"Confirmacao positiva sem orcamento duravel no workflow budget-manage",
+			"1",
+		)
+	}
+	step := workflow.NewStepFunc(stepBudgetManageID, buildBudgetManageStep(a, planner, &metrics))
 	return workflow.Definition[BudgetManageState]{
 		ID:          BudgetManageWorkflowID,
 		Root:        step,
@@ -45,7 +59,7 @@ func BuildBudgetManageReaper(store workflow.Store, o11y observability.Observabil
 	return workflow.NewStaleSuspendedReaper(store, BudgetManageWorkflowID, BudgetManageStaleAfter, BudgetManageReaperBatch, o11y)
 }
 
-type budgetManageExecFn func(ctx context.Context, state BudgetManageState, planner interfaces.BudgetPlanner) (workflow.StepOutput[BudgetManageState], error)
+type budgetManageExecFn func(ctx context.Context, state BudgetManageState, planner interfaces.BudgetPlanner, metrics *budgetManageMetrics) (workflow.StepOutput[BudgetManageState], error)
 
 func budgetManageExecMap() map[BudgetManageOperationKind]budgetManageExecFn {
 	return map[BudgetManageOperationKind]budgetManageExecFn{
@@ -55,7 +69,7 @@ func budgetManageExecMap() map[BudgetManageOperationKind]budgetManageExecFn {
 	}
 }
 
-func buildBudgetManageStep(a agent.Agent, planner interfaces.BudgetPlanner) func(context.Context, BudgetManageState) (workflow.StepOutput[BudgetManageState], error) {
+func buildBudgetManageStep(a agent.Agent, planner interfaces.BudgetPlanner, metrics *budgetManageMetrics) func(context.Context, BudgetManageState) (workflow.StepOutput[BudgetManageState], error) {
 	execMap := budgetManageExecMap()
 	return func(ctx context.Context, state BudgetManageState) (workflow.StepOutput[BudgetManageState], error) {
 		if state.Awaiting == 0 {
@@ -67,7 +81,7 @@ func buildBudgetManageStep(a agent.Agent, planner interfaces.BudgetPlanner) func
 		case BudgetManageAwaitingDistribution:
 			return handleBudgetManageDistributionSlot(ctx, state, a)
 		case BudgetManageAwaitingConfirm:
-			return handleBudgetManageConfirmSlot(ctx, state, planner, execMap)
+			return handleBudgetManageConfirmSlot(ctx, state, planner, execMap, metrics)
 		default:
 			return budgetManageSuspend(state, budgetTotalPrompt())
 		}
@@ -337,7 +351,7 @@ func budgetManageConfirmPrompt(state BudgetManageState) string {
 	return b.String()
 }
 
-func handleBudgetManageConfirmSlot(ctx context.Context, state BudgetManageState, planner interfaces.BudgetPlanner, execMap map[BudgetManageOperationKind]budgetManageExecFn) (workflow.StepOutput[BudgetManageState], error) {
+func handleBudgetManageConfirmSlot(ctx context.Context, state BudgetManageState, planner interfaces.BudgetPlanner, execMap map[BudgetManageOperationKind]budgetManageExecFn, metrics *budgetManageMetrics) (workflow.StepOutput[BudgetManageState], error) {
 	if state.ResumeText == "" {
 		return budgetManageConfirmSuspend(state)
 	}
@@ -356,7 +370,7 @@ func handleBudgetManageConfirmSlot(ctx context.Context, state BudgetManageState,
 			state.ResponseText = "🚫 Não foi possível identificar a operação de orçamento solicitada."
 			return budgetManageComplete(state)
 		}
-		return fn(ctx, state, planner)
+		return fn(ctx, state, planner, metrics)
 	case BudgetManageActionCancel:
 		state.MessageID = state.IncomingMessageID
 		state.Status = BudgetManageCancelled
@@ -381,7 +395,7 @@ func handleBudgetManageConfirmSlot(ctx context.Context, state BudgetManageState,
 	}
 }
 
-func executeBudgetManageCreateRetroactive(ctx context.Context, state BudgetManageState, planner interfaces.BudgetPlanner) (workflow.StepOutput[BudgetManageState], error) {
+func executeBudgetManageCreateRetroactive(ctx context.Context, state BudgetManageState, planner interfaces.BudgetPlanner, metrics *budgetManageMetrics) (workflow.StepOutput[BudgetManageState], error) {
 	allocations := make([]interfaces.AllocationDraft, 0, len(canonicalSlugs))
 	for _, slug := range canonicalSlugs {
 		allocations = append(allocations, interfaces.AllocationDraft{
@@ -396,7 +410,7 @@ func executeBudgetManageCreateRetroactive(ctx context.Context, state BudgetManag
 		Allocations: allocations,
 	}
 
-	_, createErr := planner.CreateBudget(ctx, draft)
+	ref, createErr := planner.CreateBudget(ctx, draft)
 	if createErr != nil {
 		if errors.Is(createErr, interfaces.ErrBudgetConflict) {
 			state.Status = BudgetManageCompleted
@@ -412,12 +426,31 @@ func executeBudgetManageCreateRetroactive(ctx context.Context, state BudgetManag
 		return budgetManageFail(state, fmt.Errorf("agents.budget_manage.create_retroactive: activate_budget: %w", activateErr))
 	}
 
+	if stepStatus, postErr := DecideBudgetManagePostWrite(ref.ID); postErr != nil {
+		recordBudgetManageFalseSuccessIfNeeded(ctx, metrics, postErr)
+		state.Status = BudgetManageActive
+		state.ResponseText = messages.WriteFailure()
+		return workflow.StepOutput[BudgetManageState]{State: state, Status: stepStatus}, fmt.Errorf("agents.budget_manage.create_retroactive: %w", postErr)
+	}
+
 	state.Status = BudgetManageCompleted
 	state.ResponseText = budgetManageCreatedMessage(state)
 	return budgetManageComplete(state)
 }
 
-func executeBudgetManageEditTotal(ctx context.Context, state BudgetManageState, planner interfaces.BudgetPlanner) (workflow.StepOutput[BudgetManageState], error) {
+func recordBudgetManageFalseSuccessIfNeeded(ctx context.Context, metrics *budgetManageMetrics, postErr error) {
+	if metrics == nil || metrics.falseSuccess == nil {
+		return
+	}
+	if errors.Is(postErr, ErrBudgetManageAcceptedWithoutResource) {
+		metrics.falseSuccess.Increment(ctx,
+			observability.String("workflow", BudgetManageWorkflowID),
+			observability.String("step", stepBudgetManageID),
+		)
+	}
+}
+
+func executeBudgetManageEditTotal(ctx context.Context, state BudgetManageState, planner interfaces.BudgetPlanner, _ *budgetManageMetrics) (workflow.StepOutput[BudgetManageState], error) {
 	if err := planner.EditBudgetTotal(ctx, state.UserID, state.Competence, state.TotalCents); err != nil {
 		state.ResponseText = budgetManageDomainErrorMessage(err)
 		if state.ResponseText != "" {
@@ -432,7 +465,7 @@ func executeBudgetManageEditTotal(ctx context.Context, state BudgetManageState, 
 	return budgetManageComplete(state)
 }
 
-func executeBudgetManageEditDistribution(ctx context.Context, state BudgetManageState, planner interfaces.BudgetPlanner) (workflow.StepOutput[BudgetManageState], error) {
+func executeBudgetManageEditDistribution(ctx context.Context, state BudgetManageState, planner interfaces.BudgetPlanner, _ *budgetManageMetrics) (workflow.StepOutput[BudgetManageState], error) {
 	for _, slug := range canonicalSlugs {
 		bp := state.Allocations[slug]
 		percentage := bp / 100
