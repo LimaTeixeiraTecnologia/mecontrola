@@ -129,6 +129,26 @@ func (b *Budget) RebalanceAllocations(allocs []Allocation, now time.Time) error 
 	return nil
 }
 
+func (b *Budget) ChangeTotal(newTotalCents int64, allocations []Allocation, now time.Time) error {
+	if !b.IsActive() {
+		return ErrBudgetNotActive
+	}
+	if newTotalCents <= 0 {
+		return ErrBudgetTotalMustBePositive
+	}
+	sum := 0
+	for i := range allocations {
+		sum += allocations[i].BasisPoints()
+	}
+	if sum != 10000 {
+		return fmt.Errorf("budgets: soma=%d: %w", sum, ErrBudgetAllocationSumMustBe10000)
+	}
+	b.totalCents = newTotalCents
+	b.allocations = allocations
+	b.updatedAt = now
+	return nil
+}
+
 func (b *Budget) Activate(now time.Time) error {
 	if b.state == BudgetStateActive {
 		return ErrBudgetAlreadyActive

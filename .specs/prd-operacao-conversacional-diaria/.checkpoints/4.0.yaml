@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-operacao-conversacional-diaria/4.0_execution_report.md
+summary: Catalogo central de mensagens de tom de voz criado em internal/agents/application/messages com funcoes puras e testes verbatim
+timestamp: 2026-07-15T00:00:00Z

@@ -15,7 +15,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 )
 
-const _abandonedDraftBatchSize = 200
+const abandonedDraftBatchSize = 200
 
 type SignalAbandonedDrafts struct {
 	factory  interfaces.RepositoryFactory
@@ -77,7 +77,7 @@ func (uc *SignalAbandonedDrafts) listAbandoned(ctx context.Context, before value
 	var result []entities.Budget
 	_, err := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		budgets := uc.factory.BudgetRepository(tx)
-		drafts, listErr := budgets.ListAbandonedDrafts(ctx, before, _abandonedDraftBatchSize)
+		drafts, listErr := budgets.ListAbandonedDrafts(ctx, before, abandonedDraftBatchSize)
 		if listErr != nil {
 			return struct{}{}, fmt.Errorf("budgets.usecase.signal_abandoned_drafts: listar rascunhos: %w", listErr)
 		}

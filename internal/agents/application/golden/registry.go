@@ -21,6 +21,7 @@ func AllCases() []Case {
 	cases = append(cases, whatsAppFormatCases()...)
 	cases = append(cases, noInternalTermsCases()...)
 	cases = append(cases, journeyCases()...)
+	cases = append(cases, dailyOperationsCases()...)
 	return cases
 }
 

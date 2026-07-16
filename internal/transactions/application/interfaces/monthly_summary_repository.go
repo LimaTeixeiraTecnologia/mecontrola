@@ -11,14 +11,18 @@ import (
 )
 
 type MonthlyEntry struct {
-	Kind        string
-	ID          string
-	UserID      uuid.UUID
-	RefMonth    string
-	AmountCents int64
-	Direction   string
-	Description string
-	CreatedAt   time.Time
+	Kind                    string
+	ID                      string
+	UserID                  uuid.UUID
+	RefMonth                string
+	AmountCents             int64
+	Direction               string
+	Description             string
+	CategoryID              uuid.UUID
+	SubcategoryID           *uuid.UUID
+	CategoryNameSnapshot    string
+	SubcategoryNameSnapshot string
+	CreatedAt               time.Time
 }
 
 type MonthlySummaryRepository interface {

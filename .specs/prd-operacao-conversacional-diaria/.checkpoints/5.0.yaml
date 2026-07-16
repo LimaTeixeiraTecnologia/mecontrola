@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-operacao-conversacional-diaria/5.0_execution_report.md
+summary: Workflow transaction-write implementado (estado fechado, Decide* por map[OperationKind], idempotencia, guarda anti-falso-sucesso, guard de forma de pagamento, catalogo de mensagens) com 65+18 testes passando.
+timestamp: 2026-07-15T18:46:54Z

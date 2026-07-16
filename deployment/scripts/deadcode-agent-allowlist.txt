@@ -10,14 +10,7 @@ internal/agents/application/scorers/behavioral_scorers.go:expectedToolOracleScor
 internal/agents/application/scorers/behavioral_scorers.go:expectedToolOracleScorer.Score
 internal/agents/application/scorers/behavioral_scorers.go:NewExpectedToolOracleScorer
 # Parse* functions: smart constructors de tipos fechados (DMMF) mantidos por simetria de API.
-internal/agents/application/workflows/confirm_state.go:ParseAwaitingKind
-internal/agents/application/workflows/confirm_state.go:ParseOperationKind
 internal/agents/application/workflows/onboarding_workflow.go:ParseOnboardingPhase
-internal/agents/application/workflows/pending_entry_state.go:ParsePendingStatus
-internal/agents/application/workflows/pending_entry_state.go:ParseAwaitingSlot
-internal/agents/application/workflows/pending_entry_state.go:ParsePendingOperationKind
-internal/agents/application/workflows/budget_creation_state.go:ParseBudgetAwaitingSlot
-internal/agents/application/workflows/budget_creation_state.go:ParseBudgetCreationStatus
 # distributionIntentKind.String/IsValid e distributionBalanceKind.String/IsValid: metodos DMMF de
 # tipos fechados mantidos por simetria de API (Parse* correspondentes ja wired em producao).
 internal/agents/application/workflows/onboarding_workflow.go:distributionIntentKind.String
@@ -25,13 +18,30 @@ internal/agents/application/workflows/onboarding_workflow.go:distributionIntentK
 internal/agents/application/workflows/onboarding_workflow.go:distributionBalanceKind.String
 internal/agents/application/workflows/onboarding_workflow.go:distributionBalanceKind.IsValid
 internal/agents/application/workflows/onboarding_workflow.go:ParseDistributionBalanceKind
-# Decide* functions: regras de negocio puras (DMMF) mantidas por simetria de API.
-internal/agents/application/workflows/pending_entry_decisions.go:DecideNewOperationReplacement
-internal/agents/application/workflows/budget_creation_decisions.go:DecideBudgetPendingResume
-# Helpers de resolucao de categoria usados por testes e disponiveis para registry futuro.
+# Helpers de resolucao de categoria usados por testes e disponiveis para registry futuro; category_resolution.go
+# e pending_category_candidate.go foram reaproveitados pelo transaction-write novo (nao sao legado do cutover
+# da tarefa 9.0 apesar do nome do PendingCategoryCandidate).
 internal/agents/application/workflows/category_resolution.go:BuildCandidateListText
 internal/agents/application/workflows/category_resolution.go:formatCandidatePath
-# IdempotentWrite: codigo legado temporariamente inalcancavel apos refatoracao para pending entry.
-internal/agents/application/usecases/idempotent_write.go:NewIdempotentWrite
-internal/agents/application/usecases/idempotent_write.go:IdempotentWrite.Execute
-internal/agents/application/usecases/idempotent_write.go:IdempotentWrite.executeLocked
+# Residual dos workflows/mensagens novos (prd-operacao-conversacional-diaria, tarefas 5.0/6.0) apos o
+# wiring do resumeDispatcher na tarefa 7.0: o Resume/Continue de cada workflow ja torna a maquina de
+# estados alcancavel a partir de ./cmd/..., mas alguns Parse* (simetria DMMF) e helpers usados
+# apenas pelas tools/prompt novos permanecem sem call site.
+internal/agents/application/messages/catalog.go:WriteKind.String
+internal/agents/application/messages/catalog.go:WriteKind.IsValid
+internal/agents/application/messages/catalog.go:SummaryScenario.IsValid
+internal/agents/application/messages/catalog.go:GeneralScenario.IsValid
+internal/agents/application/messages/catalog.go:MissingField.IsValid
+internal/agents/application/workflows/budget_manage_state.go:ParseBudgetManageOperationKind
+internal/agents/application/workflows/budget_manage_state.go:ParseBudgetManageAwaitingSlot
+internal/agents/application/workflows/budget_manage_state.go:ParseBudgetManageStatus
+internal/agents/application/workflows/card_manage_state.go:ParseCardManageOperationKind
+internal/agents/application/workflows/card_manage_state.go:ParseCardManageStatus
+internal/agents/application/workflows/destructive_confirm_state.go:ParseDestructiveOperationKind
+internal/agents/application/workflows/destructive_confirm_state.go:ParseDestructiveManageStatus
+internal/agents/application/workflows/goal_edit_state.go:ParseGoalEditStatus
+internal/agents/application/workflows/goal_edit_state.go:ParseGoalEditAwaitingSlot
+internal/agents/application/workflows/transaction_write_decisions.go:DecideNewTransactionOperationReplacement
+internal/agents/application/workflows/transaction_write_state.go:ParseTransactionWriteStatus
+internal/agents/application/workflows/transaction_write_state.go:ParseTransactionAwaitingSlot
+internal/agents/application/workflows/transaction_write_state.go:ParseTransactionOperationKind

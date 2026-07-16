@@ -45,7 +45,7 @@ func BuildRegisterExpenseTool(registrar entryRegistrar, cards interfaces.CardMan
 			"properties": map[string]any{
 				"amountCents":     map[string]any{"type": "integer"},
 				"description":     map[string]any{"type": "string"},
-				"paymentMethod":   map[string]any{"type": "string", "enum": []string{"pix", "debit_card", "debit_in_account", "cash", "boleto", "ted", "credit_card", "vale_refeicao", "vale_alimentacao"}},
+				"paymentMethod":   map[string]any{"type": "string", "enum": []string{"pix", "debit_card", "debit_in_account", "cash", "boleto", "ted", "credit_card", "doc", "vale_refeicao", "vale_alimentacao", "transferencia", "apple_pay", "google_pay", "picpay", "mercado_pago", "cheque"}},
 				"cardId":          map[string]any{"type": "string"},
 				"installments":    map[string]any{"type": "integer", "minimum": 1, "maximum": 24},
 				"occurredAt":      map[string]any{"type": "string"},

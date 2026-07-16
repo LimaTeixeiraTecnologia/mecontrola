@@ -145,6 +145,11 @@ func (w TransactionWorkflow) DecideUpdate(
 	newRefMonth := valueobjects.RefMonthFromTime(cmd.OccurredAt, time.UTC)
 	snapshot, isCard := current.BillingSnapshot().Get()
 
+	subcategoryID := uuid.Nil
+	if sub, ok := cmd.SubcategoryID.Get(); ok {
+		subcategoryID = sub.UUID()
+	}
+
 	if !isCard || cmd.PaymentMethod != valueobjects.PaymentMethodCreditCard {
 		oldRefMonth := current.RefMonth()
 		current.Update(
@@ -171,6 +176,7 @@ func (w TransactionWorkflow) DecideUpdate(
 			PaymentMethod:     cmd.PaymentMethod,
 			AmountCents:       cmd.Amount.Cents(),
 			RefMonth:          newRefMonth,
+			SubcategoryID:     subcategoryID,
 			RefMonthsAffected: affected,
 		}
 		return TransactionDecision{Transaction: current, Event: evt}
@@ -246,6 +252,7 @@ func (w TransactionWorkflow) DecideUpdate(
 		PaymentMethod:     cmd.PaymentMethod,
 		AmountCents:       cmd.Amount.Cents(),
 		RefMonth:          newRefMonth,
+		SubcategoryID:     subcategoryID,
 		RefMonthsAffected: affected,
 	}
 

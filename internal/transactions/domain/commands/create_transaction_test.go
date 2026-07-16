@@ -48,19 +48,18 @@ func TestNewCreateTransaction_MultipleErrors(t *testing.T) {
 	_, err := commands.NewCreateTransaction(raw, userID)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, valueobjects.ErrDirectionUnknown))
-	assert.True(t, errors.Is(err, valueobjects.ErrPaymentMethodDocReadOnly))
 	assert.True(t, errors.Is(err, valueobjects.ErrMoneyMustBePositive))
 	assert.True(t, errors.Is(err, valueobjects.ErrDescriptionEmpty))
 }
 
-func TestNewCreateTransaction_DocRejected(t *testing.T) {
+func TestNewCreateTransaction_DocAccepted(t *testing.T) {
 	raw := validCreateTransactionRaw()
 	raw.PaymentMethod = "doc"
 	userID := uuid.New()
 
-	_, err := commands.NewCreateTransaction(raw, userID)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, valueobjects.ErrPaymentMethodDocReadOnly))
+	cmd, err := commands.NewCreateTransaction(raw, userID)
+	require.NoError(t, err)
+	assert.Equal(t, valueobjects.PaymentMethodDoc, cmd.PaymentMethod)
 }
 
 func TestNewCreateTransaction_WithSubcategory(t *testing.T) {

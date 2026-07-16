@@ -26,14 +26,20 @@ var RegisteredTools = []string{
 	"list_categories",
 	"create_card",
 	"create_budget",
+	"edit_budget_total",
+	"category_detail",
+	"cancel_plan_info",
+	"support_info",
+	"edit_goal",
 }
 
 var RegisteredWorkflows = []string{
-	"budget-creation",
-	"card-create-confirm",
+	"budget-manage",
+	"card-manage",
 	"destructive-confirm",
+	"goal-edit",
 	"onboarding-workflow",
-	"pending-entry",
+	"transaction-write",
 }
 
 var RegisteredScorers = []string{
@@ -44,8 +50,11 @@ var RegisteredScorers = []string{
 	"whatsapp_format",
 	"no_internal_terms",
 	"verbatim_required",
+	"verbatim_tone_adherence",
+	"tone_adherence",
 	"no_duplicate_write",
 	"no_hallucination",
+	"write_persistence_accuracy",
 	"required_args",
 	"month_reference_correctness",
 }

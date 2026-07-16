@@ -12,7 +12,7 @@ const (
 	minTokenLen       = 2
 )
 
-var _searchStopwords = map[string]struct{}{
+var searchStopwords = map[string]struct{}{
 	"de": {}, "da": {}, "do": {}, "das": {}, "dos": {},
 	"no": {}, "na": {}, "nos": {}, "nas": {}, "em": {},
 	"com": {}, "por": {}, "para": {}, "pra": {}, "pro": {},
@@ -83,7 +83,7 @@ func tokenizeSearchQuery(raw string) []string {
 		if len([]rune(token)) < minTokenLen {
 			continue
 		}
-		if _, stop := _searchStopwords[token]; stop {
+		if _, stop := searchStopwords[token]; stop {
 			continue
 		}
 		if _, dup := seen[token]; dup {

@@ -37,7 +37,7 @@ type UpdateRecurrenceOutput struct {
 	TargetKind        string `json:"targetKind"`
 }
 
-func BuildUpdateRecurrenceTool(engine wf.Engine[workflows.ConfirmState], def wf.Definition[workflows.ConfirmState]) tool.ToolHandle {
+func BuildUpdateRecurrenceTool(engine wf.Engine[workflows.DestructiveManageState], def wf.Definition[workflows.DestructiveManageState]) tool.ToolHandle {
 	in := llm.Schema{
 		Name:   "update_recurrence_input",
 		Strict: false,
@@ -82,7 +82,7 @@ func extractUpdateRecurrenceVerbatim(o UpdateRecurrenceOutput) (string, bool) {
 	return o.ImpactNote, o.NeedsConfirmation && o.ImpactNote != ""
 }
 
-func buildUpdateRecurrenceExec(engine wf.Engine[workflows.ConfirmState], def wf.Definition[workflows.ConfirmState]) func(context.Context, UpdateRecurrenceInput) (UpdateRecurrenceOutput, error) {
+func buildUpdateRecurrenceExec(engine wf.Engine[workflows.DestructiveManageState], def wf.Definition[workflows.DestructiveManageState]) func(context.Context, UpdateRecurrenceInput) (UpdateRecurrenceOutput, error) {
 	return func(ctx context.Context, in UpdateRecurrenceInput) (UpdateRecurrenceOutput, error) {
 		rc, ok := wf.RuntimeFrom(ctx)
 		if !ok {
@@ -123,11 +123,10 @@ func buildUpdateRecurrenceExec(engine wf.Engine[workflows.ConfirmState], def wf.
 
 		impactNote := "Esta recorrência será atualizada."
 
-		state := workflows.ConfirmState{
-			Awaiting:      workflows.AwaitingConfirm,
-			Operation:     workflows.OpUpdateRecurrence,
+		state := workflows.DestructiveManageState{
+			Status:        workflows.DestructiveManageActive,
+			Operation:     workflows.DestructiveOpUpdateRecurrence,
 			TargetRef:     in.TemplateID,
-			TargetKind:    "recurring_template",
 			ImpactNote:    impactNote,
 			MessageID:     req.MessageID,
 			SuspendedAt:   time.Now().UTC(),
@@ -136,7 +135,7 @@ func buildUpdateRecurrenceExec(engine wf.Engine[workflows.ConfirmState], def wf.
 			Version:       in.Version,
 		}
 
-		key := workflows.DestructiveConfirmKey(req.ResourceID)
+		key := workflows.DestructiveManageKey(req.ResourceID, req.ThreadID)
 		_, err = engine.Start(ctx, def, key, state)
 		if err != nil && !errors.Is(err, wf.ErrRunAlreadyExists) {
 			return UpdateRecurrenceOutput{}, fmt.Errorf("agents.tool.update_recurrence: iniciar confirmação: %w", err)

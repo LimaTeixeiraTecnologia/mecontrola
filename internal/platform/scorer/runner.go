@@ -17,6 +17,10 @@ type ScorerEntry struct {
 	sampling Sampling
 }
 
+func (e ScorerEntry) ScorerID() string {
+	return e.scorer.ID()
+}
+
 type observeJob struct {
 	runID  uuid.UUID
 	sample RunSample

@@ -6,7 +6,6 @@ import (
 )
 
 var ErrPaymentMethodUnknown = errors.New("transactions: payment method desconhecido")
-var ErrPaymentMethodDocReadOnly = errors.New("transactions: payment method doc é somente leitura (registros legados)")
 
 type PaymentMethod uint8
 
@@ -21,44 +20,65 @@ const (
 	PaymentMethodDoc
 	PaymentMethodMealVoucher
 	PaymentMethodFoodVoucher
+	PaymentMethodTransferencia
+	PaymentMethodApplePay
+	PaymentMethodGooglePay
+	PaymentMethodPicPay
+	PaymentMethodMercadoPago
+	PaymentMethodCheque
 )
 
+var paymentMethodByString = map[string]PaymentMethod{
+	"pix":              PaymentMethodPix,
+	"ted":              PaymentMethodTED,
+	"debit_in_account": PaymentMethodDebitInAccount,
+	"debit_card":       PaymentMethodDebitCard,
+	"cash":             PaymentMethodCash,
+	"boleto":           PaymentMethodBoleto,
+	"credit_card":      PaymentMethodCreditCard,
+	"doc":              PaymentMethodDoc,
+	"vale_refeicao":    PaymentMethodMealVoucher,
+	"vale_alimentacao": PaymentMethodFoodVoucher,
+	"transferencia":    PaymentMethodTransferencia,
+	"apple_pay":        PaymentMethodApplePay,
+	"google_pay":       PaymentMethodGooglePay,
+	"picpay":           PaymentMethodPicPay,
+	"mercado_pago":     PaymentMethodMercadoPago,
+	"cheque":           PaymentMethodCheque,
+}
+
+var paymentMethodToString = map[PaymentMethod]string{
+	PaymentMethodPix:            "pix",
+	PaymentMethodTED:            "ted",
+	PaymentMethodDebitInAccount: "debit_in_account",
+	PaymentMethodDebitCard:      "debit_card",
+	PaymentMethodCash:           "cash",
+	PaymentMethodBoleto:         "boleto",
+	PaymentMethodCreditCard:     "credit_card",
+	PaymentMethodDoc:            "doc",
+	PaymentMethodMealVoucher:    "vale_refeicao",
+	PaymentMethodFoodVoucher:    "vale_alimentacao",
+	PaymentMethodTransferencia:  "transferencia",
+	PaymentMethodApplePay:       "apple_pay",
+	PaymentMethodGooglePay:      "google_pay",
+	PaymentMethodPicPay:         "picpay",
+	PaymentMethodMercadoPago:    "mercado_pago",
+	PaymentMethodCheque:         "cheque",
+}
+
 func ParsePaymentMethod(s string) (PaymentMethod, error) {
-	switch s {
-	case "pix":
-		return PaymentMethodPix, nil
-	case "ted":
-		return PaymentMethodTED, nil
-	case "debit_in_account":
-		return PaymentMethodDebitInAccount, nil
-	case "debit_card":
-		return PaymentMethodDebitCard, nil
-	case "cash":
-		return PaymentMethodCash, nil
-	case "boleto":
-		return PaymentMethodBoleto, nil
-	case "credit_card":
-		return PaymentMethodCreditCard, nil
-	case "doc":
-		return PaymentMethodDoc, nil
-	case "vale_refeicao":
-		return PaymentMethodMealVoucher, nil
-	case "vale_alimentacao":
-		return PaymentMethodFoodVoucher, nil
-	default:
-		return 0, fmt.Errorf("transactions: %q: %w", s, ErrPaymentMethodUnknown)
+	if p, ok := paymentMethodByString[s]; ok {
+		return p, nil
 	}
+	return 0, fmt.Errorf("transactions: %q: %w", s, ErrPaymentMethodUnknown)
 }
 
 func ParsePaymentMethodForCreate(s string) (PaymentMethod, error) {
-	if s == "doc" {
-		return 0, fmt.Errorf("transactions: %q: %w", s, ErrPaymentMethodDocReadOnly)
-	}
 	return ParsePaymentMethod(s)
 }
 
 func PaymentMethodFromInt(v int) (PaymentMethod, error) {
-	if v < 1 || v > 10 {
+	if v < 1 || v > 16 {
 		return 0, fmt.Errorf("transactions: payment method int %d: %w", v, ErrPaymentMethodUnknown)
 	}
 	return PaymentMethod(v), nil
@@ -69,28 +89,5 @@ func (p PaymentMethod) IsCreditCard() bool {
 }
 
 func (p PaymentMethod) String() string {
-	switch p {
-	case PaymentMethodPix:
-		return "pix"
-	case PaymentMethodTED:
-		return "ted"
-	case PaymentMethodDebitInAccount:
-		return "debit_in_account"
-	case PaymentMethodDebitCard:
-		return "debit_card"
-	case PaymentMethodCash:
-		return "cash"
-	case PaymentMethodBoleto:
-		return "boleto"
-	case PaymentMethodCreditCard:
-		return "credit_card"
-	case PaymentMethodDoc:
-		return "doc"
-	case PaymentMethodMealVoucher:
-		return "vale_refeicao"
-	case PaymentMethodFoodVoucher:
-		return "vale_alimentacao"
-	default:
-		return ""
-	}
+	return paymentMethodToString[p]
 }

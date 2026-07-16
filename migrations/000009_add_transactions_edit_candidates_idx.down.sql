@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS mecontrola.transactions_user_month_created_idx;

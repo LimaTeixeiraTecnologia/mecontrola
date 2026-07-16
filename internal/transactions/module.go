@@ -43,6 +43,7 @@ type TransactionsModule struct {
 	EventHandlers                   []EventHandlerRegistration
 	ListTransactionsUC              *usecases.ListTransactions
 	SearchTransactionsUC            *usecases.SearchTransactions
+	SearchEditCandidatesUC          *usecases.SearchEditCandidates
 	CreateTransactionUC             *usecases.CreateTransaction
 	UpdateTransactionUC             *usecases.UpdateTransaction
 	DeleteTransactionUC             *usecases.DeleteTransaction
@@ -160,6 +161,13 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 	searchTx := usecases.NewSearchTransactions(
 		factory,
 		uow.NewUnitOfWork(b.db),
+		b.o11y,
+	)
+
+	searchEditCand := usecases.NewSearchEditCandidates(
+		factory,
+		uow.NewUnitOfWork(b.db),
+		brazilLoc,
 		b.o11y,
 	)
 
@@ -283,6 +291,7 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		MonthlySummaryReconcilerJob:     reconcilerJob,
 		ListTransactionsUC:              listTx,
 		SearchTransactionsUC:            searchTx,
+		SearchEditCandidatesUC:          searchEditCand,
 		CreateTransactionUC:             createTx,
 		UpdateTransactionUC:             updateTx,
 		DeleteTransactionUC:             deleteTx,

@@ -47,6 +47,15 @@ score=0.5: a categorização é aceitável mas não é a mais precisa
 score=0.0: a categorização está errada ou ausente quando deveria estar presente
 Se a resposta não envolve categorização, retorne score=1.0.`
 
+const toneAdherenceScorerInstructions = `Você é um avaliador do Tom de Voz da marca MeControla, um parceiro financeiro pessoal que fala com o usuário via WhatsApp.
+O tom oficial é caloroso, direto e motivacional, sem jargão técnico, sem tom robótico ou genérico de assistente virtual.
+Avalie se a resposta do assistente soa como o parceiro financeiro MeControla e não como um bot genérico.
+Retorne um objeto JSON com os campos: score (número 0-1) e reason (string).
+score=1.0: tom caloroso, direto, alinhado à marca, sem jargão técnico
+score=0.5: tom aceitável mas burocrático ou impessoal em trechos
+score=0.0: tom robótico, técnico, ou incoerente com a marca MeControla
+Se a resposta é puramente informacional e curta (ex: pergunta de clarificação simples), avalie apenas se não é hostil ou robótica; nesse caso score mínimo aceitável é 0.7.`
+
 type anyFinancialToolScorer struct {
 	id    string
 	tools []string
@@ -169,6 +178,10 @@ func NewCategorizationScorer(provider llm.Provider) scorer.Scorer {
 	return scorer.NewLLMJudgedScorer("categorization", provider, categorizationScorerInstructions)
 }
 
+func NewToneAdherenceScorer(provider llm.Provider) scorer.Scorer {
+	return scorer.NewLLMJudgedScorer("tone_adherence", provider, toneAdherenceScorerInstructions)
+}
+
 func BuildMeControlaScorers(provider llm.Provider) []scorer.ScorerEntry {
 	return []scorer.ScorerEntry{
 		scorer.NewScorerEntry(NewFinancialToolCallAccuracyScorer(), scorer.AlwaysSample()),
@@ -178,6 +191,8 @@ func BuildMeControlaScorers(provider llm.Provider) []scorer.ScorerEntry {
 		scorer.NewScorerEntry(NewWhatsAppFormatScorer(), scorer.AlwaysSample()),
 		scorer.NewScorerEntry(NewNoInternalTermsScorer(), scorer.AlwaysSample()),
 		scorer.NewScorerEntry(NewVerbatimRequiredScorer(), scorer.AlwaysSample()),
+		scorer.NewScorerEntry(NewVerbatimToneAdherenceScorer(), scorer.AlwaysSample()),
+		scorer.NewScorerEntry(NewToneAdherenceScorer(provider), scorer.AlwaysSample()),
 		scorer.NewScorerEntry(NewNoDuplicateWriteScorer(), scorer.AlwaysSample()),
 		scorer.NewScorerEntry(NewNoHallucinationScorer(), scorer.AlwaysSample()),
 		scorer.NewScorerEntry(NewWritePersistenceAccuracyScorer(), scorer.AlwaysSample()),

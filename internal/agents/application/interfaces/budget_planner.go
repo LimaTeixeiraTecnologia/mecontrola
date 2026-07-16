@@ -12,6 +12,7 @@ type BudgetPlanner interface {
 	ActivateBudget(ctx context.Context, userID uuid.UUID, competence string) error
 	CreateRecurrence(ctx context.Context, userID uuid.UUID, competence string, months int) error
 	EditCategoryPercentage(ctx context.Context, userID uuid.UUID, competence, rootSlug string, percentage int) error
+	EditBudgetTotal(ctx context.Context, userID uuid.UUID, competence string, totalCents int64) error
 	GetMonthlySummary(ctx context.Context, userID uuid.UUID, competence string) (BudgetSummary, error)
 	ListAlerts(ctx context.Context, userID uuid.UUID) ([]Alert, error)
 	SuggestAllocation(ctx context.Context, totalCents int64, allocations []AllocationBP) ([]AllocationCents, error)

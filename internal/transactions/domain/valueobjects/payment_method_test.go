@@ -24,7 +24,7 @@ func TestParsePaymentMethod(t *testing.T) {
 		{name: "cash", input: "cash", want: valueobjects.PaymentMethodCash},
 		{name: "boleto", input: "boleto", want: valueobjects.PaymentMethodBoleto},
 		{name: "credit_card", input: "credit_card", want: valueobjects.PaymentMethodCreditCard},
-		{name: "doc legacy", input: "doc", want: valueobjects.PaymentMethodDoc},
+		{name: "doc", input: "doc", want: valueobjects.PaymentMethodDoc},
 		{name: "unknown", input: "wire", wantErr: valueobjects.ErrPaymentMethodUnknown},
 	}
 	for _, tc := range cases {
@@ -42,10 +42,10 @@ func TestParsePaymentMethod(t *testing.T) {
 	}
 }
 
-func TestParsePaymentMethodForCreate_RejectsDoc(t *testing.T) {
-	_, err := valueobjects.ParsePaymentMethodForCreate("doc")
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, valueobjects.ErrPaymentMethodDocReadOnly))
+func TestParsePaymentMethodForCreate_AcceptsDoc(t *testing.T) {
+	pm, err := valueobjects.ParsePaymentMethodForCreate("doc")
+	require.NoError(t, err)
+	assert.Equal(t, valueobjects.PaymentMethodDoc, pm)
 }
 
 func TestPaymentMethodIota(t *testing.T) {

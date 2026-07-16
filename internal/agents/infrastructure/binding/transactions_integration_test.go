@@ -163,7 +163,7 @@ func (s *TransactionsIntegrationSuite) SetupSuite() {
 	listME := txusecases.NewListMonthlyEntries(factory, uow.NewUnitOfWork(db), o11y)
 
 	s.adapter = binding.NewTransactionsLedgerAdapter(
-		createTx, nil, nil, listME, getMS, nil, nil, nil, nil, o11y,
+		createTx, nil, nil, listME, getMS, nil, nil, nil, nil, nil, o11y,
 	)
 
 	s.recompute = txusecases.NewRecomputeMonthlySummary(factory, uow.NewUnitOfWork(db), o11y)

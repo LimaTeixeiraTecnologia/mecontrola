@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-operacao-conversacional-diaria/1.0_execution_report.md
+summary: Enum PaymentMethod estendido (6 valores) + doc desbloqueado na criacao + TransactionUpdated enriquecido com SubcategoryID.
+timestamp: 2026-07-15T18:03:06Z

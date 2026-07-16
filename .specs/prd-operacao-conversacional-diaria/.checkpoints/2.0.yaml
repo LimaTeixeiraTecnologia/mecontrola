@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-operacao-conversacional-diaria/2.0_execution_report.md
+summary: SearchEditCandidates implementado (repo+usecase+porta+binding+testes unit/integration)
+timestamp: 2026-07-15T18:20:00Z

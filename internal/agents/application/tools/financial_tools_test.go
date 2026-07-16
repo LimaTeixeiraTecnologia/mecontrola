@@ -20,26 +20,26 @@ import (
 	wf "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
-type fakeConfirmEngine struct {
-	startResult wf.RunResult[workflows.ConfirmState]
+type fakeDestructiveManageEngine struct {
+	startResult wf.RunResult[workflows.DestructiveManageState]
 	startErr    error
 }
 
-func (f *fakeConfirmEngine) Start(_ context.Context, _ wf.Definition[workflows.ConfirmState], _ string, _ workflows.ConfirmState) (wf.RunResult[workflows.ConfirmState], error) {
+func (f *fakeDestructiveManageEngine) Start(_ context.Context, _ wf.Definition[workflows.DestructiveManageState], _ string, _ workflows.DestructiveManageState) (wf.RunResult[workflows.DestructiveManageState], error) {
 	return f.startResult, f.startErr
 }
 
-func (f *fakeConfirmEngine) Resume(_ context.Context, _ wf.Definition[workflows.ConfirmState], _ string, _ []byte) (wf.RunResult[workflows.ConfirmState], error) {
-	return wf.RunResult[workflows.ConfirmState]{}, nil
+func (f *fakeDestructiveManageEngine) Resume(_ context.Context, _ wf.Definition[workflows.DestructiveManageState], _ string, _ []byte) (wf.RunResult[workflows.DestructiveManageState], error) {
+	return wf.RunResult[workflows.DestructiveManageState]{}, nil
 }
 
-func (f *fakeConfirmEngine) LoadLatestState(_ context.Context, _ wf.Definition[workflows.ConfirmState], _ string) (workflows.ConfirmState, wf.Snapshot, bool, error) {
-	return workflows.ConfirmState{}, wf.Snapshot{}, false, nil
+func (f *fakeDestructiveManageEngine) LoadLatestState(_ context.Context, _ wf.Definition[workflows.DestructiveManageState], _ string) (workflows.DestructiveManageState, wf.Snapshot, bool, error) {
+	return workflows.DestructiveManageState{}, wf.Snapshot{}, false, nil
 }
 
-func fakeConfirmDef() wf.Definition[workflows.ConfirmState] {
-	return wf.Definition[workflows.ConfirmState]{
-		ID:      workflows.DestructiveConfirmWorkflowID,
+func fakeDestructiveManageDef() wf.Definition[workflows.DestructiveManageState] {
+	return wf.Definition[workflows.DestructiveManageState]{
+		ID:      workflows.DestructiveManageWorkflowID,
 		Durable: true,
 	}
 }
@@ -578,45 +578,33 @@ func TestBuildQueryPlanToolInvalidMonthRefKindErrors(t *testing.T) {
 }
 
 func TestBuildAdjustAllocationToolSuccess(t *testing.T) {
-	planner := imocks.NewBudgetPlanner(t)
-
-	planner.EXPECT().EditCategoryPercentage(mock.Anything, testUserID, "2026-06", "moradia", 30).
-		Return(nil).Once()
-
-	handle := BuildAdjustAllocationTool(planner)
+	engine := newFakeBudgetManageEngine()
+	handle := BuildAdjustAllocationTool(engine, fakeBudgetManageDef())
 	assert.Equal(t, "adjust_allocation", handle.ID())
 
-	argsJSON, _ := json.Marshal(AdjustAllocationInput{
-		Competence: "2026-06",
-		RootSlug:   "moradia",
-		Percentage: 30,
-	})
-	ctx := agent.WithToolInvocationContext(context.Background(), testUserID.String(), "wamid-adjust", 0)
-	out, _, err := handle.Invoke(ctx, argsJSON)
+	argsJSON, _ := json.Marshal(AdjustAllocationInput{MonthRefKind: "current"})
+	out, _, err := handle.Invoke(inboundCtx(), argsJSON)
 	require.NoError(t, err)
 
 	var result AdjustAllocationOutput
 	require.NoError(t, json.Unmarshal(out, &result))
-	assert.True(t, result.OK)
-	assert.Equal(t, "moradia", result.RootSlug)
-	assert.Equal(t, 30, result.Percentage)
+	assert.Equal(t, "started", result.Outcome)
+	assert.True(t, engine.startCalled)
+	assert.Equal(t, workflows.BudgetManageOpEditDistribution, engine.lastState.Operation)
 }
 
-func TestBuildAdjustAllocationToolError(t *testing.T) {
-	planner := imocks.NewBudgetPlanner(t)
+func TestBuildAdjustAllocationToolAlreadyExists(t *testing.T) {
+	engine := &fakeBudgetManageEngine{startErr: wf.ErrRunAlreadyExists}
+	handle := BuildAdjustAllocationTool(engine, fakeBudgetManageDef())
 
-	planner.EXPECT().EditCategoryPercentage(mock.Anything, testUserID, "2026-06", "moradia", 30).
-		Return(errors.New("budget error")).Once()
+	argsJSON, _ := json.Marshal(AdjustAllocationInput{MonthRefKind: "current"})
+	out, _, err := handle.Invoke(inboundCtx(), argsJSON)
+	require.NoError(t, err)
 
-	handle := BuildAdjustAllocationTool(planner)
-	argsJSON, _ := json.Marshal(AdjustAllocationInput{
-		Competence: "2026-06",
-		RootSlug:   "moradia",
-		Percentage: 30,
-	})
-	ctx := agent.WithToolInvocationContext(context.Background(), testUserID.String(), "wamid-adjust", 0)
-	_, _, err := handle.Invoke(ctx, argsJSON)
-	require.Error(t, err)
+	var result AdjustAllocationOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, "pending_exists", result.Outcome)
+	assert.NotEmpty(t, result.ClarifyPrompt)
 }
 
 func TestBuildClassifyCategoryToolSuccess(t *testing.T) {
@@ -710,10 +698,10 @@ func TestBuildDeleteEntryTool(t *testing.T) {
 		HasOpenInstallments(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID")).
 		Return(false, nil).Maybe()
 
-	engine := &fakeConfirmEngine{
-		startResult: wf.RunResult[workflows.ConfirmState]{Status: wf.RunStatusSuspended},
+	engine := &fakeDestructiveManageEngine{
+		startResult: wf.RunResult[workflows.DestructiveManageState]{Status: wf.RunStatusSuspended},
 	}
-	handle := BuildDeleteEntryTool(engine, fakeConfirmDef(), cardMock)
+	handle := BuildDeleteEntryTool(engine, fakeDestructiveManageDef(), cardMock)
 	assert.Equal(t, "delete_entry", handle.ID())
 
 	argsJSON, _ := json.Marshal(DeleteEntryInput{EntryID: testResourceID.String(), EntryKind: "card_purchase"})
@@ -746,10 +734,10 @@ func TestRegisterExpenseOutput_OutcomeField_Routed(t *testing.T) {
 }
 
 func TestBuildUpdateRecurrenceTool_NeedsConfirmation(t *testing.T) {
-	engine := &fakeConfirmEngine{
-		startResult: wf.RunResult[workflows.ConfirmState]{Status: wf.RunStatusSuspended},
+	engine := &fakeDestructiveManageEngine{
+		startResult: wf.RunResult[workflows.DestructiveManageState]{Status: wf.RunStatusSuspended},
 	}
-	handle := BuildUpdateRecurrenceTool(engine, fakeConfirmDef())
+	handle := BuildUpdateRecurrenceTool(engine, fakeDestructiveManageDef())
 	assert.Equal(t, "update_recurrence", handle.ID())
 	assert.NotEmpty(t, handle.Description())
 
@@ -766,10 +754,10 @@ func TestBuildUpdateRecurrenceTool_NeedsConfirmation(t *testing.T) {
 }
 
 func TestBuildUpdateRecurrenceTool_AlreadyExists(t *testing.T) {
-	engine := &fakeConfirmEngine{
+	engine := &fakeDestructiveManageEngine{
 		startErr: wf.ErrRunAlreadyExists,
 	}
-	handle := BuildUpdateRecurrenceTool(engine, fakeConfirmDef())
+	handle := BuildUpdateRecurrenceTool(engine, fakeDestructiveManageDef())
 
 	templateID := uuid.New().String()
 	argsJSON, _ := json.Marshal(UpdateRecurrenceInput{TemplateID: templateID, Version: 1})
@@ -783,10 +771,10 @@ func TestBuildUpdateRecurrenceTool_AlreadyExists(t *testing.T) {
 }
 
 func TestBuildDeleteRecurrenceTool_NeedsConfirmation(t *testing.T) {
-	engine := &fakeConfirmEngine{
-		startResult: wf.RunResult[workflows.ConfirmState]{Status: wf.RunStatusSuspended},
+	engine := &fakeDestructiveManageEngine{
+		startResult: wf.RunResult[workflows.DestructiveManageState]{Status: wf.RunStatusSuspended},
 	}
-	handle := BuildDeleteRecurrenceTool(engine, fakeConfirmDef())
+	handle := BuildDeleteRecurrenceTool(engine, fakeDestructiveManageDef())
 	assert.Equal(t, "delete_recurrence", handle.ID())
 	assert.NotEmpty(t, handle.Description())
 
@@ -804,10 +792,10 @@ func TestBuildDeleteRecurrenceTool_NeedsConfirmation(t *testing.T) {
 }
 
 func TestBuildDeleteRecurrenceTool_AlreadyExists(t *testing.T) {
-	engine := &fakeConfirmEngine{
+	engine := &fakeDestructiveManageEngine{
 		startErr: wf.ErrRunAlreadyExists,
 	}
-	handle := BuildDeleteRecurrenceTool(engine, fakeConfirmDef())
+	handle := BuildDeleteRecurrenceTool(engine, fakeDestructiveManageDef())
 
 	argsJSON, _ := json.Marshal(DeleteRecurrenceInput{TemplateID: uuid.New().String(), Version: 1})
 	out, _, err := handle.Invoke(inboundCtx(), argsJSON)
@@ -819,58 +807,58 @@ func TestBuildDeleteRecurrenceTool_AlreadyExists(t *testing.T) {
 	assert.Contains(t, result.ImpactNote, "pendente")
 }
 
-func TestBuildUpdateCardTool_DirectExecution_NoDueDay(t *testing.T) {
-	cardMock := imocks.NewCardManager(t)
+func TestBuildUpdateCardTool_NicknameOnlyNeedsConfirmation(t *testing.T) {
 	nickname := "Nubank"
-	cardMock.EXPECT().
-		UpdateCard(mock.Anything, mock.AnythingOfType("interfaces.CardUpdate")).
-		Return(interfaces.Card{ID: testResourceID.String()}, nil).Once()
-
-	engine := &fakeConfirmEngine{}
-	handle := BuildUpdateCardTool(engine, fakeConfirmDef(), cardMock)
+	engine := &fakeCardManageEngine{
+		startResult: wf.RunResult[workflows.CardManageState]{
+			State: workflows.CardManageState{ResponseText: "⚠️ Confirma a atualização?"},
+		},
+	}
+	handle := BuildUpdateCardTool(engine, fakeCardManageDef())
 	assert.Equal(t, "update_card", handle.ID())
 	assert.NotEmpty(t, handle.Description())
 
 	argsJSON, _ := json.Marshal(UpdateCardInput{CardID: testResourceID.String(), Version: 1, Nickname: &nickname})
-	out, verbatimText, err := handle.Invoke(inboundCtx(), argsJSON)
+	out, _, err := handle.Invoke(inboundCtx(), argsJSON)
 	require.NoError(t, err)
 
 	var result UpdateCardOutput
 	require.NoError(t, json.Unmarshal(out, &result))
-	assert.False(t, result.NeedsConfirmation)
-	assert.True(t, result.Executed)
-	assert.Empty(t, verbatimText)
+	assert.Equal(t, updateCardOutcomeNeedsConfirmation, result.Outcome)
+	assert.NotEmpty(t, result.ConfirmationPrompt)
+	assert.True(t, engine.startCalled)
+	assert.True(t, engine.lastState.NicknameProvided)
+	assert.False(t, engine.lastState.DueDayProvided)
 }
 
 func TestBuildUpdateCardTool_Gate_WithDueDay(t *testing.T) {
-	cardMock := imocks.NewCardManager(t)
-	engine := &fakeConfirmEngine{
-		startResult: wf.RunResult[workflows.ConfirmState]{Status: wf.RunStatusSuspended},
+	engine := &fakeCardManageEngine{
+		startResult: wf.RunResult[workflows.CardManageState]{
+			State: workflows.CardManageState{ResponseText: "⚠️ Confirma a atualização do vencimento?"},
+		},
 	}
 
-	handle := BuildUpdateCardTool(engine, fakeConfirmDef(), cardMock)
+	handle := BuildUpdateCardTool(engine, fakeCardManageDef())
 
 	dueDay := 15
 	argsJSON, _ := json.Marshal(UpdateCardInput{CardID: testResourceID.String(), Version: 1, DueDay: &dueDay})
-	out, verbatimText, err := handle.Invoke(inboundCtx(), argsJSON)
+	out, _, err := handle.Invoke(inboundCtx(), argsJSON)
 	require.NoError(t, err)
 
 	var result UpdateCardOutput
 	require.NoError(t, json.Unmarshal(out, &result))
-	assert.True(t, result.NeedsConfirmation)
-	assert.False(t, result.Executed)
-	assert.Contains(t, result.ImpactNote, "vencimento")
-	assert.NotEmpty(t, verbatimText)
-	assert.Equal(t, result.ImpactNote, verbatimText)
+	assert.Equal(t, updateCardOutcomeNeedsConfirmation, result.Outcome)
+	assert.Contains(t, result.ConfirmationPrompt, "vencimento")
+	assert.True(t, engine.lastState.DueDayProvided)
+	assert.Equal(t, dueDay, engine.lastState.DueDay)
 }
 
 func TestBuildUpdateCardTool_AlreadyExists(t *testing.T) {
-	cardMock := imocks.NewCardManager(t)
-	engine := &fakeConfirmEngine{
+	engine := &fakeCardManageEngine{
 		startErr: wf.ErrRunAlreadyExists,
 	}
 
-	handle := BuildUpdateCardTool(engine, fakeConfirmDef(), cardMock)
+	handle := BuildUpdateCardTool(engine, fakeCardManageDef())
 
 	dueDay := 20
 	argsJSON, _ := json.Marshal(UpdateCardInput{CardID: testResourceID.String(), Version: 1, DueDay: &dueDay})
@@ -879,8 +867,8 @@ func TestBuildUpdateCardTool_AlreadyExists(t *testing.T) {
 
 	var result UpdateCardOutput
 	require.NoError(t, json.Unmarshal(out, &result))
-	assert.True(t, result.NeedsConfirmation)
-	assert.Contains(t, result.ImpactNote, "pendente")
+	assert.Equal(t, updateCardOutcomePendingConfirmationExists, result.Outcome)
+	assert.Contains(t, result.ConfirmationPrompt, "pendente")
 }
 
 func TestRegisterIncomeOutput_OutcomeField_Replay(t *testing.T) {

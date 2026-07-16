@@ -46,7 +46,7 @@ func (s *TransactionsLedgerAdapterSuite) buildAdapter() agentsifaces.Transaction
 	entriesUoW := uowMocks.NewUnitOfWorkMonthlyEntries(s.T())
 	getMSUC := txusecases.NewGetMonthlySummary(s.factory, summUoW, o11y)
 	listMEUC := txusecases.NewListMonthlyEntries(s.factory, entriesUoW, o11y)
-	return NewTransactionsLedgerAdapter(nil, nil, nil, listMEUC, getMSUC, nil, nil, nil, nil, o11y)
+	return NewTransactionsLedgerAdapter(nil, nil, nil, listMEUC, getMSUC, nil, nil, nil, nil, nil, o11y)
 }
 
 func (s *TransactionsLedgerAdapterSuite) TestGetMonthlySummary_Success() {

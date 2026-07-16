@@ -58,13 +58,17 @@ type RawUpdateTransaction struct {
 }
 
 type MonthlyEntry struct {
-	Kind        EntryKind
-	ID          string
-	RefMonth    string
-	AmountCents int64
-	Direction   string
-	Description string
-	CreatedAt   time.Time
+	Kind                    EntryKind
+	ID                      string
+	RefMonth                string
+	AmountCents             int64
+	Direction               string
+	Description             string
+	CategoryID              string
+	SubcategoryID           *string
+	CategoryNameSnapshot    string
+	SubcategoryNameSnapshot string
+	CreatedAt               time.Time
 }
 
 type MonthlySummary struct {

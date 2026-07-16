@@ -12,7 +12,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/interfaces"
 )
 
-const _retentionInterval = "24 months"
+const retentionInterval = "24 months"
 
 type PurgeRetention struct {
 	factory   interfaces.RepositoryFactory
@@ -103,7 +103,7 @@ func (uc *PurgeRetention) hasPendingNonTerminal(ctx context.Context) (bool, erro
 func (uc *PurgeRetention) purgeExpenses(ctx context.Context) error {
 	_, err := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		expenses := uc.factory.ExpenseRepository(tx)
-		n, purgeErr := expenses.PurgeDeleted(ctx, _retentionInterval, uc.batchSize)
+		n, purgeErr := expenses.PurgeDeleted(ctx, retentionInterval, uc.batchSize)
 		if purgeErr != nil {
 			return struct{}{}, fmt.Errorf("budgets.usecase.purge_retention: purgar despesas: %w", purgeErr)
 		}
@@ -121,7 +121,7 @@ func (uc *PurgeRetention) purgeExpenses(ctx context.Context) error {
 func (uc *PurgeRetention) purgeAlerts(ctx context.Context) error {
 	_, err := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		alerts := uc.factory.AlertRepository(tx)
-		n, purgeErr := alerts.PurgeOld(ctx, _retentionInterval, uc.batchSize)
+		n, purgeErr := alerts.PurgeOld(ctx, retentionInterval, uc.batchSize)
 		if purgeErr != nil {
 			return struct{}{}, fmt.Errorf("budgets.usecase.purge_retention: purgar alertas: %w", purgeErr)
 		}

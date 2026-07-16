@@ -20,6 +20,12 @@ const (
 	CategoryAmbiguity       Category = "ambiguity"
 	CategoryWhatsAppFormat  Category = "whatsapp_format"
 	CategoryNoInternalTerms Category = "no_internal_terms"
+	CategoryBudgetTotal     Category = "budget_total"
+	CategoryGoal            Category = "goal"
+	CategoryCancelPlan      Category = "cancel_plan"
+	CategorySupport         Category = "support"
+	CategoryCategoryDetail  Category = "category_detail"
+	CategoryGeneralSummary  Category = "general_summary"
 )
 
 func (c Category) String() string {
@@ -30,7 +36,9 @@ func (c Category) IsValid() bool {
 	switch c {
 	case CategoryExpenseIncome, CategoryQuery, CategoryCard, CategoryBudget, CategoryRecurrence,
 		CategoryOnboarding, CategoryPending, CategoryConfirmation, CategoryFollowUp,
-		CategoryToolError, CategoryAmbiguity, CategoryWhatsAppFormat, CategoryNoInternalTerms:
+		CategoryToolError, CategoryAmbiguity, CategoryWhatsAppFormat, CategoryNoInternalTerms,
+		CategoryBudgetTotal, CategoryGoal, CategoryCancelPlan, CategorySupport,
+		CategoryCategoryDetail, CategoryGeneralSummary:
 		return true
 	default:
 		return false
@@ -52,6 +60,12 @@ func AllCategories() []Category {
 		CategoryAmbiguity,
 		CategoryWhatsAppFormat,
 		CategoryNoInternalTerms,
+		CategoryBudgetTotal,
+		CategoryGoal,
+		CategoryCancelPlan,
+		CategorySupport,
+		CategoryCategoryDetail,
+		CategoryGeneralSummary,
 	}
 }
 

@@ -16,4 +16,12 @@ type TransactionsLedger interface {
 	GetCardInvoice(ctx context.Context, cardID uuid.UUID, refMonth string) (CardInvoice, error)
 	SearchTransactions(ctx context.Context, userID uuid.UUID, query, refMonth string, limit int) ([]Entry, error)
 	GetTransaction(ctx context.Context, txID string) (Entry, error)
+	SearchEditCandidates(ctx context.Context, userID uuid.UUID, q EditCandidateQuery) ([]Entry, error)
+}
+
+type EditCandidateQuery struct {
+	AmountCents int64
+	Term        string
+	RefMonth    string
+	Limit       int
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -77,6 +78,30 @@ func (s *LLMProviderSuite) TestComplete_HappyPath() {
 	s.Equal(100, resp.PromptTokens)
 	s.Equal(50, resp.CompletionTokens)
 	s.False(resp.TruncatedByLength)
+}
+
+func (s *LLMProviderSuite) TestComplete_RetriesTransientPost() {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if attempts.Add(1) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{
+			"choices":[{"message":{"role":"assistant","content":"{\"result\":\"ok\"}"},"finish_reason":"stop"}],
+			"usage":{"prompt_tokens":1,"completion_tokens":1}
+		}`))
+	}))
+	defer server.Close()
+
+	sut := s.buildProvider(server)
+	resp, err := sut.Complete(s.ctx, Request{
+		Messages: []Message{{Role: "user", Content: "hello"}},
+	})
+
+	s.NoError(err)
+	s.Equal("{\"result\":\"ok\"}", resp.Content)
+	s.Equal(int32(2), attempts.Load())
 }
 
 func (s *LLMProviderSuite) TestComplete_WithSchema() {

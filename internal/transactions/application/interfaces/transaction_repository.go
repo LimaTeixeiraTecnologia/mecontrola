@@ -25,5 +25,6 @@ type TransactionRepository interface {
 	ExistsActiveCreditByCard(ctx context.Context, cardID, userID uuid.UUID) (bool, error)
 	ListByMonth(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth, cursor Cursor, limit int) ([]*entities.Transaction, Cursor, error)
 	SearchByDescription(ctx context.Context, userID uuid.UUID, q valueobjects.SearchQuery, refMonth option.Option[valueobjects.RefMonth], limit int) ([]*entities.Transaction, error)
+	SearchEditCandidates(ctx context.Context, userID uuid.UUID, amountCents int64, term string, refMonth valueobjects.RefMonth, limit int) ([]*entities.Transaction, error)
 	SumByMonthExcludingCredit(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth) (incomeCents, outcomeCents int64, err error)
 }

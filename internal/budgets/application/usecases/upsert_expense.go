@@ -62,7 +62,7 @@ func (uc *UpsertExpense) Execute(ctx context.Context, in input.UpsertExpenseInpu
 
 	cmd, err := commands.NewUpsertExpenseCommand(
 		in.UserID, in.SubcategoryID, in.Source, in.ExternalTransactionID,
-		in.Competence, in.AmountCents, in.OccurredAt, in.ExpectedVersion,
+		in.Competence, in.AmountCents, in.OccurredAt, in.ExpectedVersion, in.Reconcile,
 	)
 	if err != nil {
 		return output.ExpenseOutput{}, err
@@ -90,7 +90,7 @@ func (uc *UpsertExpense) ExecuteWithTx(ctx context.Context, tx database.DBTX, in
 
 	cmd, err := commands.NewUpsertExpenseCommand(
 		in.UserID, in.SubcategoryID, in.Source, in.ExternalTransactionID,
-		in.Competence, in.AmountCents, in.OccurredAt, in.ExpectedVersion,
+		in.Competence, in.AmountCents, in.OccurredAt, in.ExpectedVersion, in.Reconcile,
 	)
 	if err != nil {
 		return output.ExpenseOutput{}, err
@@ -145,6 +145,11 @@ func (uc *UpsertExpense) executeInTx(ctx context.Context, tx database.DBTX, cmd 
 
 	if existing.IsDeleted() {
 		return entities.Expense{}, interfaces.ErrExpenseTombstoneConflict
+	}
+
+	if cmd.Reconcile {
+		currentVersion := existing.Version()
+		cmd.ExpectedVersion = &currentVersion
 	}
 
 	if cmd.ExpectedVersion == nil {

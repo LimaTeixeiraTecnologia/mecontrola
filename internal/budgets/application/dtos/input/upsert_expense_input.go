@@ -16,6 +16,7 @@ type UpsertExpenseInput struct {
 	AmountCents           int64
 	OccurredAt            time.Time
 	ExpectedVersion       *int64
+	Reconcile             bool
 }
 
 func (i *UpsertExpenseInput) Validate() error {

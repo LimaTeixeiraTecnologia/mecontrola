@@ -108,3 +108,81 @@ func (s *BudgetSuite) TestActivate() {
 		})
 	}
 }
+
+func (s *BudgetSuite) TestChangeTotal() {
+	type testCase struct {
+		name          string
+		active        bool
+		newTotalCents int64
+		allocations   []entities.Allocation
+		wantErr       bool
+		errTarget     error
+	}
+
+	cases := []testCase{
+		{
+			name:          "muda total com soma 10000",
+			active:        true,
+			newTotalCents: 20000,
+			allocations: []entities.Allocation{
+				entities.NewAllocation(uuid.New(), valueobjects.RootSlugCustoFixo, 6000, 12000),
+				entities.NewAllocation(uuid.New(), valueobjects.RootSlugConhecimento, 4000, 8000),
+			},
+			wantErr: false,
+		},
+		{
+			name:          "falha se orçamento não ativo",
+			active:        false,
+			newTotalCents: 20000,
+			allocations: []entities.Allocation{
+				entities.NewAllocation(uuid.New(), valueobjects.RootSlugCustoFixo, 10000, 20000),
+			},
+			wantErr:   true,
+			errTarget: entities.ErrBudgetNotActive,
+		},
+		{
+			name:          "falha se total novo <= 0",
+			active:        true,
+			newTotalCents: 0,
+			allocations: []entities.Allocation{
+				entities.NewAllocation(uuid.New(), valueobjects.RootSlugCustoFixo, 10000, 0),
+			},
+			wantErr:   true,
+			errTarget: entities.ErrBudgetTotalMustBePositive,
+		},
+		{
+			name:          "falha se soma de allocations != 10000",
+			active:        true,
+			newTotalCents: 20000,
+			allocations: []entities.Allocation{
+				entities.NewAllocation(uuid.New(), valueobjects.RootSlugCustoFixo, 5000, 10000),
+			},
+			wantErr:   true,
+			errTarget: entities.ErrBudgetAllocationSumMustBe10000,
+		},
+	}
+
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			b := entities.NewBudget(s.userID, s.competence, 10000, s.now)
+			b.SetAllocations([]entities.Allocation{
+				entities.NewAllocation(uuid.New(), valueobjects.RootSlugCustoFixo, 10000, 10000),
+			})
+			if tc.active {
+				s.Require().NoError(b.Activate(s.now))
+			}
+
+			err := b.ChangeTotal(tc.newTotalCents, tc.allocations, s.now)
+			if tc.wantErr {
+				s.Error(err)
+				if tc.errTarget != nil {
+					s.ErrorIs(err, tc.errTarget)
+				}
+				return
+			}
+			s.NoError(err)
+			s.Equal(tc.newTotalCents, b.TotalCents())
+			s.Equal(tc.allocations, b.Allocations())
+		})
+	}
+}

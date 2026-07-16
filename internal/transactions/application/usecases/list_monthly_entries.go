@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
+	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
@@ -63,15 +64,28 @@ func (uc *ListMonthlyEntries) Execute(ctx context.Context, refMonthStr, cursor s
 
 		items := make([]any, 0, len(entries))
 		for _, e := range entries {
+			var subID *string
+			if e.SubcategoryID != nil {
+				s := e.SubcategoryID.String()
+				subID = &s
+			}
+			var catID string
+			if e.CategoryID != uuid.Nil {
+				catID = e.CategoryID.String()
+			}
 			items = append(items, output.MonthlyEntry{
-				Kind:        e.Kind,
-				ID:          e.ID,
-				UserID:      e.UserID.String(),
-				RefMonth:    e.RefMonth,
-				AmountCents: e.AmountCents,
-				Direction:   e.Direction,
-				Description: e.Description,
-				CreatedAt:   e.CreatedAt,
+				Kind:                    e.Kind,
+				ID:                      e.ID,
+				UserID:                  e.UserID.String(),
+				RefMonth:                e.RefMonth,
+				AmountCents:             e.AmountCents,
+				Direction:               e.Direction,
+				Description:             e.Description,
+				CategoryID:              catID,
+				SubcategoryID:           subID,
+				CategoryNameSnapshot:    e.CategoryNameSnapshot,
+				SubcategoryNameSnapshot: e.SubcategoryNameSnapshot,
+				CreatedAt:               e.CreatedAt,
 			})
 		}
 

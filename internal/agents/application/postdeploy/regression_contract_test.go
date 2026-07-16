@@ -19,14 +19,15 @@ func TestRegressionContractSuite(t *testing.T) {
 
 func (s *RegressionContractSuite) TestRegisteredWorkflowIDsMatchProductionConstants() {
 	realIDs := []string{
-		workflows.BudgetCreationWorkflowID,
-		workflows.CardCreateConfirmWorkflowID,
-		workflows.DestructiveConfirmWorkflowID,
+		workflows.BudgetManageWorkflowID,
+		workflows.CardManageWorkflowID,
+		workflows.DestructiveManageWorkflowID,
+		workflows.GoalEditWorkflowID,
 		workflows.OnboardingWorkflowID,
-		workflows.PendingEntryWorkflowID,
+		workflows.TransactionWriteWorkflowID,
 	}
 
-	s.Empty(MissingFrom(RegisteredWorkflows, realIDs), "workflow removido/renomeado sem história própria (RF-54)")
+	s.Empty(MissingFrom(RegisteredWorkflows, realIDs), "workflow removido/renomeado sem história própria (RF-27)")
 	s.Empty(MissingFrom(realIDs, RegisteredWorkflows), "novo workflow em produção não coberto pelo inventário de regressão")
 }
 
@@ -101,33 +102,25 @@ func (s *RegressionContractSuite) TestExtraInDetectsUndocumentedAddition() {
 }
 
 func (s *RegressionContractSuite) TestRegisteredToolsCountMatchesInventory() {
-	s.Len(RegisteredTools, 25, "inventário de tools deve refletir exatamente as tools ativas em module.go (RF-54)")
+	s.Len(RegisteredTools, 30, "inventário de tools deve refletir exatamente as tools ativas em module.go (RF-27)")
 }
 
 func (s *RegressionContractSuite) TestRegisteredScorersCountMatchesInventory() {
-	s.Len(RegisteredScorers, 11, "3 scorers de continuidade (RF-29) + 9 comportamentais (RF-30)")
+	s.Len(RegisteredScorers, len(scorers.BuildMeControlaScorers(nil)), "inventário de scorers deve refletir exatamente os scorers ativos em BuildMeControlaScorers (RF-29/RF-30)")
 }
 
 func (s *RegressionContractSuite) TestRegisteredScorerIDsMatchProductionConstructors() {
-	realIDs := []string{
-		scorers.NewFinancialToolCallAccuracyScorer().ID(),
-		scorers.NewFinancialCompletenessScorer().ID(),
-		scorers.NewCategorizationScorer(nil).ID(),
-		scorers.NewNoEmptyAnswerScorer().ID(),
-		scorers.NewWhatsAppFormatScorer().ID(),
-		scorers.NewNoInternalTermsScorer().ID(),
-		scorers.NewVerbatimRequiredScorer().ID(),
-		scorers.NewNoDuplicateWriteScorer().ID(),
-		scorers.NewNoHallucinationScorer().ID(),
-		scorers.NewRequiredArgsScorer().ID(),
-		scorers.NewMonthReferenceCorrectnessScorer().ID(),
+	entries := scorers.BuildMeControlaScorers(nil)
+	realIDs := make([]string, 0, len(entries))
+	for _, e := range entries {
+		realIDs = append(realIDs, e.ScorerID())
 	}
 
-	s.Empty(MissingFrom(RegisteredScorers, realIDs), "scorer removido/renomeado sem história própria (RF-54)")
-	s.Empty(MissingFrom(realIDs, RegisteredScorers), "novo scorer em produção não coberto pelo inventário de regressão")
-	s.ElementsMatch(RegisteredScorers, realIDs, "os 11 scorers de BuildMeControlaScorers (RF-29+RF-30) devem bater 1:1 com o inventário")
+	s.Empty(MissingFrom(RegisteredScorers, realIDs), "scorer removido/renomeado sem história própria (RF-29)")
+	s.Empty(MissingFrom(realIDs, RegisteredScorers), "novo scorer em produção não coberto pelo inventário de regressão (RF-30)")
+	s.ElementsMatch(RegisteredScorers, realIDs, "os scorers de BuildMeControlaScorers (RF-29/RF-30) devem bater 1:1 com o inventário")
 }
 
 func (s *RegressionContractSuite) TestCoveredExistingFlowsMatchesPRDEnumeration() {
-	s.Len(CoveredExistingFlows, 18, "RF-56 enumera 18 fluxos existentes que devem continuar cobertos")
+	s.Len(CoveredExistingFlows, 18, "RF-27 exige que os 18 fluxos existentes continuem cobertos")
 }

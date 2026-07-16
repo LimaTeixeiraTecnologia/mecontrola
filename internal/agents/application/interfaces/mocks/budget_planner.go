@@ -300,6 +300,75 @@ func (_c *BudgetPlanner_DeleteDraftBudget_Call) RunAndReturn(run func(ctx contex
 	return _c
 }
 
+// EditBudgetTotal provides a mock function for the type BudgetPlanner
+func (_mock *BudgetPlanner) EditBudgetTotal(ctx context.Context, userID uuid.UUID, competence string, totalCents int64) error {
+	ret := _mock.Called(ctx, userID, competence, totalCents)
+
+	if len(ret) == 0 {
+		panic("no return value specified for EditBudgetTotal")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string, int64) error); ok {
+		r0 = returnFunc(ctx, userID, competence, totalCents)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// BudgetPlanner_EditBudgetTotal_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'EditBudgetTotal'
+type BudgetPlanner_EditBudgetTotal_Call struct {
+	*mock.Call
+}
+
+// EditBudgetTotal is a helper method to define mock.On call
+//   - ctx context.Context
+//   - userID uuid.UUID
+//   - competence string
+//   - totalCents int64
+func (_e *BudgetPlanner_Expecter) EditBudgetTotal(ctx any, userID any, competence any, totalCents any) *BudgetPlanner_EditBudgetTotal_Call {
+	return &BudgetPlanner_EditBudgetTotal_Call{Call: _e.mock.On("EditBudgetTotal", ctx, userID, competence, totalCents)}
+}
+
+func (_c *BudgetPlanner_EditBudgetTotal_Call) Run(run func(ctx context.Context, userID uuid.UUID, competence string, totalCents int64)) *BudgetPlanner_EditBudgetTotal_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 int64
+		if args[3] != nil {
+			arg3 = args[3].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *BudgetPlanner_EditBudgetTotal_Call) Return(err error) *BudgetPlanner_EditBudgetTotal_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *BudgetPlanner_EditBudgetTotal_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, competence string, totalCents int64) error) *BudgetPlanner_EditBudgetTotal_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // EditCategoryPercentage provides a mock function for the type BudgetPlanner
 func (_mock *BudgetPlanner) EditCategoryPercentage(ctx context.Context, userID uuid.UUID, competence string, rootSlug string, percentage int) error {
 	ret := _mock.Called(ctx, userID, competence, rootSlug, percentage)

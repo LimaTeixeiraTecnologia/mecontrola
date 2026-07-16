@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -37,7 +36,7 @@ type CreateCardOutput struct {
 	ClarifyPrompt      string `json:"clarifyPrompt"`
 }
 
-func BuildCreateCardTool(engine wf.Engine[workflows.CardCreateState], def wf.Definition[workflows.CardCreateState], cards interfaces.CardManager) tool.ToolHandle {
+func BuildCreateCardTool(engine wf.Engine[workflows.CardManageState], def wf.Definition[workflows.CardManageState], cards interfaces.CardManager) tool.ToolHandle {
 	in := llm.Schema{
 		Name:   "create_card_input",
 		Strict: false,
@@ -70,7 +69,7 @@ func BuildCreateCardTool(engine wf.Engine[workflows.CardCreateState], def wf.Def
 	return tool.NewTool[CreateCardInput, CreateCardOutput]("create_card", "Cadastra um novo 💳 de crédito pela conversa. Requer confirmação humana explícita antes de criar.", in, out, exec)
 }
 
-func buildCreateCardExec(engine wf.Engine[workflows.CardCreateState], def wf.Definition[workflows.CardCreateState], cards interfaces.CardManager) func(context.Context, CreateCardInput) (CreateCardOutput, error) {
+func buildCreateCardExec(engine wf.Engine[workflows.CardManageState], def wf.Definition[workflows.CardManageState], cards interfaces.CardManager) func(context.Context, CreateCardInput) (CreateCardOutput, error) {
 	return func(ctx context.Context, in CreateCardInput) (CreateCardOutput, error) {
 		rc, ok := wf.RuntimeFrom(ctx)
 		if !ok {
@@ -115,21 +114,23 @@ func buildCreateCardExec(engine wf.Engine[workflows.CardCreateState], def wf.Def
 			closingDayProvided = true
 		}
 
-		state := workflows.CardCreateState{
-			Status:             workflows.CardCreateStatusActive,
-			Awaiting:           workflows.AwaitingConfirm,
+		state := workflows.CardManageState{
+			Status:             workflows.CardManageActive,
+			Operation:          workflows.CardManageOpCreate,
 			UserID:             userID,
 			Nickname:           in.Nickname,
+			NicknameProvided:   true,
 			Bank:               in.Bank,
+			BankProvided:       true,
 			DueDay:             in.DueDay,
+			DueDayProvided:     true,
 			ClosingDay:         closingDay,
 			ClosingDayProvided: closingDayProvided,
 			MessageID:          req.MessageID,
-			SuspendedAt:        time.Now().UTC(),
 		}
 
-		key := workflows.CardCreateKey(req.ResourceID)
-		_, err = engine.Start(ctx, def, key, state)
+		key := workflows.CardManageKey(req.ResourceID, req.ThreadID)
+		result, err := engine.Start(ctx, def, key, state)
 		if err != nil && !errors.Is(err, wf.ErrRunAlreadyExists) {
 			return CreateCardOutput{}, fmt.Errorf("agents.tool.create_card: iniciar confirmação: %w", err)
 		}
@@ -142,7 +143,7 @@ func buildCreateCardExec(engine wf.Engine[workflows.CardCreateState], def wf.Def
 
 		return CreateCardOutput{
 			Outcome:            createCardOutcomeNeedsConfirmation,
-			ConfirmationPrompt: createCardConfirmationPrompt(state),
+			ConfirmationPrompt: result.State.ResponseText,
 		}, nil
 	}
 }
@@ -158,12 +159,4 @@ func createCardMissingSlot(in CreateCardInput) (string, bool) {
 		return "Qual é o dia de vencimento da fatura desse 💳?", true
 	}
 	return "", false
-}
-
-func createCardConfirmationPrompt(state workflows.CardCreateState) string {
-	base := fmt.Sprintf("⚠️ Confirma o cadastro do 💳 *%s* (%s), vencimento dia %d?", state.Nickname, state.Bank, state.DueDay)
-	if state.ClosingDayProvided {
-		base = fmt.Sprintf("%s Fechamento dia %d.", base, state.ClosingDay)
-	}
-	return base + "\n\nResponda *sim* para confirmar ou *não* para cancelar."
 }

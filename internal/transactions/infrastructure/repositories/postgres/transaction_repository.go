@@ -387,6 +387,52 @@ func (r *transactionRepository) SearchByDescription(ctx context.Context, userID 
 	return txs, nil
 }
 
+func (r *transactionRepository) SearchEditCandidates(ctx context.Context, userID uuid.UUID, amountCents int64, term string, refMonth valueobjects.RefMonth, limit int) ([]*entities.Transaction, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "transactions.repository.transaction.search_edit_candidates")
+	defer span.End()
+
+	if limit <= 0 {
+		limit = defaultSearchLimit
+	}
+	if limit > maxSearchLimit {
+		limit = maxSearchLimit
+	}
+
+	const query = `
+		SELECT id, user_id, direction, payment_method, amount_cents, description,
+		       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
+		       category_kind, category_path, category_outcome, category_score,
+		       category_confidence, category_match_quality, category_signal_type,
+		       category_matched_term, category_match_reason, category_decision_source,
+		       category_editorial_version, category_decided_at,
+		       ref_month, occurred_at, version, deleted_at, created_at, updated_at,
+		       card_id, installments_total, card_closing_day, card_due_day
+		  FROM mecontrola.transactions
+		 WHERE user_id = $1 AND deleted_at IS NULL
+		   AND ref_month = $2
+		   AND (
+		         ($3::bigint > 0 AND amount_cents = $3)
+		         OR ($4::text <> '' AND description ILIKE '%' || $4 || '%')
+		       )
+		 ORDER BY created_at DESC
+		 LIMIT $5
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, userID, refMonth.String(), amountCents, term, limit)
+	if err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("transactions/repository: buscar candidatos de edição: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	txs, err := r.scanRows(rows)
+	if err != nil {
+		span.RecordError(err)
+		return nil, err
+	}
+	return txs, nil
+}
+
 func (r *transactionRepository) SumByMonthExcludingCredit(ctx context.Context, userID uuid.UUID, refMonth valueobjects.RefMonth) (int64, int64, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "transactions.repository.transaction.sum_by_month_excluding_credit")
 	defer span.End()

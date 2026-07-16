@@ -51,7 +51,7 @@ type CreateBudgetToolOutput struct {
 	ClarifyPrompt      string `json:"clarifyPrompt"`
 }
 
-func BuildCreateBudgetTool(engine wf.Engine[workflows.BudgetCreationState], def wf.Definition[workflows.BudgetCreationState]) tool.ToolHandle {
+func BuildCreateBudgetTool(engine wf.Engine[workflows.BudgetManageState], def wf.Definition[workflows.BudgetManageState]) tool.ToolHandle {
 	in := llm.Schema{
 		Name:   "create_budget_input",
 		Strict: false,
@@ -90,7 +90,7 @@ func BuildCreateBudgetTool(engine wf.Engine[workflows.BudgetCreationState], def 
 	return tool.NewTool[CreateBudgetToolInput, CreateBudgetToolOutput]("create_budget", "Inicia a criação conversacional de um orçamento mensal (inclusive retroativo), coletando total e distribuição por categoria até a confirmação.", in, out, exec)
 }
 
-func buildCreateBudgetExec(engine wf.Engine[workflows.BudgetCreationState], def wf.Definition[workflows.BudgetCreationState]) func(context.Context, CreateBudgetToolInput) (CreateBudgetToolOutput, error) {
+func buildCreateBudgetExec(engine wf.Engine[workflows.BudgetManageState], def wf.Definition[workflows.BudgetManageState]) func(context.Context, CreateBudgetToolInput) (CreateBudgetToolOutput, error) {
 	return func(ctx context.Context, in CreateBudgetToolInput) (CreateBudgetToolOutput, error) {
 		if err := in.Validate(); err != nil {
 			return CreateBudgetToolOutput{}, fmt.Errorf("agents.tool.create_budget: input inválido: %w", err)
@@ -132,17 +132,16 @@ func buildCreateBudgetExec(engine wf.Engine[workflows.BudgetCreationState], def 
 			}, nil
 		}
 
-		state := workflows.BudgetCreationState{
-			Status:      workflows.BudgetCreationActive,
-			Awaiting:    workflows.AwaitingBudgetTotal,
-			UserID:      userID,
-			Competence:  competence.String(),
-			TotalCents:  in.TotalCents,
-			MessageID:   req.MessageID,
-			SuspendedAt: time.Now().UTC(),
+		state := workflows.BudgetManageState{
+			Status:     workflows.BudgetManageActive,
+			Operation:  workflows.BudgetManageOpCreateRetroactive,
+			UserID:     userID,
+			Competence: competence.String(),
+			TotalCents: in.TotalCents,
+			MessageID:  req.MessageID,
 		}
 
-		key := workflows.BudgetCreationKey(req.ResourceID)
+		key := workflows.BudgetManageKey(req.ResourceID, req.ThreadID)
 		result, startErr := engine.Start(ctx, def, key, state)
 		if startErr != nil && !errors.Is(startErr, wf.ErrRunAlreadyExists) {
 			return CreateBudgetToolOutput{}, fmt.Errorf("agents.tool.create_budget: iniciar workflow: %w", startErr)

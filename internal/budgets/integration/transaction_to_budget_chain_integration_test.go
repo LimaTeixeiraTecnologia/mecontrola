@@ -29,13 +29,18 @@ import (
 )
 
 const (
-	prazerosRootCategoryID = "ac535261-4060-56ef-b2e8-57c8cc7032d1"
-	deliverySubcategoryID  = "ddbb0dc7-8b85-5177-8cfc-3bb2aed6c75c"
-	transactionCreatedType = "transactions.transaction.created.v1"
-	expectedAmountCents    = int64(5800)
-	expectedCompetence     = "2026-06"
-	expectedRootSlugStored = "expense.prazeres"
-	consumerLockedBy       = "chain-test-consumer"
+	prazerosRootCategoryID  = "ac535261-4060-56ef-b2e8-57c8cc7032d1"
+	deliverySubcategoryID   = "ddbb0dc7-8b85-5177-8cfc-3bb2aed6c75c"
+	custoFixoRootCategoryID = "66cb85a0-3266-5900-b8e3-13cdcd00ab62"
+	aluguelSubcategoryID    = "c2fda6a3-c329-52c8-81ea-771b6ea4f365"
+	transactionCreatedType  = "transactions.transaction.created.v1"
+	transactionUpdatedType  = "transactions.transaction.updated.v1"
+	expectedAmountCents     = int64(5800)
+	updatedAmountCents      = int64(9200)
+	expectedCompetence      = "2026-06"
+	expectedRootSlugStored  = "expense.prazeres"
+	movedRootSlugStored     = "expense.custo_fixo"
+	consumerLockedBy        = "chain-test-consumer"
 )
 
 type envelopeEvent struct {
@@ -207,6 +212,116 @@ func (s *TransactionToBudgetChainSuite) assertExpensePersisted(ctx context.Conte
 	s.Equal("transactions", gotSource)
 }
 
+func (s *TransactionToBudgetChainSuite) TestUpdateChain_ReconciliationMovesValueBetweenRootCategories() {
+	mgr, _ := testcontainer.Postgres(s.T())
+	o11y := noop.NewProvider()
+	cfg := s.buildConfig()
+	authMW := func(h http.Handler) http.Handler { return h }
+	ctx := context.Background()
+
+	categoriesModule := categories.NewCategoriesModule(mgr, o11y, authMW)
+	cardModule, err := card.NewCardModule(ctx, cfg, o11y, mgr, authMW, nil, nil)
+	s.Require().NoError(err)
+	txModule, err := transactions.NewTransactionsModule(cfg, o11y, mgr, cardModule, categoriesModule, authMW)
+	s.Require().NoError(err)
+	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil)
+	s.Require().NoError(err)
+	s.Require().NotNil(budgetsModule.TransactionUpdatedConsumer, "TransactionUpdatedConsumer deve estar wired")
+
+	userID := uuid.New()
+	principalCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: userID, Source: auth.SourceWhatsApp})
+	subID := uuid.MustParse(deliverySubcategoryID)
+	raw := txinput.RawCreateTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "pix",
+		AmountCents:   expectedAmountCents,
+		Description:   "delivery a editar",
+		CategoryID:    uuid.MustParse(prazerosRootCategoryID),
+		SubcategoryID: &subID,
+		OccurredAt:    time.Date(2026, time.June, 17, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
+	}
+	created, err := txModule.CreateTransactionUC.Execute(principalCtx, raw)
+	s.Require().NoError(err)
+	txID := created.ID.String()
+
+	createEnvelope := s.claimTransactionCreatedEnvelope(ctx, mgr, txID)
+	createEvent := &envelopeEvent{eventType: transactionCreatedType, envelope: createEnvelope}
+	s.Require().NoError(budgetsModule.TransactionCreatedConsumer.Handle(ctx, platformevents.Event(createEvent)))
+	s.assertExpensePersisted(ctx, mgr, userID, txID)
+
+	newSubID := uuid.MustParse(aluguelSubcategoryID)
+	updateRaw := txinput.RawUpdateTransaction{
+		Direction:     "outcome",
+		PaymentMethod: "pix",
+		AmountCents:   updatedAmountCents,
+		Description:   "delivery a editar",
+		CategoryID:    uuid.MustParse(custoFixoRootCategoryID),
+		SubcategoryID: &newSubID,
+		OccurredAt:    time.Date(2026, time.June, 17, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		Version:       1,
+	}
+	_, err = txModule.UpdateTransactionUC.Execute(principalCtx, txID, updateRaw)
+	s.Require().NoError(err, "editar transaction")
+
+	updateEnvelope := s.claimTransactionUpdatedEnvelope(ctx, mgr, txID)
+	updateEvent := &envelopeEvent{eventType: transactionUpdatedType, envelope: updateEnvelope}
+	s.Require().NoError(
+		budgetsModule.TransactionUpdatedConsumer.Handle(ctx, platformevents.Event(updateEvent)),
+		"consumer real deve reconciliar o envelope de edição",
+	)
+
+	s.assertExpenseMoved(ctx, mgr, userID, txID)
+	s.assertMonthlySummaryReflectsEdit(ctx, budgetsModule, userID)
+}
+
+func (s *TransactionToBudgetChainSuite) claimTransactionUpdatedEnvelope(ctx context.Context, mgr *sqlx.DB, aggregateID string) outbox.Envelope {
+	storage := outbox.NewPostgresStorage(mgr)
+
+	for i := 0; i < 10; i++ {
+		rows, err := storage.ClaimBatch(ctx, consumerLockedBy+"-updated", 100)
+		s.Require().NoError(err)
+		if len(rows) == 0 {
+			break
+		}
+		for _, row := range rows {
+			if row.Type == transactionUpdatedType && row.AggregateID == aggregateID {
+				return outbox.Pack(row)
+			}
+			s.Require().NoError(storage.MarkPublished(ctx, row.ID), "marcar evento intermediario como publicado")
+		}
+	}
+	s.FailNowf("evento updated não encontrado no outbox", "aggregate=%s", aggregateID)
+	return outbox.Envelope{}
+}
+
+func (s *TransactionToBudgetChainSuite) assertExpenseMoved(ctx context.Context, mgr *sqlx.DB, userID uuid.UUID, externalTxID string) {
+	db := mgr
+	var (
+		gotAmount int64
+		gotRoot   string
+		gotSub    string
+	)
+	row := db.QueryRowContext(ctx,
+		`SELECT amount_cents, root_slug, subcategory_id
+		 FROM mecontrola.budgets_expenses
+		 WHERE user_id = $1 AND external_transaction_id = $2`,
+		userID, externalTxID,
+	)
+	s.Require().NoError(
+		row.Scan(&gotAmount, &gotRoot, &gotSub),
+		"despesa editada deve permanecer em mecontrola.budgets_expenses",
+	)
+	s.Equal(updatedAmountCents, gotAmount, "valor deve refletir a edição")
+	s.Equal(movedRootSlugStored, gotRoot, "root_slug deve mover para a nova categoria raiz")
+	s.Equal(aluguelSubcategoryID, gotSub, "subcategoria deve refletir a edição")
+}
+
+func (s *TransactionToBudgetChainSuite) assertMonthlySummaryReflectsEdit(ctx context.Context, budgetsModule *budgets.BudgetsModule, userID uuid.UUID) {
+	summary, err := budgetsModule.GetMonthlySummaryUC.Execute(ctx, userID.String(), expectedCompetence)
+	s.Require().NoError(err, "resumo mensal deve resolver")
+	s.Equal(updatedAmountCents, summary.TotalSpentCents, "gasto total deve refletir a edição")
+}
+
 func (s *TransactionToBudgetChainSuite) TestI6_DeleteChain_ExpenseSoftDeleted() {
 	mgr, _ := testcontainer.Postgres(s.T())
 	o11y := noop.NewProvider()
@@ -251,6 +366,73 @@ func (s *TransactionToBudgetChainSuite) TestI6_DeleteChain_ExpenseSoftDeleted() 
 	deleteEvent := &envelopeEvent{eventType: "transactions.transaction.deleted.v1", envelope: deleteEnvelope}
 	s.Require().NoError(budgetsModule.TransactionDeletedConsumer.Handle(ctx, platformevents.Event(deleteEvent)))
 	s.assertExpenseSoftDeleted(ctx, mgr, userID, txID)
+}
+
+func (s *TransactionToBudgetChainSuite) TestEditBudgetTotal_PersistsNewTotalAndRescaledAllocations() {
+	mgr, _ := testcontainer.Postgres(s.T())
+	o11y := noop.NewProvider()
+	cfg := s.buildConfig()
+	authMW := func(h http.Handler) http.Handler { return h }
+	ctx := context.Background()
+
+	categoriesModule := categories.NewCategoriesModule(mgr, o11y, authMW)
+	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil)
+	s.Require().NoError(err)
+	s.Require().NotNil(budgetsModule.EditBudgetTotalUC, "EditBudgetTotalUC deve estar wired")
+
+	userID := uuid.New()
+	s.ensureUserExists(ctx, mgr, userID)
+
+	_, err = budgetsModule.CreateBudgetUC.Execute(ctx, budgetinput.CreateBudgetInput{
+		UserID:     userID.String(),
+		Competence: expectedCompetence,
+		TotalCents: 100000,
+		Allocations: []budgetinput.AllocationInput{
+			{RootSlug: "expense.prazeres", BasisPoints: 6000},
+			{RootSlug: "expense.custo_fixo", BasisPoints: 4000},
+		},
+	})
+	s.Require().NoError(err)
+
+	_, err = budgetsModule.ActivateBudgetUC.Execute(ctx, budgetinput.ActivateBudgetInput{
+		UserID:     userID.String(),
+		Competence: expectedCompetence,
+	})
+	s.Require().NoError(err)
+
+	result, err := budgetsModule.EditBudgetTotalUC.Execute(ctx, budgetinput.EditBudgetTotalInput{
+		UserID:     userID.String(),
+		Competence: expectedCompetence,
+		TotalCents: 300000,
+	})
+	s.Require().NoError(err, "editar total do orçamento ativo")
+	s.Equal(int64(300000), result.TotalCents)
+
+	sum := int64(0)
+	for _, a := range result.Allocations {
+		sum += a.PlannedCents
+	}
+	s.Equal(int64(300000), sum, "soma das allocations deve fechar exatamente com o novo total")
+
+	var (
+		gotTotal int64
+		gotState int
+	)
+	row := mgr.QueryRowContext(ctx,
+		`SELECT total_cents, state FROM mecontrola.budgets WHERE user_id = $1 AND competence = $2`,
+		userID, expectedCompetence,
+	)
+	s.Require().NoError(row.Scan(&gotTotal, &gotState), "orçamento deve persistir o novo total")
+	s.Equal(int64(300000), gotTotal)
+	s.Equal(2, gotState)
+
+	var allocSum int64
+	sumRow := mgr.QueryRowContext(ctx,
+		`SELECT COALESCE(SUM(planned_cents), 0) FROM mecontrola.budgets_allocations WHERE budget_id = $1`,
+		result.ID,
+	)
+	s.Require().NoError(sumRow.Scan(&allocSum), "allocations persistidas devem somar o novo total")
+	s.Equal(int64(300000), allocSum)
 }
 
 func (s *TransactionToBudgetChainSuite) TestBudgetActivationPublishesOutboxEvent() {

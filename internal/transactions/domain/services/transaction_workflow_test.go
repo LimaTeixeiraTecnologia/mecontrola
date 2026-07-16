@@ -143,6 +143,25 @@ func (s *TransactionWorkflowSuite) TestDecideCreate_OutcomeSimple_NoCardArtifact
 	s.Nil(evt.Installments)
 }
 
+func (s *TransactionWorkflowSuite) TestDecideCreate_NewWalletMethods_NoCardArtifacts() {
+	for _, method := range []string{"transferencia", "apple_pay", "google_pay", "picpay", "mercado_pago", "cheque", "doc"} {
+		s.Run(method, func() {
+			cmd := s.simpleCreateCmd("outcome", method, 1500, s.now)
+
+			decision := s.sut.DecideCreate(cmd, option.None[valueobjects.CardBillingSnapshot](), valueobjects.CategoryWriteEvidence{}, uuid.New(), uuid.New(), s.createItemIDs(cmd), s.now)
+
+			s.Nil(decision.Items)
+			s.Nil(decision.InvoiceDeltas)
+			s.False(decision.Transaction.BillingSnapshot().IsPresent())
+
+			evt, ok := decision.Event.(entities.TransactionCreated)
+			s.Require().True(ok)
+			s.Equal(int64(1500), evt.AmountCents)
+			s.Nil(evt.Installments)
+		})
+	}
+}
+
 func (s *TransactionWorkflowSuite) TestDecideCreate_CreditCardSingleInstallment() {
 	purchasedAt := time.Date(2024, 1, 10, 0, 0, 0, 0, time.UTC)
 	cmd := s.cardCreateCmd(1000, 1, purchasedAt)
@@ -232,6 +251,33 @@ func (s *TransactionWorkflowSuite) TestDecideUpdate_NonCard_SameRefMonth() {
 	s.Require().True(ok)
 	s.Require().Len(evt.RefMonthsAffected, 1)
 	s.Equal("2024-03", evt.RefMonthsAffected[0].String())
+}
+
+func (s *TransactionWorkflowSuite) TestDecideUpdate_NonCard_SubcategorySerializedInEvent() {
+	cmd := s.simpleCreateCmd("outcome", "pix", 1000, s.now)
+	txID := uuid.New()
+	create := s.sut.DecideCreate(cmd, option.None[valueobjects.CardBillingSnapshot](), valueobjects.CategoryWriteEvidence{}, txID, uuid.New(), s.createItemIDs(cmd), s.now)
+
+	desc, _ := valueobjects.NewDescription("Updated")
+	subID := valueobjects.SubcategoryIDFromUUID(uuid.New())
+	updateCmd := commands.UpdateTransaction{
+		TransactionID: txID,
+		UserID:        cmd.UserID,
+		Direction:     cmd.Direction,
+		PaymentMethod: cmd.PaymentMethod,
+		Amount:        s.money(2000),
+		Description:   desc,
+		CategoryID:    valueobjects.CategoryIDFromUUID(uuid.New()),
+		SubcategoryID: option.Some(subID),
+		OccurredAt:    s.now,
+		Version:       1,
+	}
+
+	decision := s.sut.DecideUpdate(create.Transaction, nil, updateCmd, valueobjects.CategoryWriteEvidence{}, uuid.New(), s.updateItemIDs(updateCmd), s.now.Add(time.Hour))
+
+	evt, ok := decision.Event.(entities.TransactionUpdated)
+	s.Require().True(ok)
+	s.Equal(subID.UUID(), evt.SubcategoryID)
 }
 
 func (s *TransactionWorkflowSuite) TestDecideUpdate_NonCard_ChangedRefMonth() {

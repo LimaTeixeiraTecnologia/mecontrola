@@ -27,7 +27,7 @@ type DeleteRecurrenceOutput struct {
 	TargetKind        string `json:"targetKind"`
 }
 
-func BuildDeleteRecurrenceTool(engine wf.Engine[workflows.ConfirmState], def wf.Definition[workflows.ConfirmState]) tool.ToolHandle {
+func BuildDeleteRecurrenceTool(engine wf.Engine[workflows.DestructiveManageState], def wf.Definition[workflows.DestructiveManageState]) tool.ToolHandle {
 	in := llm.Schema{
 		Name:   "delete_recurrence_input",
 		Strict: true,
@@ -64,7 +64,7 @@ func extractDeleteRecurrenceVerbatim(o DeleteRecurrenceOutput) (string, bool) {
 	return o.ImpactNote, o.NeedsConfirmation && o.ImpactNote != ""
 }
 
-func buildDeleteRecurrenceExec(engine wf.Engine[workflows.ConfirmState], def wf.Definition[workflows.ConfirmState]) func(context.Context, DeleteRecurrenceInput) (DeleteRecurrenceOutput, error) {
+func buildDeleteRecurrenceExec(engine wf.Engine[workflows.DestructiveManageState], def wf.Definition[workflows.DestructiveManageState]) func(context.Context, DeleteRecurrenceInput) (DeleteRecurrenceOutput, error) {
 	return func(ctx context.Context, in DeleteRecurrenceInput) (DeleteRecurrenceOutput, error) {
 		rc, ok := wf.RuntimeFrom(ctx)
 		if !ok {
@@ -82,11 +82,10 @@ func buildDeleteRecurrenceExec(engine wf.Engine[workflows.ConfirmState], def wf.
 
 		impactNote := "Esta recorrência será removida permanentemente."
 
-		state := workflows.ConfirmState{
-			Awaiting:    workflows.AwaitingConfirm,
-			Operation:   workflows.OpDeleteRecurrence,
+		state := workflows.DestructiveManageState{
+			Status:      workflows.DestructiveManageActive,
+			Operation:   workflows.DestructiveOpDeleteRecurrence,
 			TargetRef:   in.TemplateID,
-			TargetKind:  "recurring_template",
 			ImpactNote:  impactNote,
 			MessageID:   req.MessageID,
 			SuspendedAt: time.Now().UTC(),
@@ -94,7 +93,7 @@ func buildDeleteRecurrenceExec(engine wf.Engine[workflows.ConfirmState], def wf.
 			Version:     in.Version,
 		}
 
-		key := workflows.DestructiveConfirmKey(req.ResourceID)
+		key := workflows.DestructiveManageKey(req.ResourceID, req.ThreadID)
 		_, err = engine.Start(ctx, def, key, state)
 		if err != nil && !errors.Is(err, wf.ErrRunAlreadyExists) {
 			return DeleteRecurrenceOutput{}, fmt.Errorf("agents.tool.delete_recurrence: iniciar confirmação: %w", err)

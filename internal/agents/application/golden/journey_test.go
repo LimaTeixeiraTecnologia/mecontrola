@@ -43,7 +43,11 @@ func (s *JourneyGoldenSuite) TestJourneyCasesAreRegisteredAndValid() {
 }
 
 func (s *JourneyGoldenSuite) TestJourneyCategoriesCovered() {
-	journeyCategories := []Category{CategoryOnboarding, CategoryBudget, CategoryExpenseIncome, CategoryPending, CategoryConfirmation}
+	journeyCategories := []Category{
+		CategoryOnboarding, CategoryBudget, CategoryExpenseIncome, CategoryPending, CategoryConfirmation,
+		CategoryQuery, CategoryCard, CategoryRecurrence, CategoryBudgetTotal, CategoryGoal,
+		CategoryCancelPlan, CategorySupport, CategoryCategoryDetail, CategoryGeneralSummary,
+	}
 	for _, category := range journeyCategories {
 		s.NotEmptyf(CasesByCategory(category), "categoria de jornada %q deve ter casos golden", category)
 	}
@@ -112,17 +116,17 @@ func (s *JourneyGoldenSuite) TestInvariantNoDefaultBudgetOverride() {
 }
 
 func (s *JourneyGoldenSuite) TestInvariantNoFalseSuccessOnEmptyResource() {
-	status, stepStatus, err := workflows.DecidePostWrite(agent.ToolOutcomeRouted, uuid.Nil)
+	status, stepStatus, err := workflows.DecideTransactionPostWrite(agent.ToolOutcomeRouted, uuid.Nil)
 	s.Require().Error(err)
 	s.ErrorIs(err, workflows.ErrWriteAcceptedWithoutResource)
 	s.Equal(workflow.StepStatusFailed, stepStatus)
-	s.Equal(workflows.PendingStatusActive, status)
-	s.NotEqual(workflows.PendingStatusCancelled, status, "escrita aceita sem recurso nunca vira Cancelled")
+	s.Equal(workflows.TransactionWriteStatusActive, status)
+	s.NotEqual(workflows.TransactionWriteStatusCancelled, status, "escrita aceita sem recurso nunca vira Cancelled")
 
-	okStatus, okStep, okErr := workflows.DecidePostWrite(agent.ToolOutcomeRouted, uuid.New())
+	okStatus, okStep, okErr := workflows.DecideTransactionPostWrite(agent.ToolOutcomeRouted, uuid.New())
 	s.Require().NoError(okErr)
 	s.Equal(workflow.StepStatusCompleted, okStep)
-	s.Equal(workflows.PendingStatusCompleted, okStatus)
+	s.Equal(workflows.TransactionWriteStatusCompleted, okStatus)
 }
 
 func (s *JourneyGoldenSuite) TestInvariantNoDuplicateConfirmationOrTransaction() {

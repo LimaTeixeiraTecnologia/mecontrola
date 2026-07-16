@@ -46,6 +46,7 @@ type BudgetsModule struct {
 	ExpenseCommittedConsumer   *consumers.ExpenseCommittedConsumer
 	ThresholdAlertNotifier     *consumers.ThresholdAlertNotifier
 	TransactionCreatedConsumer *consumers.TransactionCreatedConsumer
+	TransactionUpdatedConsumer *consumers.TransactionUpdatedConsumer
 	TransactionDeletedConsumer *consumers.TransactionDeletedConsumer
 	EventHandlers              []BudgetsEventHandlerRegistration
 	CreateBudgetUC             *usecases.CreateBudget
@@ -57,6 +58,7 @@ type BudgetsModule struct {
 	GetMonthlySummaryUC        *usecases.GetMonthlySummary
 	UpsertExpenseUC            *usecases.UpsertExpense
 	EditCategoryPercentageUC   *usecases.EditCategoryPercentage
+	EditBudgetTotalUC          *usecases.EditBudgetTotal
 	SuggestAllocationUC        *usecases.SuggestAllocation
 }
 
@@ -88,6 +90,7 @@ type moduleUseCases struct {
 	deleteExpense           *usecases.DeleteExpense
 	getMonthlySummary       *usecases.GetMonthlySummary
 	editCategoryPercentage  *usecases.EditCategoryPercentage
+	editBudgetTotal         *usecases.EditBudgetTotal
 	listAlerts              *usecases.ListAlerts
 	evaluateAlert           *usecases.EvaluateAlert
 	evaluateThresholdAlerts *usecases.EvaluateThresholdAlerts
@@ -131,6 +134,7 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 
 	expenseCommittedConsumer := consumers.NewExpenseCommittedConsumer(useCases.evaluateAlert, b.o11y)
 	transactionCreatedConsumer := consumers.NewTransactionCreatedConsumer(useCases.upsertExpense, b.o11y)
+	transactionUpdatedConsumer := consumers.NewTransactionUpdatedConsumer(useCases.upsertExpense, b.o11y)
 	transactionDeletedConsumer := consumers.NewTransactionDeletedConsumer(useCases.deleteExpense, b.o11y)
 
 	mode := strings.ToLower(strings.TrimSpace(b.cfg.BudgetsConfig.ThresholdAlertsMode))
@@ -142,6 +146,7 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 
 	eventHandlers := []BudgetsEventHandlerRegistration{
 		{EventType: "transactions.transaction.created.v1", Handler: transactionCreatedConsumer},
+		{EventType: "transactions.transaction.updated.v1", Handler: transactionUpdatedConsumer},
 		{EventType: "transactions.transaction.deleted.v1", Handler: transactionDeletedConsumer},
 	}
 	if legacyEnabled {
@@ -174,6 +179,7 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 		ExpenseCommittedConsumer:   expenseCommittedConsumer,
 		ThresholdAlertNotifier:     thresholdAlertNotifier,
 		TransactionCreatedConsumer: transactionCreatedConsumer,
+		TransactionUpdatedConsumer: transactionUpdatedConsumer,
 		TransactionDeletedConsumer: transactionDeletedConsumer,
 		EventHandlers:              eventHandlers,
 		CreateBudgetUC:             useCases.createBudget,
@@ -185,6 +191,7 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 		GetMonthlySummaryUC:        useCases.getMonthlySummary,
 		UpsertExpenseUC:            useCases.upsertExpense,
 		EditCategoryPercentageUC:   useCases.editCategoryPercentage,
+		EditBudgetTotalUC:          useCases.editBudgetTotal,
 		SuggestAllocationUC:        usecases.NewSuggestAllocation(),
 	}, nil
 }
@@ -217,6 +224,7 @@ func (b *moduleBuilder) buildUseCases(repositories moduleRepositories, categorie
 
 	budgetUoW := uow.NewUnitOfWork(b.db)
 	editCategoryUoW := uow.NewUnitOfWork(b.db)
+	editBudgetTotalUoW := uow.NewUnitOfWork(b.db)
 	expenseUoW := uow.NewUnitOfWork(b.db)
 	voidUoW := uow.NewUnitOfWork(b.db)
 	listAlertsUoW := uow.NewUnitOfWork(b.db)
@@ -254,6 +262,7 @@ func (b *moduleBuilder) buildUseCases(repositories moduleRepositories, categorie
 		deleteExpense:          deleteExpense,
 		getMonthlySummary:      usecases.NewGetMonthlySummary(repositories.factory, monthlySummaryUoW, b.o11y),
 		editCategoryPercentage: usecases.NewEditCategoryPercentage(repositories.factory, editCategoryUoW, b.o11y),
+		editBudgetTotal:        usecases.NewEditBudgetTotal(repositories.factory, editBudgetTotalUoW, b.o11y),
 		listAlerts:             usecases.NewListAlerts(repositories.factory, listAlertsUoW, b.o11y),
 		evaluateAlert:          usecases.NewEvaluateAlert(repositories.factory, voidUoW, b.o11y),
 		evaluateThresholdAlerts: usecases.NewEvaluateThresholdAlerts(

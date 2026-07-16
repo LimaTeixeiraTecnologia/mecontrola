@@ -23,6 +23,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	outboxmocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox/mocks"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 	wapayload "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/payload"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
@@ -39,13 +40,23 @@ func (f *fakeDB) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result,
 	return nil, nil
 }
 
-func TestBuildFinancialTools_ReturnsExactly25Tools(t *testing.T) {
-	tools := buildFinancialTools(nil, nil, nil, nil, nil, nil, workflow.Definition[workflows.ConfirmState]{}, nil, nil, workflow.Definition[workflows.CardCreateState]{}, nil, workflow.Definition[workflows.BudgetCreationState]{})
-	assert.Len(t, tools, 25)
+func testBuildFinancialToolsArgs() []tool.ToolHandle {
+	return buildFinancialTools(
+		nil, nil, nil, nil, nil, nil,
+		nil, workflow.Definition[workflows.DestructiveManageState]{},
+		nil, workflow.Definition[workflows.CardManageState]{},
+		nil, workflow.Definition[workflows.BudgetManageState]{},
+		nil, workflow.Definition[workflows.GoalEditState]{},
+	)
+}
+
+func TestBuildFinancialTools_ReturnsExactly30Tools(t *testing.T) {
+	tools := testBuildFinancialToolsArgs()
+	assert.Len(t, tools, 30)
 }
 
 func TestBuildFinancialTools_RegistersCreateCardTool(t *testing.T) {
-	tools := buildFinancialTools(nil, nil, nil, nil, nil, nil, workflow.Definition[workflows.ConfirmState]{}, nil, nil, workflow.Definition[workflows.CardCreateState]{}, nil, workflow.Definition[workflows.BudgetCreationState]{})
+	tools := testBuildFinancialToolsArgs()
 	ids := make([]string, 0, len(tools))
 	for _, tl := range tools {
 		ids = append(ids, tl.ID())
@@ -54,12 +65,25 @@ func TestBuildFinancialTools_RegistersCreateCardTool(t *testing.T) {
 }
 
 func TestBuildFinancialTools_RegistersCreateBudgetTool(t *testing.T) {
-	tools := buildFinancialTools(nil, nil, nil, nil, nil, nil, workflow.Definition[workflows.ConfirmState]{}, nil, nil, workflow.Definition[workflows.CardCreateState]{}, nil, workflow.Definition[workflows.BudgetCreationState]{})
+	tools := testBuildFinancialToolsArgs()
 	ids := make([]string, 0, len(tools))
 	for _, tl := range tools {
 		ids = append(ids, tl.ID())
 	}
 	assert.Contains(t, ids, "create_budget")
+}
+
+func TestBuildFinancialTools_RegistersNewTools(t *testing.T) {
+	tools := testBuildFinancialToolsArgs()
+	ids := make([]string, 0, len(tools))
+	for _, tl := range tools {
+		ids = append(ids, tl.ID())
+	}
+	assert.Contains(t, ids, "edit_budget_total")
+	assert.Contains(t, ids, "category_detail")
+	assert.Contains(t, ids, "cancel_plan_info")
+	assert.Contains(t, ids, "support_info")
+	assert.Contains(t, ids, "edit_goal")
 }
 
 func TestNewModule_RequiredDepsValidation(t *testing.T) {

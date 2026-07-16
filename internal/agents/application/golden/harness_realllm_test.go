@@ -307,13 +307,13 @@ var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
 		return goldenCaptureTool("edit_entry", "Inicia a edição de um lançamento pelo ID", goldenBaseSchema("entryId", "entryKind"), sink)
 	},
 	"delete_entry": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("delete_entry", "Solicita exclusão de lançamento ou 💳", goldenBaseSchema("targetRef", "targetKind"), sink)
+		return goldenCaptureTool("delete_entry", "Solicita exclusão de lançamento ou 💳; entryId DEVE ser o id real do lançamento ou o cardId real do 💳 (obtido via resolve_card quando o 💳 for identificado por apelido), nunca um valor inventado", goldenBaseSchema("entryId", "entryKind", "version"), sink)
 	},
 	"update_card": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("update_card", "Solicita atualização de 💳", goldenBaseSchema("cardId", "nickname", "dueDay"), sink)
 	},
 	"resolve_card": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("resolve_card", "Resolve o 💳 de crédito do usuário pelo apelido informado, retornando o cardId; use como etapa obrigatória antes de registrar compra no crédito OU antes de consultar a fatura do 💳.", goldenBaseSchema("nickname"), sink)
+		return goldenCaptureTool("resolve_card", "Resolve o 💳 de crédito do usuário pelo apelido informado, retornando o cardId; use como etapa obrigatória antes de registrar compra no crédito, antes de consultar a fatura do 💳, OU antes de excluir um 💳 identificado por apelido via delete_entry.", goldenBaseSchema("nickname"), sink)
 	},
 	"resolve_card_not_found":  goldenResolveCardNotFoundTool,
 	"create_budget":           goldenCreateBudgetTool,
@@ -322,6 +322,21 @@ var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
 	"query_month_ask_year":    goldenMonthAskYearTool,
 	"create_card": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("create_card", "Cadastra um novo 💳 de crédito pela conversa. Requer confirmação humana explícita antes de criar.", goldenBaseSchema("nickname", "bank", "dueDay", "closingDay"), sink)
+	},
+	"edit_budget_total": func(sink ToolCaptureSink) tool.ToolHandle {
+		return goldenCaptureTool("edit_budget_total", "Altera o valor total do orçamento mensal ativo, reescalando a distribuição proporcionalmente. Requer confirmação humana explícita.", goldenBaseSchema("refMonth", "newTotalCents"), sink)
+	},
+	"edit_goal": func(sink ToolCaptureSink) tool.ToolHandle {
+		return goldenCaptureTool("edit_goal", "Consulta e atualiza o objetivo financeiro do usuário, mantido como memória de trabalho. Requer confirmação humana explícita antes de reescrever.", goldenBaseSchema("newGoal"), sink)
+	},
+	"cancel_plan_info": func(sink ToolCaptureSink) tool.ToolHandle {
+		return goldenCaptureTool("cancel_plan_info", "Retorna o passo a passo oficial e verbatim de cancelamento de assinatura na Kiwify; não altera o estado da assinatura.", goldenBaseSchema(), sink)
+	},
+	"support_info": func(sink ToolCaptureSink) tool.ToolHandle {
+		return goldenCaptureTool("support_info", "Retorna as informações verbatim de contato do suporte (e-mail e prazo de resposta).", goldenBaseSchema(), sink)
+	},
+	"category_detail": func(sink ToolCaptureSink) tool.ToolHandle {
+		return goldenCaptureTool("category_detail", "Detalha os lançamentos, planejado, gasto e disponível/excedente de uma categoria do orçamento no mês.", goldenMonthRefSchema("rootSlug"), sink)
 	},
 }
 
@@ -407,7 +422,7 @@ func (s *GoldenRealLLMSuite) TestGoldenSetGate() {
 			t.Logf("categoria=%s ABAIXO do gate %.2f; falhas=%v", r.Category, goldenGateThreshold, r.Failures)
 		}
 	}
-	require.False(t, failed, "RF-39/RF-41: uma ou mais categorias do golden set ficaram abaixo do gate %.2f", goldenGateThreshold)
+	require.False(t, failed, "RF-29: uma ou mais categorias do golden set ficaram abaixo do gate %.2f", goldenGateThreshold)
 }
 
 func (s *GoldenRealLLMSuite) TestGoldenSetGate_ToolErrorCategory() {
@@ -433,6 +448,6 @@ func (s *GoldenRealLLMSuite) TestGoldenSetGate_ToolErrorCategory() {
 	results := AggregateByCategory(outcomes)
 	for _, r := range results {
 		t.Logf("categoria=%s hits=%d total=%d ratio=%.4f", r.Category, r.Hits, r.Total, r.Ratio())
-		require.True(t, r.PassesGate(goldenGateThreshold), "RF-39/RF-41: categoria %s abaixo do gate %.2f; falhas=%v", r.Category, goldenGateThreshold, r.Failures)
+		require.True(t, r.PassesGate(goldenGateThreshold), "RF-29: categoria %s abaixo do gate %.2f; falhas=%v", r.Category, goldenGateThreshold, r.Failures)
 	}
 }

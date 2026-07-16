@@ -80,6 +80,8 @@ var mecontrolaValidMonthRefKinds = map[string]bool{
 	"unknown":            true,
 }
 
+var mecontrolaToneEmojis = []string{"✅", "💰", "💳", "📂", "📥", "📊", "⚠️", "🚨", "🎉", "💚"}
+
 type noEmptyAnswerScorer struct{}
 
 func (s *noEmptyAnswerScorer) ID() string              { return "no_empty_answer" }
@@ -302,6 +304,47 @@ func (s *monthReferenceCorrectnessScorer) Score(_ context.Context, sample scorer
 	return scorer.ScoreResult{Score: 1.0, Reason: "monthRefKind presente e consistente nas tools de mês chamadas"}, nil
 }
 
+type verbatimToneAdherenceScorer struct{}
+
+func (s *verbatimToneAdherenceScorer) ID() string              { return "verbatim_tone_adherence" }
+func (s *verbatimToneAdherenceScorer) Kind() scorer.ScorerKind { return scorer.ScorerKindCodeBased }
+
+func (s *verbatimToneAdherenceScorer) Score(_ context.Context, sample scorer.RunSample) (scorer.ScoreResult, error) {
+	output := sample.Output
+	if strings.TrimSpace(output) == "" {
+		return scorer.ScoreResult{Score: 1.0, Reason: "resposta vazia; sem tom a avaliar"}, nil
+	}
+	if strings.Contains(output, "**") {
+		return scorer.ScoreResult{Score: 0.0, Reason: "usa negrito duplo (**) em vez de asterisco simples do Tom de Voz"}, nil
+	}
+	if strings.Count(output, "*")%2 != 0 {
+		return scorer.ScoreResult{
+			Score:  0.0,
+			Reason: "número ímpar de asteriscos; marcação de negrito mal formada",
+		}, nil
+	}
+	requiresEmoji, ok := sample.Metadata["requires_brand_emoji"].(bool)
+	if ok && requiresEmoji {
+		hasEmoji := false
+		for _, e := range mecontrolaToneEmojis {
+			if strings.Contains(output, e) {
+				hasEmoji = true
+				break
+			}
+		}
+		if !hasEmoji {
+			return scorer.ScoreResult{
+				Score:  0.0,
+				Reason: "resposta não contém nenhum emoji oficial do Tom de Voz",
+				Metadata: map[string]any{
+					"expected_any_of": mecontrolaToneEmojis,
+				},
+			}, nil
+		}
+	}
+	return scorer.ScoreResult{Score: 1.0, Reason: "aderente ao Tom de Voz (negrito simples e emojis oficiais)"}, nil
+}
+
 type expectedToolOracleScorer struct{}
 
 func (s *expectedToolOracleScorer) ID() string              { return "expected_tool" }
@@ -352,3 +395,5 @@ func NewRequiredArgsScorer() scorer.Scorer { return &requiredArgsScorer{} }
 func NewMonthReferenceCorrectnessScorer() scorer.Scorer { return &monthReferenceCorrectnessScorer{} }
 
 func NewExpectedToolOracleScorer() scorer.Scorer { return &expectedToolOracleScorer{} }
+
+func NewVerbatimToneAdherenceScorer() scorer.Scorer { return &verbatimToneAdherenceScorer{} }

@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-operacao-conversacional-diaria/8.0_execution_report.md
+summary: Tools reapontadas/criadas, wiring de module.go completo (engines/defs/registry/reapers/write-tool-set), prompt atualizado, testes ajustados; build/vet/test/race/lint/governanca verdes.
+timestamp: 2026-07-15T00:00:00Z

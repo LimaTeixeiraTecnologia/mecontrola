@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-operacao-conversacional-diaria/7.0_execution_report.md
+summary: "SuspendedRunIndex + WorkflowResumer + ResumeDispatcher substituem tryResumeChain; 5 workflows registrados via agent.WorkflowRegistry; consumer e module.go rewired."
+timestamp: "2026-07-15T00:00:00Z"

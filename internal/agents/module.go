@@ -166,6 +166,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		deps.BudgetsModule.ActivateBudgetUC,
 		deps.BudgetsModule.CreateRecurrenceUC,
 		deps.BudgetsModule.EditCategoryPercentageUC,
+		deps.BudgetsModule.EditBudgetTotalUC,
 		deps.BudgetsModule.GetMonthlySummaryUC,
 		deps.BudgetsModule.ListAlertsUC,
 		deps.BudgetsModule.SuggestAllocationUC,
@@ -180,6 +181,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		deps.TransactionsModule.GetTransactionUC,
 		deps.TransactionsModule.GetCardInvoiceUC,
 		deps.TransactionsModule.SearchTransactionsUC,
+		deps.TransactionsModule.SearchEditCandidatesUC,
 		deps.TransactionsModule.CreateRecurringTemplateUC,
 		deps.O11y,
 	)
@@ -192,12 +194,6 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	)
 	workflowStore := workflowpostgres.NewPostgresStore(deps.O11y, deps.DB)
 	onboardingEngine := workflow.NewEngine[workflows.OnboardingState](workflowStore, deps.O11y)
-	confirmEngine := workflow.NewEngine[workflows.ConfirmState](workflowStore, deps.O11y)
-	pendingEntryEngine := workflow.NewEngine[workflows.PendingEntryState](workflowStore, deps.O11y)
-	cardCreateEngine := workflow.NewEngine[workflows.CardCreateState](workflowStore, deps.O11y)
-	budgetCreationEngine := workflow.NewEngine[workflows.BudgetCreationState](workflowStore, deps.O11y)
-	pendingEntryDef := workflows.BuildPendingEntryWorkflowWithObservability(txLedger, cardManager, categoriesReader, idemAdapter, deps.O11y)
-	registerAttempt := usecases.NewRegisterAttempt(categoriesReader, txLedger, pendingEntryEngine, pendingEntryDef, deps.O11y)
 
 	threadGateway := memorypostgres.NewThreadRepository(deps.DB, deps.O11y)
 	rawMessageStore := memorypostgres.NewMessageRepository(deps.DB, deps.O11y)
@@ -205,12 +201,29 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	semanticRecall := memorypostgres.NewEmbeddingRepository(deps.DB, deps.O11y)
 
 	onboardingAgent := agentapplication.BuildMeControlaAgent(provider, nil, scoringHooks, deps.O11y, deps.AgentMaxTokens)
-	confirmDef := workflows.BuildDestructiveConfirmWorkflow(txLedger, cardManager, categoriesReader, recurrenceManager)
-	cardCreateDef := workflows.BuildCardCreateConfirmWorkflow(idemAdapter, cardManager)
-	budgetCreationAgent := agentapplication.BuildMeControlaAgent(provider, nil, scoringHooks, deps.O11y, deps.AgentMaxTokens)
-	budgetCreationDef := workflows.BuildBudgetCreationWorkflow(budgetCreationAgent, budgetPlanner)
+	budgetManageAgent := agentapplication.BuildMeControlaAgent(provider, nil, scoringHooks, deps.O11y, deps.AgentMaxTokens)
 
-	financialTools := buildFinancialTools(txLedger, cardManager, budgetPlanner, categoriesReader, recurrenceManager, confirmEngine, confirmDef, registerAttempt, cardCreateEngine, cardCreateDef, budgetCreationEngine, budgetCreationDef)
+	transactionWriteEngine := workflow.NewEngine[workflows.TransactionWriteState](workflowStore, deps.O11y)
+	budgetManageEngine := workflow.NewEngine[workflows.BudgetManageState](workflowStore, deps.O11y)
+	cardManageEngine := workflow.NewEngine[workflows.CardManageState](workflowStore, deps.O11y)
+	goalEditEngine := workflow.NewEngine[workflows.GoalEditState](workflowStore, deps.O11y)
+	destructiveManageEngine := workflow.NewEngine[workflows.DestructiveManageState](workflowStore, deps.O11y)
+
+	transactionWriteDef := workflows.BuildTransactionWriteWorkflowWithObservability(txLedger, cardManager, categoriesReader, idemAdapter, deps.O11y)
+	budgetManageDef := workflows.BuildBudgetManageWorkflow(budgetManageAgent, budgetPlanner)
+	cardManageDef := workflows.BuildCardManageWorkflow(cardManager, idemAdapter)
+	goalEditDef := workflows.BuildGoalEditWorkflow(workingMem)
+	destructiveManageDef := workflows.BuildDestructiveManageWorkflow(cardManager, recurrenceManager, txLedger)
+
+	transactionWriteStarter := usecases.NewTransactionWriteStarter(categoriesReader, txLedger, transactionWriteEngine, transactionWriteDef, deps.O11y)
+
+	financialTools := buildFinancialTools(
+		txLedger, cardManager, budgetPlanner, categoriesReader, recurrenceManager, transactionWriteStarter,
+		destructiveManageEngine, destructiveManageDef,
+		cardManageEngine, cardManageDef,
+		budgetManageEngine, budgetManageDef,
+		goalEditEngine, goalEditDef,
+	)
 	meControlaAgent := agentapplication.BuildMeControlaAgent(provider, financialTools, scoringHooks, deps.O11y, deps.AgentMaxTokens)
 
 	registry := agent.NewAgentRegistry()
@@ -232,38 +245,102 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 
 	runStore := agentpostgres.NewRunStore(deps.DB)
 	runtime := agent.NewAgentRuntime(registry, threadGateway, messageStore, workingMem, runStore, deps.O11y,
-		agent.WithWriteToolSet("register_expense", "register_income", "create_recurrence", "create_card"),
+		agent.WithWriteToolSet(
+			"register_expense", "register_income", "create_recurrence", "edit_entry",
+			"create_card", "update_card",
+			"create_budget", "edit_budget_total", "adjust_allocation",
+			"edit_goal",
+			"delete_entry", "delete_recurrence", "update_recurrence",
+		),
 	)
 	handleInbound := usecases.NewHandleInbound(runtime, deps.O11y)
 
 	resolveOnboarding := usecases.NewResolveOnboardingOrAgent(onboardingEngine, workflowStore, workingMem, onboardingDef, deps.O11y)
-	continueDestructive := usecases.NewDestructiveConfirmContinuer(confirmEngine, confirmDef, deps.O11y)
-	continuePendingEntry := usecases.NewPendingEntryContinuer(pendingEntryEngine, pendingEntryDef, threadGateway, runStore, deps.O11y)
-	continueCardCreate := usecases.NewCardCreateConfirmContinuer(cardCreateEngine, cardCreateDef, threadGateway, runStore, deps.O11y)
-	continueBudgetCreation := usecases.NewBudgetCreationContinuer(budgetCreationEngine, budgetCreationDef, threadGateway, runStore, deps.O11y)
+
+	transactionWriteRegistry := agent.NewWorkflowRegistry[workflows.TransactionWriteState]()
+	transactionWriteRegistry.Register(transactionWriteDef)
+	budgetManageRegistry := agent.NewWorkflowRegistry[workflows.BudgetManageState]()
+	budgetManageRegistry.Register(budgetManageDef)
+	cardManageRegistry := agent.NewWorkflowRegistry[workflows.CardManageState]()
+	cardManageRegistry.Register(cardManageDef)
+	goalEditRegistry := agent.NewWorkflowRegistry[workflows.GoalEditState]()
+	goalEditRegistry.Register(goalEditDef)
+	destructiveManageRegistry := agent.NewWorkflowRegistry[workflows.DestructiveManageState]()
+	destructiveManageRegistry.Register(destructiveManageDef)
+
+	transactionWriteResumer, err := usecases.NewWorkflowResumer(
+		workflows.TransactionWriteWorkflowID, transactionWriteRegistry, transactionWriteEngine,
+		workflows.TransactionWriteKey, workflows.ContinueTransactionWrite,
+	)
+	if err != nil {
+		return Module{}, fmt.Errorf("agents.module: transaction_write resumer: %w", err)
+	}
+	budgetManageResumer, err := usecases.NewWorkflowResumer(
+		workflows.BudgetManageWorkflowID, budgetManageRegistry, budgetManageEngine,
+		workflows.BudgetManageKey, workflows.ContinueBudgetManage,
+	)
+	if err != nil {
+		return Module{}, fmt.Errorf("agents.module: budget_manage resumer: %w", err)
+	}
+	cardManageResumer, err := usecases.NewWorkflowResumer(
+		workflows.CardManageWorkflowID, cardManageRegistry, cardManageEngine,
+		workflows.CardManageKey, workflows.ContinueCardManage,
+	)
+	if err != nil {
+		return Module{}, fmt.Errorf("agents.module: card_manage resumer: %w", err)
+	}
+	goalEditResumer, err := usecases.NewWorkflowResumer(
+		workflows.GoalEditWorkflowID, goalEditRegistry, goalEditEngine,
+		workflows.GoalEditKey, workflows.ContinueGoalEdit,
+	)
+	if err != nil {
+		return Module{}, fmt.Errorf("agents.module: goal_edit resumer: %w", err)
+	}
+	destructiveManageResumer, err := usecases.NewWorkflowResumer(
+		workflows.DestructiveManageWorkflowID, destructiveManageRegistry, destructiveManageEngine,
+		workflows.DestructiveManageKey, workflows.ContinueDestructiveManage,
+	)
+	if err != nil {
+		return Module{}, fmt.Errorf("agents.module: destructive_manage resumer: %w", err)
+	}
+
+	suspendedRunIndex := usecases.NewSuspendedRunIndex(
+		workflowStore,
+		workflows.TransactionWriteWorkflowID,
+		workflows.BudgetManageWorkflowID,
+		workflows.CardManageWorkflowID,
+		workflows.GoalEditWorkflowID,
+		workflows.DestructiveManageWorkflowID,
+	)
+	resumeDispatcher, err := usecases.NewResumeDispatcher(
+		suspendedRunIndex, threadGateway, runStore, deps.O11y,
+		transactionWriteResumer, budgetManageResumer, cardManageResumer, goalEditResumer, destructiveManageResumer,
+	)
+	if err != nil {
+		return Module{}, fmt.Errorf("agents.module: resume dispatcher: %w", err)
+	}
 
 	purgeLedger := usecases.NewPurgeLedger(writeLedgerRepo, 0, 0, deps.O11y)
 	ledgerRetentionJob := jobhandlers.NewLedgerRetentionJob(purgeLedger, "")
 
-	confirmReaper := workflow.NewStaleSuspendedReaper(workflowStore, workflows.DestructiveConfirmWorkflowID, 10*time.Minute, 100, deps.O11y)
-	confirmReaperJob := jobhandlers.NewConfirmReaperJob("agents-confirm-reaper", confirmReaper, "")
-	pendingEntryReaper := workflows.BuildPendingEntryReaper(workflowStore, deps.O11y)
-	pendingEntryReaperJob := jobhandlers.NewConfirmReaperJob("agents-pending-entry-reaper", pendingEntryReaper, "")
-	cardCreateReaper := workflow.NewStaleSuspendedReaper(workflowStore, workflows.CardCreateConfirmWorkflowID, 15*time.Minute, 100, deps.O11y)
-	cardCreateReaperJob := jobhandlers.NewCardCreateReaperJob("agents-card-create-reaper", cardCreateReaper, "")
-	budgetCreationReaper := workflows.BuildBudgetCreationReaper(workflowStore, deps.O11y)
-	budgetCreationReaperJob := jobhandlers.NewConfirmReaperJob("agents-budget-creation-reaper", budgetCreationReaper, "")
+	transactionWriteReaper := workflows.BuildTransactionWriteReaper(workflowStore, deps.O11y)
+	transactionWriteReaperJob := jobhandlers.NewConfirmReaperJob("agents-transaction-write-reaper", transactionWriteReaper, "")
+	budgetManageReaper := workflows.BuildBudgetManageReaper(workflowStore, deps.O11y)
+	budgetManageReaperJob := jobhandlers.NewConfirmReaperJob("agents-budget-manage-reaper", budgetManageReaper, "")
+	cardManageReaper := workflows.BuildCardManageReaper(workflowStore, deps.O11y)
+	cardManageReaperJob := jobhandlers.NewConfirmReaperJob("agents-card-manage-reaper", cardManageReaper, "")
+	goalEditReaper := workflows.BuildGoalEditReaper(workflowStore, deps.O11y)
+	goalEditReaperJob := jobhandlers.NewConfirmReaperJob("agents-goal-edit-reaper", goalEditReaper, "")
+	destructiveManageReaper := workflows.BuildDestructiveManageReaper(workflowStore, deps.O11y)
+	destructiveManageReaperJob := jobhandlers.NewConfirmReaperJob("agents-destructive-manage-reaper", destructiveManageReaper, "")
 	onboardingReaper := workflows.BuildOnboardingReaper(workflowStore, deps.O11y)
 	onboardingReaperJob := jobhandlers.NewConfirmReaperJob("agents-onboarding-reaper", onboardingReaper, "")
 
 	var whatsAppRoute func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome
 	if deps.OutboxPublisher != nil && deps.WhatsAppGateway != nil {
 		consumerOpts := []consumers.ConsumerOption{
-			consumers.WithPendingEntryContinuer(continuePendingEntry),
 			consumers.WithOnboardingResolver(resolveOnboarding),
-			consumers.WithDestructiveConfirmResolver(continueDestructive),
-			consumers.WithCardCreateResolver(continueCardCreate),
-			consumers.WithBudgetCreationResolver(continueBudgetCreation),
+			consumers.WithResumeDispatcher(resumeDispatcher),
 		}
 		if deps.InboundTimeout > 0 {
 			consumerOpts = append(consumerOpts, consumers.WithInboundTimeout(deps.InboundTimeout))
@@ -298,8 +375,12 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		HandleInbound:      handleInbound,
 		WhatsAppAgentRoute: whatsAppRoute,
 		EventHandlers:      eventHandlers,
-		Jobs:               []worker.Job{ledgerRetentionJob, confirmReaperJob, pendingEntryReaperJob, cardCreateReaperJob, budgetCreationReaperJob, onboardingReaperJob},
-		scorerRunner:       scorerRunner,
+		Jobs: []worker.Job{
+			ledgerRetentionJob,
+			transactionWriteReaperJob, budgetManageReaperJob, cardManageReaperJob, goalEditReaperJob, destructiveManageReaperJob,
+			onboardingReaperJob,
+		},
+		scorerRunner: scorerRunner,
 	}, nil
 }
 
@@ -309,26 +390,28 @@ func buildFinancialTools(
 	planner interfaces.BudgetPlanner,
 	reader interfaces.CategoriesReader,
 	recurrences interfaces.RecurrenceManager,
-	confirmEngine workflow.Engine[workflows.ConfirmState],
-	confirmDef workflow.Definition[workflows.ConfirmState],
-	registerAttempt *usecases.RegisterAttempt,
-	cardCreateEngine workflow.Engine[workflows.CardCreateState],
-	cardCreateDef workflow.Definition[workflows.CardCreateState],
-	budgetCreationEngine workflow.Engine[workflows.BudgetCreationState],
-	budgetCreationDef workflow.Definition[workflows.BudgetCreationState],
+	transactionWriteStarter *usecases.TransactionWriteStarter,
+	destructiveManageEngine workflow.Engine[workflows.DestructiveManageState],
+	destructiveManageDef workflow.Definition[workflows.DestructiveManageState],
+	cardManageEngine workflow.Engine[workflows.CardManageState],
+	cardManageDef workflow.Definition[workflows.CardManageState],
+	budgetManageEngine workflow.Engine[workflows.BudgetManageState],
+	budgetManageDef workflow.Definition[workflows.BudgetManageState],
+	goalEditEngine workflow.Engine[workflows.GoalEditState],
+	goalEditDef workflow.Definition[workflows.GoalEditState],
 ) []tool.ToolHandle {
 	return []tool.ToolHandle{
-		agenttools.BuildRegisterExpenseTool(registerAttempt, cards),
-		agenttools.BuildRegisterIncomeTool(registerAttempt),
+		agenttools.BuildRegisterExpenseTool(transactionWriteStarter, cards),
+		agenttools.BuildRegisterIncomeTool(transactionWriteStarter),
 		agenttools.BuildQueryMonthTool(ledger),
 		agenttools.BuildQueryPlanTool(planner),
-		agenttools.BuildEditEntryTool(registerAttempt),
-		agenttools.BuildDeleteEntryTool(confirmEngine, confirmDef, cards),
-		agenttools.BuildAdjustAllocationTool(planner),
+		agenttools.BuildEditEntryTool(transactionWriteStarter),
+		agenttools.BuildDeleteEntryTool(destructiveManageEngine, destructiveManageDef, cards),
+		agenttools.BuildAdjustAllocationTool(budgetManageEngine, budgetManageDef),
 		agenttools.BuildClassifyCategoryTool(reader),
-		agenttools.BuildUpdateRecurrenceTool(confirmEngine, confirmDef),
-		agenttools.BuildDeleteRecurrenceTool(confirmEngine, confirmDef),
-		agenttools.BuildUpdateCardTool(confirmEngine, confirmDef, cards),
+		agenttools.BuildUpdateRecurrenceTool(destructiveManageEngine, destructiveManageDef),
+		agenttools.BuildDeleteRecurrenceTool(destructiveManageEngine, destructiveManageDef),
+		agenttools.BuildUpdateCardTool(cardManageEngine, cardManageDef),
 		agenttools.BuildListCardsTool(cards),
 		agenttools.BuildGetCardTool(cards),
 		agenttools.BuildResolveCardTool(cards),
@@ -338,11 +421,16 @@ func buildFinancialTools(
 		agenttools.BuildGetTransactionTool(ledger),
 		agenttools.BuildSearchTransactionsTool(ledger),
 		agenttools.BuildListRecurrencesTool(recurrences),
-		agenttools.BuildCreateRecurrenceTool(registerAttempt, cards),
+		agenttools.BuildCreateRecurrenceTool(transactionWriteStarter, cards),
 		agenttools.BuildSuggestAllocationTool(planner),
 		agenttools.BuildListCategoriesTool(reader),
-		agenttools.BuildCreateCardTool(cardCreateEngine, cardCreateDef, cards),
-		agenttools.BuildCreateBudgetTool(budgetCreationEngine, budgetCreationDef),
+		agenttools.BuildCreateCardTool(cardManageEngine, cardManageDef, cards),
+		agenttools.BuildCreateBudgetTool(budgetManageEngine, budgetManageDef),
+		agenttools.BuildEditBudgetTotalTool(budgetManageEngine, budgetManageDef),
+		agenttools.BuildCategoryDetailTool(planner, ledger, reader),
+		agenttools.BuildCancelPlanInfoTool(),
+		agenttools.BuildSupportInfoTool(),
+		agenttools.BuildEditGoalTool(goalEditEngine, goalEditDef),
 	}
 }
 

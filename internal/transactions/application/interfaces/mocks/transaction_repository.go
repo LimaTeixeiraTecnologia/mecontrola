@@ -572,6 +572,98 @@ func (_c *TransactionRepository_SearchByDescription_Call) RunAndReturn(run func(
 	return _c
 }
 
+// SearchEditCandidates provides a mock function for the type TransactionRepository
+func (_mock *TransactionRepository) SearchEditCandidates(ctx context.Context, userID uuid.UUID, amountCents int64, term string, refMonth valueobjects.RefMonth, limit int) ([]*entities.Transaction, error) {
+	ret := _mock.Called(ctx, userID, amountCents, term, refMonth, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SearchEditCandidates")
+	}
+
+	var r0 []*entities.Transaction
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, int64, string, valueobjects.RefMonth, int) ([]*entities.Transaction, error)); ok {
+		return returnFunc(ctx, userID, amountCents, term, refMonth, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, int64, string, valueobjects.RefMonth, int) []*entities.Transaction); ok {
+		r0 = returnFunc(ctx, userID, amountCents, term, refMonth, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*entities.Transaction)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, int64, string, valueobjects.RefMonth, int) error); ok {
+		r1 = returnFunc(ctx, userID, amountCents, term, refMonth, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// TransactionRepository_SearchEditCandidates_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SearchEditCandidates'
+type TransactionRepository_SearchEditCandidates_Call struct {
+	*mock.Call
+}
+
+// SearchEditCandidates is a helper method to define mock.On call
+//   - ctx context.Context
+//   - userID uuid.UUID
+//   - amountCents int64
+//   - term string
+//   - refMonth valueobjects.RefMonth
+//   - limit int
+func (_e *TransactionRepository_Expecter) SearchEditCandidates(ctx any, userID any, amountCents any, term any, refMonth any, limit any) *TransactionRepository_SearchEditCandidates_Call {
+	return &TransactionRepository_SearchEditCandidates_Call{Call: _e.mock.On("SearchEditCandidates", ctx, userID, amountCents, term, refMonth, limit)}
+}
+
+func (_c *TransactionRepository_SearchEditCandidates_Call) Run(run func(ctx context.Context, userID uuid.UUID, amountCents int64, term string, refMonth valueobjects.RefMonth, limit int)) *TransactionRepository_SearchEditCandidates_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		var arg4 valueobjects.RefMonth
+		if args[4] != nil {
+			arg4 = args[4].(valueobjects.RefMonth)
+		}
+		var arg5 int
+		if args[5] != nil {
+			arg5 = args[5].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+			arg5,
+		)
+	})
+	return _c
+}
+
+func (_c *TransactionRepository_SearchEditCandidates_Call) Return(transactions []*entities.Transaction, err error) *TransactionRepository_SearchEditCandidates_Call {
+	_c.Call.Return(transactions, err)
+	return _c
+}
+
+func (_c *TransactionRepository_SearchEditCandidates_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, amountCents int64, term string, refMonth valueobjects.RefMonth, limit int) ([]*entities.Transaction, error)) *TransactionRepository_SearchEditCandidates_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // SoftDelete provides a mock function for the type TransactionRepository
 func (_mock *TransactionRepository) SoftDelete(ctx context.Context, id uuid.UUID, userID uuid.UUID, expectedVersion int64, now time.Time) error {
 	ret := _mock.Called(ctx, id, userID, expectedVersion, now)

@@ -39,6 +39,12 @@ func (s *RegistrySuite) TestAllRequiredCategoriesCovered() {
 		CategoryAmbiguity,
 		CategoryWhatsAppFormat,
 		CategoryNoInternalTerms,
+		CategoryBudgetTotal,
+		CategoryGoal,
+		CategoryCancelPlan,
+		CategorySupport,
+		CategoryCategoryDetail,
+		CategoryGeneralSummary,
 	}
 	for _, category := range required {
 		cases := CasesByCategory(category)
@@ -66,4 +72,13 @@ func (s *RegistrySuite) TestCasesByCategoryFiltersCorrectly() {
 		s.Equal(CategoryQuery, c.Category)
 	}
 	s.Len(cases, len(queryCases()))
+}
+
+func (s *RegistrySuite) TestGeneralSummaryUsesDeterministicCategoryDetailTool() {
+	cases := CasesByCategory(CategoryGeneralSummary)
+	s.Require().NotEmpty(cases)
+	for _, c := range cases {
+		s.Equal("category_detail", c.ExpectedTool)
+		s.Equal([]string{"category_detail"}, c.ToolSubset)
+	}
 }

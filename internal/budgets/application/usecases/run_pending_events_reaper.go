@@ -14,7 +14,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/entities"
 )
 
-const _pendingReaperBatchSize = 200
+const pendingReaperBatchSize = 200
 
 type RunPendingEventsReaper struct {
 	factory   interfaces.RepositoryFactory
@@ -64,7 +64,7 @@ func (uc *RunPendingEventsReaper) Execute(ctx context.Context) error {
 
 	_, err := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
 		pending := uc.factory.PendingEventRepository(tx)
-		events, listErr := pending.ListReady(ctx, _pendingReaperBatchSize)
+		events, listErr := pending.ListReady(ctx, pendingReaperBatchSize)
 		if listErr != nil {
 			return struct{}{}, fmt.Errorf("budgets.usecase.run_pending_events_reaper: listar prontos: %w", listErr)
 		}

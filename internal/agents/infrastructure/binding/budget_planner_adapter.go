@@ -20,6 +20,7 @@ type budgetPlannerAdapter struct {
 	activateBudget         *budgetsusecases.ActivateBudget
 	createRecurrence       *budgetsusecases.CreateRecurrence
 	editCategoryPercentage *budgetsusecases.EditCategoryPercentage
+	editBudgetTotal        *budgetsusecases.EditBudgetTotal
 	getMonthlySummary      *budgetsusecases.GetMonthlySummary
 	listAlerts             *budgetsusecases.ListAlerts
 	suggestAllocation      *budgetsusecases.SuggestAllocation
@@ -32,6 +33,7 @@ func NewBudgetPlannerAdapter(
 	activateBudget *budgetsusecases.ActivateBudget,
 	createRecurrence *budgetsusecases.CreateRecurrence,
 	editCategoryPercentage *budgetsusecases.EditCategoryPercentage,
+	editBudgetTotal *budgetsusecases.EditBudgetTotal,
 	getMonthlySummary *budgetsusecases.GetMonthlySummary,
 	listAlerts *budgetsusecases.ListAlerts,
 	suggestAllocation *budgetsusecases.SuggestAllocation,
@@ -43,6 +45,7 @@ func NewBudgetPlannerAdapter(
 		activateBudget:         activateBudget,
 		createRecurrence:       createRecurrence,
 		editCategoryPercentage: editCategoryPercentage,
+		editBudgetTotal:        editBudgetTotal,
 		getMonthlySummary:      getMonthlySummary,
 		listAlerts:             listAlerts,
 		suggestAllocation:      suggestAllocation,
@@ -143,6 +146,22 @@ func (a *budgetPlannerAdapter) EditCategoryPercentage(ctx context.Context, userI
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("agents/binding/budget_planner: editar percentual de categoria: %w", err)
+	}
+	return nil
+}
+
+func (a *budgetPlannerAdapter) EditBudgetTotal(ctx context.Context, userID uuid.UUID, competence string, totalCents int64) error {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.budget_planner.edit_budget_total")
+	defer span.End()
+
+	_, err := a.editBudgetTotal.Execute(ctx, budgetsinput.EditBudgetTotalInput{
+		UserID:     userID.String(),
+		Competence: competence,
+		TotalCents: totalCents,
+	})
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("agents/binding/budget_planner: editar total do orçamento: %w", err)
 	}
 	return nil
 }

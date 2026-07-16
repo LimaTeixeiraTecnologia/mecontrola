@@ -210,6 +210,77 @@ func (s *BehavioralScorersSuite) TestVerbatimRequiredScorer() {
 	}
 }
 
+func (s *BehavioralScorersSuite) TestVerbatimToneAdherenceScorer() {
+	type args struct {
+		sample scorer.RunSample
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(result scorer.ScoreResult, err error)
+	}{
+		{
+			name: "deve retornar score 1 quando output esta vazio",
+			args: args{sample: scorer.RunSample{Output: ""}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(1.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve retornar score 1 quando usa negrito simples e emoji oficial",
+			args: args{sample: scorer.RunSample{
+				Output:   "✅ Encontrei este lançamento:\n\n💰 Valor: *R$ 100,00*\n\nPosso registrar?",
+				Metadata: map[string]any{"requires_brand_emoji": true},
+			}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(1.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve retornar score 0 quando usa negrito duplo",
+			args: args{sample: scorer.RunSample{
+				Output: "Prontinho! **R$ 100,00** registrado.",
+			}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(0.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve retornar score 0 quando marcacao de negrito esta mal formada",
+			args: args{sample: scorer.RunSample{
+				Output: "Valor *R$ 100,00 sem fechamento",
+			}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(0.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve retornar score 0 quando exige emoji da marca e nenhum esta presente",
+			args: args{sample: scorer.RunSample{
+				Output:   "Lançamento registrado com sucesso.",
+				Metadata: map[string]any{"requires_brand_emoji": true},
+			}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(0.0, result.Score, 0.001)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			sc := NewVerbatimToneAdherenceScorer()
+			result, err := sc.Score(s.ctx, scenario.args.sample)
+			scenario.expect(result, err)
+		})
+	}
+}
+
 func (s *BehavioralScorersSuite) TestNoDuplicateWriteScorer() {
 	type args struct {
 		sample scorer.RunSample

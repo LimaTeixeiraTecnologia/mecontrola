@@ -238,46 +238,6 @@ func TestSearchAndEnrichCandidates_G7_12_NewDescriptionResolves(t *testing.T) {
 	require.Equal(t, "medicamentos-e-farmacia", candidates[0].SubcategorySlug)
 }
 
-func TestDecideCategoryChoice_NilSubcategoryID_RootOnly(t *testing.T) {
-	state := baseState()
-	candidates := []PendingCategoryCandidate{
-		{
-			RootCategoryID:  uuid.New(),
-			RootSlug:        "custo-fixo",
-			SubcategoryID:   uuid.UUID{},
-			SubcategorySlug: "",
-			Path:            "custo-fixo",
-		},
-	}
-	decision, err := DecideCategoryChoice(state, candidates, "1")
-	require.NoError(t, err)
-	require.Equal(t, CategoryChoiceActionRootOnly, decision.Action)
-}
-
-func TestDecideCategoryChoice_BothIndexAndNameResolveSamePair_CA15(t *testing.T) {
-	rootID := uuid.New()
-	subID1 := uuid.New()
-	subID2 := uuid.New()
-	candidates := []PendingCategoryCandidate{
-		{RootCategoryID: rootID, RootSlug: "custo-fixo", SubcategoryID: subID1, SubcategorySlug: "plano-de-saude", Path: "custo-fixo > plano-de-saude"},
-		{RootCategoryID: rootID, RootSlug: "custo-fixo", SubcategoryID: subID2, SubcategorySlug: "consultas-e-exames", Path: "custo-fixo > consultas-e-exames"},
-	}
-	state := baseState()
-
-	byIdx, errIdx := DecideCategoryChoice(state, candidates, "2")
-	require.NoError(t, errIdx)
-	require.Equal(t, CategoryChoiceActionSelected, byIdx.Action)
-	require.Equal(t, subID2, byIdx.Candidate.SubcategoryID)
-
-	byName, errName := DecideCategoryChoice(state, candidates, "consultas-e-exames")
-	require.NoError(t, errName)
-	require.Equal(t, CategoryChoiceActionSelected, byName.Action)
-	require.Equal(t, subID2, byName.Candidate.SubcategoryID)
-
-	require.Equal(t, byIdx.Candidate.SubcategoryID, byName.Candidate.SubcategoryID)
-	require.Equal(t, byIdx.Candidate.RootCategoryID, byName.Candidate.RootCategoryID)
-}
-
 func TestBuildCandidateListText_MultipleEntries(t *testing.T) {
 	candidates := []PendingCategoryCandidate{
 		{RootSlug: "custo-fixo", SubcategorySlug: "plano-de-saude", Path: "custo-fixo > plano-de-saude"},

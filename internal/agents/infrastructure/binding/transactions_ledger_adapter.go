@@ -24,6 +24,7 @@ type transactionsLedgerAdapter struct {
 	getTx             *txusecases.GetTransaction
 	getCardInvoice    *txusecases.GetCardInvoice
 	searchTx          *txusecases.SearchTransactions
+	searchEditCand    *txusecases.SearchEditCandidates
 	createRecurringTx *txusecases.CreateRecurringTemplate
 	o11y              observability.Observability
 }
@@ -37,6 +38,7 @@ func NewTransactionsLedgerAdapter(
 	getTx *txusecases.GetTransaction,
 	getCardInvoice *txusecases.GetCardInvoice,
 	searchTx *txusecases.SearchTransactions,
+	searchEditCand *txusecases.SearchEditCandidates,
 	createRecurringTx *txusecases.CreateRecurringTemplate,
 	o11y observability.Observability,
 ) agentsifaces.TransactionsLedger {
@@ -49,6 +51,7 @@ func NewTransactionsLedgerAdapter(
 		getTx:             getTx,
 		getCardInvoice:    getCardInvoice,
 		searchTx:          searchTx,
+		searchEditCand:    searchEditCand,
 		createRecurringTx: createRecurringTx,
 		o11y:              o11y,
 	}
@@ -192,13 +195,17 @@ func (a *transactionsLedgerAdapter) ListMonthlyEntries(ctx context.Context, _ uu
 			return nil, fmt.Errorf("agents/binding/transactions_ledger: kind inválido %q: %w", e.Kind, err)
 		}
 		entries = append(entries, agentsifaces.MonthlyEntry{
-			Kind:        kind,
-			ID:          e.ID,
-			RefMonth:    e.RefMonth,
-			AmountCents: e.AmountCents,
-			Direction:   e.Direction,
-			Description: e.Description,
-			CreatedAt:   e.CreatedAt,
+			Kind:                    kind,
+			ID:                      e.ID,
+			RefMonth:                e.RefMonth,
+			AmountCents:             e.AmountCents,
+			Direction:               e.Direction,
+			Description:             e.Description,
+			CategoryID:              e.CategoryID,
+			SubcategoryID:           e.SubcategoryID,
+			CategoryNameSnapshot:    e.CategoryNameSnapshot,
+			SubcategoryNameSnapshot: e.SubcategoryNameSnapshot,
+			CreatedAt:               e.CreatedAt,
 		})
 	}
 	return entries, nil
@@ -303,31 +310,58 @@ func (a *transactionsLedgerAdapter) SearchTransactions(ctx context.Context, _ uu
 
 	entries := make([]agentsifaces.Entry, 0, len(results))
 	for _, tx := range results {
-		var sub *string
-		if tx.SubcategoryID != nil {
-			s := tx.SubcategoryID.String()
-			sub = &s
-		}
-		entries = append(entries, agentsifaces.Entry{
-			Kind:                    agentsifaces.EntryKindTransaction,
-			ID:                      tx.ID.String(),
-			UserID:                  tx.UserID.String(),
-			Direction:               tx.Direction,
-			PaymentMethod:           tx.PaymentMethod,
-			AmountCents:             tx.AmountCents,
-			Description:             tx.Description,
-			CategoryID:              tx.CategoryID.String(),
-			SubcategoryID:           sub,
-			CategoryNameSnapshot:    tx.CategoryNameSnapshot,
-			SubcategoryNameSnapshot: tx.SubcategoryNameSnapshot,
-			RefMonth:                tx.RefMonth,
-			OccurredAt:              tx.OccurredAt,
-			Version:                 tx.Version,
-			CreatedAt:               tx.CreatedAt,
-			UpdatedAt:               tx.UpdatedAt,
-		})
+		entries = append(entries, entryFromTransactionOutput(tx))
 	}
 	return entries, nil
+}
+
+func (a *transactionsLedgerAdapter) SearchEditCandidates(ctx context.Context, _ uuid.UUID, q agentsifaces.EditCandidateQuery) ([]agentsifaces.Entry, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.search_edit_candidates")
+	defer span.End()
+
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return nil, err
+	}
+
+	results, err := a.searchEditCand.Execute(ctx, q.AmountCents, q.Term, q.RefMonth, q.Limit)
+	if err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("agents/binding/transactions_ledger: buscar candidatos de edição: %w", err)
+	}
+
+	entries := make([]agentsifaces.Entry, 0, len(results))
+	for _, tx := range results {
+		entries = append(entries, entryFromTransactionOutput(tx))
+	}
+	return entries, nil
+}
+
+func entryFromTransactionOutput(tx txoutput.Transaction) agentsifaces.Entry {
+	var sub *string
+	if tx.SubcategoryID != nil {
+		s := tx.SubcategoryID.String()
+		sub = &s
+	}
+	return agentsifaces.Entry{
+		Kind:                    agentsifaces.EntryKindTransaction,
+		ID:                      tx.ID.String(),
+		UserID:                  tx.UserID.String(),
+		Direction:               tx.Direction,
+		PaymentMethod:           tx.PaymentMethod,
+		AmountCents:             tx.AmountCents,
+		Description:             tx.Description,
+		CategoryID:              tx.CategoryID.String(),
+		SubcategoryID:           sub,
+		CategoryNameSnapshot:    tx.CategoryNameSnapshot,
+		SubcategoryNameSnapshot: tx.SubcategoryNameSnapshot,
+		RefMonth:                tx.RefMonth,
+		OccurredAt:              tx.OccurredAt,
+		Version:                 tx.Version,
+		CreatedAt:               tx.CreatedAt,
+		UpdatedAt:               tx.UpdatedAt,
+	}
 }
 
 func (a *transactionsLedgerAdapter) CreateRecurringTemplate(ctx context.Context, in agentsifaces.RawRecurringTemplate) (agentsifaces.EntryRef, error) {

@@ -122,7 +122,7 @@ func (s *UpsertExpenseCommandSuite) TestNewUpsertExpenseCommand() {
 
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
-			cmd, err := commands.NewUpsertExpenseCommand(tc.userID, tc.subID, tc.source, tc.extID, tc.competence, tc.amountCents, tc.occurredAt, tc.expectedVersion)
+			cmd, err := commands.NewUpsertExpenseCommand(tc.userID, tc.subID, tc.source, tc.extID, tc.competence, tc.amountCents, tc.occurredAt, tc.expectedVersion, false)
 			if len(tc.wantErrs) == 0 {
 				s.Require().NoError(err)
 				s.Equal(tc.amountCents, cmd.AmountCents)

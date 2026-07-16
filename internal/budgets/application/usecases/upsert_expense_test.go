@@ -249,6 +249,86 @@ func (s *UpsertExpenseSuite) TestUpdate_VersionConflict() {
 	s.ErrorIs(err, interfaces.ErrExpenseConflict)
 }
 
+func (s *UpsertExpenseSuite) TestReconcile_UpdatesExpenseUsingCurrentVersion() {
+	in := s.validInput()
+	in.Reconcile = true
+
+	source, _ := valueobjects.NewProducerSource("api")
+	extID, _ := valueobjects.NewExternalTransactionID(in.ExternalTransactionID)
+	competence, _ := valueobjects.NewCompetence(in.Competence)
+	rootSlug, _ := valueobjects.ParseRootSlug("expense.custo_fixo")
+	userID, _ := uuid.Parse(in.UserID)
+	subID, _ := uuid.Parse(in.SubcategoryID)
+
+	existing, _ := entities.NewExpense(userID, source, extID, subID, rootSlug, competence, 5000, time.Now().UTC(), time.Now().UTC())
+
+	s.categories.EXPECT().
+		ValidateExpenseSubcategory(mock.Anything, mock.Anything).
+		Return("expense.conhecimento", false, nil).
+		Once()
+
+	s.expenses.EXPECT().
+		GetByIdentity(mock.Anything, mock.Anything).
+		Return(existing, entities.ExpenseTombstone{}, nil).
+		Once()
+
+	s.expenses.EXPECT().
+		Update(mock.Anything, mock.Anything, existing.Version()).
+		Return(nil).
+		Once()
+
+	s.publisher.EXPECT().
+		Publish(mock.Anything, mock.Anything, mock.Anything).
+		Return(nil).
+		Once()
+
+	result, err := s.useCase.Execute(s.ctx, in)
+
+	s.NoError(err)
+	s.Equal("expense.conhecimento", result.RootSlug)
+	s.Equal(in.AmountCents, result.AmountCents)
+}
+
+func (s *UpsertExpenseSuite) TestReconcile_CreatesWhenMissing() {
+	in := s.validInput()
+	in.Reconcile = true
+
+	s.categories.EXPECT().
+		ValidateExpenseSubcategory(mock.Anything, mock.Anything).
+		Return("expense.custo_fixo", false, nil).
+		Once()
+
+	s.expenses.EXPECT().
+		GetByIdentity(mock.Anything, mock.Anything).
+		Return(entities.Expense{}, entities.ExpenseTombstone{}, interfaces.ErrExpenseNotFound).
+		Once()
+
+	s.budgets.EXPECT().
+		GetByUserCompetence(mock.Anything, mock.Anything, mock.Anything).
+		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
+		Once()
+
+	s.budgets.EXPECT().
+		CreateDraft(mock.Anything, mock.Anything).
+		Return(nil).
+		Once()
+
+	s.expenses.EXPECT().
+		Insert(mock.Anything, mock.Anything).
+		Return(nil).
+		Once()
+
+	s.publisher.EXPECT().
+		Publish(mock.Anything, mock.Anything, mock.Anything).
+		Return(nil).
+		Once()
+
+	result, err := s.useCase.Execute(s.ctx, in)
+
+	s.NoError(err)
+	s.Equal("expense.custo_fixo", result.RootSlug)
+}
+
 func (s *UpsertExpenseSuite) TestCreate_InvalidUserID() {
 	in := s.validInput()
 	in.UserID = "invalid"

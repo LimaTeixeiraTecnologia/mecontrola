@@ -229,11 +229,13 @@ func buildEntriesQuery(userID uuid.UUID, refMonth valueobjects.RefMonth, cursor 
 
 	if cursor.Value == "" || cursorCreatedAt.IsZero() {
 		q := `
-			SELECT 'transaction' AS kind, id::text, user_id, ref_month, amount_cents, direction, description, created_at
+			SELECT 'transaction' AS kind, id::text, user_id, ref_month, amount_cents, direction, description,
+			       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot, created_at
 			  FROM mecontrola.transactions
 			 WHERE user_id = $1 AND ref_month = $2 AND payment_method <> 7 AND deleted_at IS NULL
 			UNION ALL
-			SELECT 'card_invoice_item', i.id::text, i.user_id, i.ref_month, i.amount_cents, 2, '', i.created_at
+			SELECT 'card_invoice_item', i.id::text, i.user_id, i.ref_month, i.amount_cents, 2, '',
+			       NULL::uuid, NULL::uuid, '', '', i.created_at
 			  FROM mecontrola.transactions_card_invoice_items i
 			 WHERE i.user_id = $1 AND i.ref_month = $2 AND i.deleted_at IS NULL
 			 ORDER BY created_at DESC, id DESC LIMIT $3
@@ -242,11 +244,13 @@ func buildEntriesQuery(userID uuid.UUID, refMonth valueobjects.RefMonth, cursor 
 	}
 
 	q := `
-		SELECT 'transaction' AS kind, id::text, user_id, ref_month, amount_cents, direction, description, created_at
+		SELECT 'transaction' AS kind, id::text, user_id, ref_month, amount_cents, direction, description,
+		       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot, created_at
 		  FROM mecontrola.transactions
 		 WHERE user_id = $1 AND ref_month = $2 AND payment_method <> 7 AND deleted_at IS NULL AND (created_at, id::text) < ($3, $4)
 		UNION ALL
-		SELECT 'card_invoice_item', i.id::text, i.user_id, i.ref_month, i.amount_cents, 2, '', i.created_at
+		SELECT 'card_invoice_item', i.id::text, i.user_id, i.ref_month, i.amount_cents, 2, '',
+		       NULL::uuid, NULL::uuid, '', '', i.created_at
 		  FROM mecontrola.transactions_card_invoice_items i
 		 WHERE i.user_id = $1 AND i.ref_month = $2 AND i.deleted_at IS NULL AND (i.created_at, i.id::text) < ($3, $4)
 		 ORDER BY created_at DESC, id DESC LIMIT $5
@@ -258,31 +262,47 @@ func scanMonthlyEntries(rows *sql.Rows) ([]interfaces.MonthlyEntry, error) {
 	var entries []interfaces.MonthlyEntry
 	for rows.Next() {
 		var (
-			kind        string
-			id          string
-			uid         uuid.UUID
-			rm          string
-			amountCents int64
-			direction   int
-			description string
-			createdAt   time.Time
+			kind                    string
+			id                      string
+			uid                     uuid.UUID
+			rm                      string
+			amountCents             int64
+			direction               int
+			description             string
+			categoryID              uuid.NullUUID
+			subcategoryID           uuid.NullUUID
+			categoryNameSnapshot    string
+			subcategoryNameSnapshot string
+			createdAt               time.Time
 		)
-		if scanErr := rows.Scan(&kind, &id, &uid, &rm, &amountCents, &direction, &description, &createdAt); scanErr != nil {
+		if scanErr := rows.Scan(
+			&kind, &id, &uid, &rm, &amountCents, &direction, &description,
+			&categoryID, &subcategoryID, &categoryNameSnapshot, &subcategoryNameSnapshot, &createdAt,
+		); scanErr != nil {
 			return nil, fmt.Errorf("transactions/repository: scan entradas mensais: %w", scanErr)
 		}
 		dirStr := "outcome"
 		if direction == 1 {
 			dirStr = "income"
 		}
+		var sub *uuid.UUID
+		if subcategoryID.Valid {
+			s := subcategoryID.UUID
+			sub = &s
+		}
 		entries = append(entries, interfaces.MonthlyEntry{
-			Kind:        kind,
-			ID:          id,
-			UserID:      uid,
-			RefMonth:    rm,
-			AmountCents: amountCents,
-			Direction:   dirStr,
-			Description: description,
-			CreatedAt:   createdAt,
+			Kind:                    kind,
+			ID:                      id,
+			UserID:                  uid,
+			RefMonth:                rm,
+			AmountCents:             amountCents,
+			Direction:               dirStr,
+			Description:             description,
+			CategoryID:              categoryID.UUID,
+			SubcategoryID:           sub,
+			CategoryNameSnapshot:    categoryNameSnapshot,
+			SubcategoryNameSnapshot: subcategoryNameSnapshot,
+			CreatedAt:               createdAt,
 		})
 	}
 	if err := rows.Err(); err != nil {

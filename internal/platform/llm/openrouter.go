@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	devkithttp "github.com/JailtonJunior94/devkit-go/pkg/httpclient"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/httpclient"
@@ -25,6 +26,8 @@ const (
 	finishReasonLength      = "length"
 	sseDoneSignal           = "[DONE]"
 	sseDataPrefix           = "data: "
+	openrouterRetryAttempts = 3
+	openrouterRetryBackoff  = 250 * time.Millisecond
 )
 
 type Config struct {
@@ -246,6 +249,7 @@ func (p *openrouterProvider) send(ctx context.Context, path string, body any, mo
 		httpclient.WithHeader("Authorization", "Bearer "+p.cfg.APIKey),
 		httpclient.WithHeader("HTTP-Referer", p.cfg.HTTPReferer),
 		httpclient.WithHeader("X-Title", p.cfg.XTitle),
+		httpclient.WithRetry(openrouterRetryAttempts, openrouterRetryBackoff, devkithttp.DefaultRetryPolicy),
 	)
 	p.latency.Record(ctx, time.Since(start).Seconds(), observability.String("model", model))
 	if err != nil {

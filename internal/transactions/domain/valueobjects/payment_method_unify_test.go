@@ -50,11 +50,17 @@ func TestPaymentMethodFromInt_Bounds(t *testing.T) {
 		want    valueobjects.PaymentMethod
 	}{
 		{name: "min", v: 1, want: valueobjects.PaymentMethodPix},
-		{name: "doc legacy readable", v: 8, want: valueobjects.PaymentMethodDoc},
+		{name: "doc readable", v: 8, want: valueobjects.PaymentMethodDoc},
 		{name: "meal voucher", v: 9, want: valueobjects.PaymentMethodMealVoucher},
-		{name: "food voucher max", v: 10, want: valueobjects.PaymentMethodFoodVoucher},
+		{name: "food voucher", v: 10, want: valueobjects.PaymentMethodFoodVoucher},
+		{name: "transferencia", v: 11, want: valueobjects.PaymentMethodTransferencia},
+		{name: "apple_pay", v: 12, want: valueobjects.PaymentMethodApplePay},
+		{name: "google_pay", v: 13, want: valueobjects.PaymentMethodGooglePay},
+		{name: "picpay", v: 14, want: valueobjects.PaymentMethodPicPay},
+		{name: "mercado_pago", v: 15, want: valueobjects.PaymentMethodMercadoPago},
+		{name: "cheque max", v: 16, want: valueobjects.PaymentMethodCheque},
 		{name: "zero", v: 0, wantErr: true},
-		{name: "eleven", v: 11, wantErr: true},
+		{name: "seventeen", v: 17, wantErr: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -70,8 +76,8 @@ func TestPaymentMethodFromInt_Bounds(t *testing.T) {
 	}
 }
 
-func TestPaymentMethodRoundtrip_AllTen(t *testing.T) {
-	for v := 1; v <= 10; v++ {
+func TestPaymentMethodRoundtrip_AllSixteen(t *testing.T) {
+	for v := 1; v <= 16; v++ {
 		pm, err := valueobjects.PaymentMethodFromInt(v)
 		require.NoError(t, err)
 		s := pm.String()
@@ -82,7 +88,7 @@ func TestPaymentMethodRoundtrip_AllTen(t *testing.T) {
 	}
 }
 
-func TestParsePaymentMethodForCreate_DocReadableElsewhere(t *testing.T) {
+func TestParsePaymentMethodForCreate_DocAcceptedEverywhere(t *testing.T) {
 	pm, err := valueobjects.ParsePaymentMethod("doc")
 	require.NoError(t, err)
 	assert.Equal(t, valueobjects.PaymentMethodDoc, pm)
@@ -91,7 +97,7 @@ func TestParsePaymentMethodForCreate_DocReadableElsewhere(t *testing.T) {
 	require.NoError(t, ferr)
 	assert.Equal(t, valueobjects.PaymentMethodDoc, fromInt)
 
-	_, cerr := valueobjects.ParsePaymentMethodForCreate("doc")
-	require.Error(t, cerr)
-	assert.True(t, errors.Is(cerr, valueobjects.ErrPaymentMethodDocReadOnly))
+	created, cerr := valueobjects.ParsePaymentMethodForCreate("doc")
+	require.NoError(t, cerr)
+	assert.Equal(t, valueobjects.PaymentMethodDoc, created)
 }

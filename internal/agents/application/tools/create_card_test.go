@@ -16,30 +16,30 @@ import (
 	wf "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
-type fakeCardCreateEngine struct {
-	startResult wf.RunResult[workflows.CardCreateState]
+type fakeCardManageEngine struct {
+	startResult wf.RunResult[workflows.CardManageState]
 	startErr    error
 	startCalled bool
-	lastState   workflows.CardCreateState
+	lastState   workflows.CardManageState
 }
 
-func (f *fakeCardCreateEngine) Start(_ context.Context, _ wf.Definition[workflows.CardCreateState], _ string, initial workflows.CardCreateState) (wf.RunResult[workflows.CardCreateState], error) {
+func (f *fakeCardManageEngine) Start(_ context.Context, _ wf.Definition[workflows.CardManageState], _ string, initial workflows.CardManageState) (wf.RunResult[workflows.CardManageState], error) {
 	f.startCalled = true
 	f.lastState = initial
 	return f.startResult, f.startErr
 }
 
-func (f *fakeCardCreateEngine) Resume(_ context.Context, _ wf.Definition[workflows.CardCreateState], _ string, _ []byte) (wf.RunResult[workflows.CardCreateState], error) {
-	return wf.RunResult[workflows.CardCreateState]{}, nil
+func (f *fakeCardManageEngine) Resume(_ context.Context, _ wf.Definition[workflows.CardManageState], _ string, _ []byte) (wf.RunResult[workflows.CardManageState], error) {
+	return wf.RunResult[workflows.CardManageState]{}, nil
 }
 
-func (f *fakeCardCreateEngine) LoadLatestState(_ context.Context, _ wf.Definition[workflows.CardCreateState], _ string) (workflows.CardCreateState, wf.Snapshot, bool, error) {
-	return workflows.CardCreateState{}, wf.Snapshot{}, false, nil
+func (f *fakeCardManageEngine) LoadLatestState(_ context.Context, _ wf.Definition[workflows.CardManageState], _ string) (workflows.CardManageState, wf.Snapshot, bool, error) {
+	return workflows.CardManageState{}, wf.Snapshot{}, false, nil
 }
 
-func fakeCardCreateDef() wf.Definition[workflows.CardCreateState] {
-	return wf.Definition[workflows.CardCreateState]{
-		ID:      workflows.CardCreateConfirmWorkflowID,
+func fakeCardManageDef() wf.Definition[workflows.CardManageState] {
+	return wf.Definition[workflows.CardManageState]{
+		ID:      workflows.CardManageWorkflowID,
 		Durable: true,
 	}
 }
@@ -69,7 +69,7 @@ func cardCreateInput(closingDay *int) CreateCardInput {
 type CreateCardToolSuite struct {
 	suite.Suite
 	cardsMock *imocks.CardManager
-	engine    *fakeCardCreateEngine
+	engine    *fakeCardManageEngine
 }
 
 func TestCreateCardToolSuite(t *testing.T) {
@@ -78,7 +78,11 @@ func TestCreateCardToolSuite(t *testing.T) {
 
 func (s *CreateCardToolSuite) SetupTest() {
 	s.cardsMock = imocks.NewCardManager(s.T())
-	s.engine = &fakeCardCreateEngine{}
+	s.engine = &fakeCardManageEngine{
+		startResult: wf.RunResult[workflows.CardManageState]{
+			State: workflows.CardManageState{ResponseText: "⚠️ Confirma o cadastro do 💳?"},
+		},
+	}
 }
 
 func (s *CreateCardToolSuite) TestExecute() {
@@ -88,7 +92,7 @@ func (s *CreateCardToolSuite) TestExecute() {
 	}
 	type dependencies struct {
 		cardsMock *imocks.CardManager
-		engine    *fakeCardCreateEngine
+		engine    *fakeCardManageEngine
 	}
 
 	closing := 5
@@ -97,7 +101,7 @@ func (s *CreateCardToolSuite) TestExecute() {
 		name         string
 		args         args
 		dependencies dependencies
-		expect       func(engine *fakeCardCreateEngine, output CreateCardOutput, err error)
+		expect       func(engine *fakeCardManageEngine, output CreateCardOutput, err error)
 	}{
 		{
 			name: "deve retornar needs_slot quando falta apelido",
@@ -106,7 +110,7 @@ func (s *CreateCardToolSuite) TestExecute() {
 				input: CreateCardInput{Bank: "Nubank", DueDay: 10},
 			},
 			dependencies: dependencies{cardsMock: s.cardsMock, engine: s.engine},
-			expect: func(engine *fakeCardCreateEngine, output CreateCardOutput, err error) {
+			expect: func(engine *fakeCardManageEngine, output CreateCardOutput, err error) {
 				s.NoError(err)
 				s.Equal(createCardOutcomeNeedsSlot, output.Outcome)
 				s.NotEmpty(output.ClarifyPrompt)
@@ -129,7 +133,7 @@ func (s *CreateCardToolSuite) TestExecute() {
 				}(),
 				engine: s.engine,
 			},
-			expect: func(engine *fakeCardCreateEngine, output CreateCardOutput, err error) {
+			expect: func(engine *fakeCardManageEngine, output CreateCardOutput, err error) {
 				s.NoError(err)
 				s.Equal(createCardOutcomeNeedsClosing, output.Outcome)
 				s.NotEmpty(output.ClarifyPrompt)
@@ -152,7 +156,7 @@ func (s *CreateCardToolSuite) TestExecute() {
 				}(),
 				engine: s.engine,
 			},
-			expect: func(engine *fakeCardCreateEngine, output CreateCardOutput, err error) {
+			expect: func(engine *fakeCardManageEngine, output CreateCardOutput, err error) {
 				s.NoError(err)
 				s.Equal(createCardOutcomeNeedsConfirmation, output.Outcome)
 				s.NotEmpty(output.ConfirmationPrompt)
@@ -177,7 +181,7 @@ func (s *CreateCardToolSuite) TestExecute() {
 				}(),
 				engine: s.engine,
 			},
-			expect: func(engine *fakeCardCreateEngine, output CreateCardOutput, err error) {
+			expect: func(engine *fakeCardManageEngine, output CreateCardOutput, err error) {
 				s.NoError(err)
 				s.Equal(createCardOutcomeNeedsConfirmation, output.Outcome)
 				s.True(engine.startCalled)
@@ -201,7 +205,7 @@ func (s *CreateCardToolSuite) TestExecute() {
 				}(),
 				engine: s.engine,
 			},
-			expect: func(engine *fakeCardCreateEngine, output CreateCardOutput, err error) {
+			expect: func(engine *fakeCardManageEngine, output CreateCardOutput, err error) {
 				s.NoError(err)
 				s.True(engine.startCalled)
 				s.Equal(testCardCreateUserID, engine.lastState.UserID)
@@ -222,9 +226,9 @@ func (s *CreateCardToolSuite) TestExecute() {
 						Once()
 					return s.cardsMock
 				}(),
-				engine: &fakeCardCreateEngine{startErr: wf.ErrRunAlreadyExists},
+				engine: &fakeCardManageEngine{startErr: wf.ErrRunAlreadyExists},
 			},
-			expect: func(engine *fakeCardCreateEngine, output CreateCardOutput, err error) {
+			expect: func(engine *fakeCardManageEngine, output CreateCardOutput, err error) {
 				s.NoError(err)
 				s.Equal(createCardOutcomePendingConfirmationExists, output.Outcome)
 				s.NotEmpty(output.ClarifyPrompt)
@@ -234,7 +238,7 @@ func (s *CreateCardToolSuite) TestExecute() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			handle := BuildCreateCardTool(scenario.dependencies.engine, fakeCardCreateDef(), scenario.dependencies.cardsMock)
+			handle := BuildCreateCardTool(scenario.dependencies.engine, fakeCardManageDef(), scenario.dependencies.cardsMock)
 			argsJSON, marshalErr := json.Marshal(scenario.args.input)
 			s.Require().NoError(marshalErr)
 
@@ -250,7 +254,7 @@ func (s *CreateCardToolSuite) TestExecute() {
 }
 
 func (s *CreateCardToolSuite) TestExecute_IdentidadeSempreDeRuntimeFrom() {
-	handle := BuildCreateCardTool(s.engine, fakeCardCreateDef(), s.cardsMock)
+	handle := BuildCreateCardTool(s.engine, fakeCardManageDef(), s.cardsMock)
 	argsJSON, err := json.Marshal(cardCreateInput(nil))
 	s.Require().NoError(err)
 
@@ -263,7 +267,7 @@ func (s *CreateCardToolSuite) TestExecute_ResourceIDInvalido() {
 	req := agent.InboundRequest{ResourceID: "not-a-uuid", MessageID: "wamid-x"}
 	ctx := wf.WithRuntime(context.Background(), req)
 
-	handle := BuildCreateCardTool(s.engine, fakeCardCreateDef(), s.cardsMock)
+	handle := BuildCreateCardTool(s.engine, fakeCardManageDef(), s.cardsMock)
 	argsJSON, err := json.Marshal(cardCreateInput(nil))
 	s.Require().NoError(err)
 
@@ -278,7 +282,7 @@ func (s *CreateCardToolSuite) TestExecute_BankRecognizedError() {
 		Return(false, errors.New("infra falhou")).
 		Once()
 
-	handle := BuildCreateCardTool(s.engine, fakeCardCreateDef(), s.cardsMock)
+	handle := BuildCreateCardTool(s.engine, fakeCardManageDef(), s.cardsMock)
 	argsJSON, err := json.Marshal(cardCreateInput(nil))
 	s.Require().NoError(err)
 
@@ -288,7 +292,7 @@ func (s *CreateCardToolSuite) TestExecute_BankRecognizedError() {
 }
 
 func (s *CreateCardToolSuite) TestExecute_SchemaPermiteOmissaoDeSlotParaClarify() {
-	handle := BuildCreateCardTool(s.engine, fakeCardCreateDef(), s.cardsMock)
+	handle := BuildCreateCardTool(s.engine, fakeCardManageDef(), s.cardsMock)
 	argsJSON := []byte(`{"bank":"Nubank","dueDay":10}`)
 
 	resultJSON, _, invokeErr := handle.Invoke(cardCreateInboundCtx("wamid-8"), argsJSON)

@@ -54,7 +54,7 @@ func BuildResolveCardTool(cards interfaces.CardManager) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool("resolve_card", "Resolve o 💳 de crédito do usuário pelo apelido informado, retornando o cardId; use como etapa obrigatória antes de registrar compra no crédito OU antes de consultar a fatura do 💳 via query_card_invoice. O nickname é qualquer nome que o usuário use para o 💳 (apelido, banco ou marca, ex.: 'nubank'): passe a palavra exata que o usuário citou, sem pedir confirmação do apelido.", in, out, buildResolveCardExec(cards))
+	return tool.NewTool("resolve_card", "Resolve o 💳 de crédito do usuário pelo apelido informado, retornando o cardId; use como etapa obrigatória antes de registrar compra no crédito, antes de consultar a fatura do 💳 via query_card_invoice, OU antes de excluir um 💳 identificado por apelido via delete_entry (o cardId retornado é o entryId a passar em delete_entry com entryKind=\"card\"). O nickname é qualquer nome que o usuário use para o 💳 (apelido, banco ou marca, ex.: 'nubank'): passe a palavra exata que o usuário citou, sem pedir confirmação do apelido.", in, out, buildResolveCardExec(cards))
 }
 
 func buildResolveCardExec(cards interfaces.CardManager) func(context.Context, ResolveCardInput) (ResolveCardOutput, error) {

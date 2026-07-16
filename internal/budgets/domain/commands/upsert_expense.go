@@ -18,6 +18,7 @@ type UpsertExpenseCommand struct {
 	AmountCents     int64
 	OccurredAt      time.Time
 	ExpectedVersion *int64
+	Reconcile       bool
 }
 
 func NewUpsertExpenseCommand(
@@ -29,6 +30,7 @@ func NewUpsertExpenseCommand(
 	amountCents int64,
 	occurredAt time.Time,
 	expectedVersion *int64,
+	reconcile bool,
 ) (UpsertExpenseCommand, error) {
 	var errs []error
 
@@ -78,5 +80,6 @@ func NewUpsertExpenseCommand(
 		AmountCents:     amountCents,
 		OccurredAt:      occurredAt,
 		ExpectedVersion: expectedVersion,
+		Reconcile:       reconcile,
 	}, nil
 }

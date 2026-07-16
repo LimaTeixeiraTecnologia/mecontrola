@@ -29,7 +29,7 @@ type DeleteEntryOutput struct {
 	TargetKind        string `json:"targetKind"`
 }
 
-func BuildDeleteEntryTool(engine wf.Engine[workflows.ConfirmState], def wf.Definition[workflows.ConfirmState], cards interfaces.CardManager) tool.ToolHandle {
+func BuildDeleteEntryTool(engine wf.Engine[workflows.DestructiveManageState], def wf.Definition[workflows.DestructiveManageState], cards interfaces.CardManager) tool.ToolHandle {
 	in := llm.Schema{
 		Name:   "delete_entry_input",
 		Strict: true,
@@ -60,14 +60,14 @@ func BuildDeleteEntryTool(engine wf.Engine[workflows.ConfirmState], def wf.Defin
 		},
 	}
 	exec := buildDeleteEntryExec(engine, def, cards)
-	return tool.NewVerbatimTool("delete_entry", "Solicita confirmação do usuário para excluir um lançamento financeiro.", in, out, exec, extractDeleteEntryVerbatim)
+	return tool.NewVerbatimTool("delete_entry", "Solicita confirmação do usuário para excluir um lançamento financeiro ou um 💳.", in, out, exec, extractDeleteEntryVerbatim)
 }
 
 func extractDeleteEntryVerbatim(o DeleteEntryOutput) (string, bool) {
 	return o.ImpactNote, o.NeedsConfirmation && o.ImpactNote != ""
 }
 
-func buildDeleteEntryExec(engine wf.Engine[workflows.ConfirmState], def wf.Definition[workflows.ConfirmState], cards interfaces.CardManager) func(context.Context, DeleteEntryInput) (DeleteEntryOutput, error) {
+func buildDeleteEntryExec(engine wf.Engine[workflows.DestructiveManageState], def wf.Definition[workflows.DestructiveManageState], cards interfaces.CardManager) func(context.Context, DeleteEntryInput) (DeleteEntryOutput, error) {
 	return func(ctx context.Context, in DeleteEntryInput) (DeleteEntryOutput, error) {
 		rc, ok := wf.RuntimeFrom(ctx)
 		if !ok {
@@ -83,26 +83,25 @@ func buildDeleteEntryExec(engine wf.Engine[workflows.ConfirmState], def wf.Defin
 			return DeleteEntryOutput{}, fmt.Errorf("agents.tool.delete_entry: parse resource uuid: %w", err)
 		}
 
-		opKind := workflows.OpDeleteEntry
+		opKind := workflows.DestructiveOpDeleteEntry
 		if in.EntryKind == "card" {
-			opKind = workflows.OpDeleteCard
+			opKind = workflows.DestructiveOpDeleteCard
 		}
 
-		impactNote := workflows.BuildImpactNote(ctx, in.EntryID, in.EntryKind, userID, cards)
+		impactNote := workflows.BuildDestructiveManageImpactNote(ctx, in.EntryID, in.EntryKind, userID, cards)
 
-		state := workflows.ConfirmState{
-			Awaiting:    workflows.AwaitingConfirm,
+		state := workflows.DestructiveManageState{
+			Status:      workflows.DestructiveManageActive,
 			Operation:   opKind,
+			UserID:      userID,
 			TargetRef:   in.EntryID,
-			TargetKind:  in.EntryKind,
 			ImpactNote:  impactNote,
 			MessageID:   req.MessageID,
 			SuspendedAt: time.Now().UTC(),
-			UserID:      userID,
 			Version:     in.Version,
 		}
 
-		key := workflows.DestructiveConfirmKey(req.ResourceID)
+		key := workflows.DestructiveManageKey(req.ResourceID, req.ThreadID)
 		_, err = engine.Start(ctx, def, key, state)
 		if err != nil && !errors.Is(err, wf.ErrRunAlreadyExists) {
 			return DeleteEntryOutput{}, fmt.Errorf("agents.tool.delete_entry: iniciar confirmação: %w", err)
