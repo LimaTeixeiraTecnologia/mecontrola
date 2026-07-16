@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-recorrencia-orcamento-onboarding/5.0_execution_report.md
+summary: "BuildRecurrenceStep reescrito com extracao unica + DecideRecurrence + dispatch exaustivo + confirmacao encadeada; suite internal/agents verde"
+timestamp: "2026-07-16T00:42:14Z"

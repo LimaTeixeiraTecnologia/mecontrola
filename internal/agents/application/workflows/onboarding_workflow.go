@@ -308,20 +308,22 @@ func DecideDistributionBalance(kind allocationInputKind, valuesBySlug map[string
 }
 
 type OnboardingState struct {
-	Phase              OnboardingPhase `json:"phase"`
-	UserID             string          `json:"userID"`
-	PeerID             string          `json:"peerID"`
-	Goal               string          `json:"goal"`
-	GoalValueCents     int64           `json:"goalValueCents"`
-	GoalValueAsked     bool            `json:"goalValueAsked"`
-	MonthlyBudgetCents int64           `json:"monthlyBudgetCents"`
-	ReviewAwait        reviewAwaitKind `json:"reviewAwait"`
-	CardsDone          bool            `json:"cardsDone"`
-	Allocations        map[string]int  `json:"allocations"`
-	Recurrence         bool            `json:"recurrence"`
-	ResumeText         string          `json:"resumeText"`
-	FinalMessage       string          `json:"finalMessage"`
-	GoalConfirmation   string          `json:"goalConfirmation"`
+	Phase                  OnboardingPhase `json:"phase"`
+	UserID                 string          `json:"userID"`
+	PeerID                 string          `json:"peerID"`
+	Goal                   string          `json:"goal"`
+	GoalValueCents         int64           `json:"goalValueCents"`
+	GoalValueAsked         bool            `json:"goalValueAsked"`
+	MonthlyBudgetCents     int64           `json:"monthlyBudgetCents"`
+	ReviewAwait            reviewAwaitKind `json:"reviewAwait"`
+	CardsDone              bool            `json:"cardsDone"`
+	Allocations            map[string]int  `json:"allocations"`
+	Recurrence             bool            `json:"recurrence"`
+	RecurrenceMonths       int             `json:"recurrenceMonths"`
+	ResumeText             string          `json:"resumeText"`
+	FinalMessage           string          `json:"finalMessage"`
+	GoalConfirmation       string          `json:"goalConfirmation"`
+	RecurrenceConfirmation string          `json:"recurrenceConfirmation"`
 }
 
 func DecideGoal(text string) (string, error) {
@@ -344,6 +346,105 @@ func DecideMonthlyBudgetCents(amountBRL float64) (int64, error) {
 		return 0, errors.New("monthly_budget: valor deve ser maior que zero")
 	}
 	return int64(math.Round(amountBRL * 100)), nil
+}
+
+type recurrenceIntentKind int
+
+const (
+	recurrenceIntentNegative recurrenceIntentKind = iota + 1
+	recurrenceIntentPositive
+	recurrenceIntentUnclear
+)
+
+var errInvalidRecurrenceIntent = errors.New("recurrence: tipo de intencao invalido")
+
+func (k recurrenceIntentKind) String() string {
+	switch k {
+	case recurrenceIntentNegative:
+		return "negative"
+	case recurrenceIntentPositive:
+		return "positive"
+	case recurrenceIntentUnclear:
+		return "unclear"
+	default:
+		return "unknown"
+	}
+}
+
+func (k recurrenceIntentKind) IsValid() bool {
+	return k >= recurrenceIntentNegative && k <= recurrenceIntentUnclear
+}
+
+func ParseRecurrenceIntentKind(s string) (recurrenceIntentKind, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "negative":
+		return recurrenceIntentNegative, nil
+	case "positive":
+		return recurrenceIntentPositive, nil
+	case "unclear":
+		return recurrenceIntentUnclear, nil
+	default:
+		return 0, fmt.Errorf("%w: %q", errInvalidRecurrenceIntent, s)
+	}
+}
+
+type recurrenceOutcomeKind int
+
+const (
+	recurrenceOutcomeNone recurrenceOutcomeKind = iota + 1
+	recurrenceOutcomeDefault
+	recurrenceOutcomeSpecific
+	recurrenceOutcomeInvalid
+	recurrenceOutcomeAmbiguous
+)
+
+func (k recurrenceOutcomeKind) String() string {
+	switch k {
+	case recurrenceOutcomeNone:
+		return "no_recurrence"
+	case recurrenceOutcomeDefault:
+		return "default_12"
+	case recurrenceOutcomeSpecific:
+		return "specific_months"
+	case recurrenceOutcomeInvalid:
+		return "invalid_reprompt"
+	case recurrenceOutcomeAmbiguous:
+		return "ambiguous_reprompt"
+	default:
+		return "unknown"
+	}
+}
+
+func (k recurrenceOutcomeKind) IsValid() bool {
+	return k >= recurrenceOutcomeNone && k <= recurrenceOutcomeAmbiguous
+}
+
+type recurrenceDecision struct {
+	Outcome recurrenceOutcomeKind
+	Months  int
+}
+
+const (
+	recurrenceDefaultMonths = 12
+	recurrenceMinMonths     = 1
+	recurrenceMaxMonths     = 12
+)
+
+func DecideRecurrence(intent recurrenceIntentKind, hasMonths bool, months int) recurrenceDecision {
+	if hasMonths {
+		if months >= recurrenceMinMonths && months <= recurrenceMaxMonths {
+			return recurrenceDecision{Outcome: recurrenceOutcomeSpecific, Months: months}
+		}
+		return recurrenceDecision{Outcome: recurrenceOutcomeInvalid}
+	}
+	switch intent {
+	case recurrenceIntentPositive:
+		return recurrenceDecision{Outcome: recurrenceOutcomeDefault, Months: recurrenceDefaultMonths}
+	case recurrenceIntentNegative:
+		return recurrenceDecision{Outcome: recurrenceOutcomeNone}
+	default:
+		return recurrenceDecision{Outcome: recurrenceOutcomeAmbiguous}
+	}
 }
 
 func DecideDistribution(allocsBP map[string]int) error {
@@ -617,6 +718,12 @@ type yesNoExtract struct {
 	Confirmed bool `json:"confirmed"`
 }
 
+type recurrenceExtract struct {
+	Intent    string `json:"intent"`
+	HasMonths bool   `json:"hasMonths"`
+	Months    int    `json:"months"`
+}
+
 var goalWithValueSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
@@ -690,6 +797,17 @@ var recurrenceSchema = map[string]any{
 		"confirmed": map[string]any{"type": "boolean"},
 	},
 	"required":             []any{"confirmed"},
+	"additionalProperties": false,
+}
+
+var recurrenceDecisionSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"intent":    map[string]any{"type": "string", "enum": []any{"negative", "positive", "unclear"}},
+		"hasMonths": map[string]any{"type": "boolean"},
+		"months":    map[string]any{"type": "integer"},
+	},
+	"required":             []any{"intent", "hasMonths", "months"},
 	"additionalProperties": false,
 }
 
@@ -769,7 +887,29 @@ func cardsRepromptFor(missing cardMissingField) string {
 	}
 }
 
-const conclusionRecurrencePrompt = "Quer que eu repita esse orçamento automaticamente pelos próximos 12 meses, sem precisar configurar de novo? Responda \"sim\" ou \"não\"."
+const conclusionRecurrencePrompt = "📊 Quer que eu repita esse orçamento automaticamente todo mês, sem precisar configurar de novo? Você pode responder \"sim\" (repete por 12 meses), informar uma quantidade de 1 a 12 meses (ex.: \"só por 6 meses\"), ou \"não\" se preferir configurar de novo depois."
+
+const recurrenceInvalidReprompt = "Consigo repetir esse orçamento automaticamente por um período entre 1 e 12 meses. Quantos meses você quer? Responda com um número de 1 a 12, \"sim\" para repetir por 12 meses, ou \"não\" para não repetir."
+
+const recurrenceConfirmationNone = "Combinado, não vou repetir esse orçamento automaticamente. ✅"
+
+const recurrenceConfirmationDefault = "Perfeito! Vou repetir esse orçamento automaticamente pelos próximos 12 meses. ✅"
+
+const recurrenceConfirmationTemplate = "Perfeito! Vou repetir esse orçamento automaticamente por %s. ✅"
+
+func monthsLabel(n int) string {
+	if n == 1 {
+		return "1 mês"
+	}
+	return fmt.Sprintf("%d meses", n)
+}
+
+func recurrenceConfirmationFor(months int) string {
+	if months == recurrenceDefaultMonths {
+		return recurrenceConfirmationDefault
+	}
+	return fmt.Sprintf(recurrenceConfirmationTemplate, monthsLabel(months))
+}
 
 const allocationInputSystemPrompt = "Você classifica a resposta do usuário sobre a distribuição do orçamento em 5 categorias: custo_fixo, conhecimento, prazeres, metas, liberdade_financeira. " +
 	"Defina action='confirm' SOMENTE quando o usuário aceitar a sugestão sem informar nenhum valor novo (ex.: sim, aceito, pode confirmar, ok); nunca use 'confirm' quando o texto contiver números para as categorias. " +
@@ -818,7 +958,15 @@ const monthlyBudgetSystemPrompt = "Extraia o valor do orcamento mensal em reais 
 
 const cardsSystemPrompt = "Extraia do texto do usuario se ele quer adicionar um 💳 (wantsCard), o apelido (nickname), o banco emissor (bank) e o dia de vencimento (dueDay, inteiro 1-31). Se nao quiser 💳, retorne wantsCard=false, nickname vazio, bank vazio e dueDay=0."
 
-const recurrenceSystemPrompt = "O usuario esta respondendo se deseja repetir o orcamento automaticamente pelos proximos 12 meses. Extraia se confirmou (true) ou nao (false)."
+const recurrenceDecisionSystemPrompt = "Você extrai a resposta do usuário sobre repetir o orçamento automaticamente pelos próximos meses. " +
+	"Retorne intent, hasMonths e months; NÃO decida prioridade nem limites aqui — isso é resolvido por outra função. " +
+	"Defina intent='positive' quando o usuário aceitar a recorrência (ex.: 'sim', 'pode', 'quero', 'confirmo', 'topo'), mesmo que também informe uma quantidade de meses. " +
+	"Defina intent='negative' quando o usuário recusar (ex.: 'não', 'nao', 'não quero', 'não precisa'). " +
+	"Defina intent='unclear' quando não houver intenção reconhecível na mensagem (ex.: 'talvez', 'sei lá', emoji isolado, texto sem relação com a pergunta). " +
+	"Defina hasMonths=true e preencha months sempre que o usuário mencionar uma quantidade de meses, numérica ou por extenso, mesmo que fora do intervalo permitido — não corrija nem limite o valor aqui, apenas extraia o número informado. " +
+	"Converta números por extenso para inteiro. Exemplos de conversão: " +
+	"\"um\" -> 1; \"dois\" -> 2; \"três\" -> 3; \"quatro\" -> 4; \"cinco\" -> 5; \"seis\" -> 6; \"sete\" -> 7; \"oito\" -> 8; \"nove\" -> 9; \"dez\" -> 10; \"onze\" -> 11; \"doze\" -> 12. " +
+	"Se o usuário não mencionar nenhuma quantidade, defina hasMonths=false e months=0."
 
 const goalValueSystemPrompt = "Extraia, se houver, o valor em reais que o usuário informou para a meta financeira dele. " +
 	"Defina hasAmount=true somente quando o texto mencionar explicitamente um valor monetário; caso contrário hasAmount=false e amountBRL=0. " +
@@ -963,11 +1111,15 @@ func renderCardsSummary(cards []interfaces.Card) string {
 	return b.String()
 }
 
-func recurrenceSummaryLine(recurrence bool) string {
-	if recurrence {
-		return "🔁 Recorrência: ligada (repete pelos próximos 12 meses)"
+func recurrenceSummaryLine(recurrence bool, months int) string {
+	if !recurrence {
+		return "🔁 Recorrência: desligada"
 	}
-	return "🔁 Recorrência: desligada"
+	effectiveMonths := months
+	if effectiveMonths <= 0 {
+		effectiveMonths = recurrenceDefaultMonths
+	}
+	return fmt.Sprintf("🔁 Recorrência: ligada (repete pelos próximos %s)", monthsLabel(effectiveMonths))
 }
 
 func conclusionSummaryMessage(state OnboardingState, items []interfaces.AllocationCents, cards []interfaces.Card) string {
@@ -984,7 +1136,7 @@ func conclusionSummaryMessage(state OnboardingState, items []interfaces.Allocati
 	b.WriteString("\nCartões:\n")
 	b.WriteString(renderCardsSummary(cards))
 	b.WriteString("\n\n")
-	b.WriteString(recurrenceSummaryLine(state.Recurrence))
+	b.WriteString(recurrenceSummaryLine(state.Recurrence, state.RecurrenceMonths))
 	b.WriteString("\n\n")
 	b.WriteString(conclusionFinalMessage())
 	return b.String()
@@ -1158,7 +1310,12 @@ func BuildCardsStep(a agent.Agent, cards interfaces.CardManager) func(context.Co
 			if err != nil {
 				return failStep(state, fmt.Errorf("agents.onboarding.cards: list_cards: %w", err))
 			}
-			return suspendStep(state, cardsPrompt(len(existingCards))), nil
+			prompt := cardsPrompt(len(existingCards))
+			if state.RecurrenceConfirmation != "" {
+				prompt = state.RecurrenceConfirmation + "\n\n" + prompt
+				state.RecurrenceConfirmation = ""
+			}
+			return suspendStep(state, prompt), nil
 		}
 		resumeText := state.ResumeText
 		state.ResumeText = ""
@@ -1514,7 +1671,24 @@ func BuildActivationStep(budgets interfaces.BudgetPlanner) func(context.Context,
 	}
 }
 
-func BuildRecurrenceStep(a agent.Agent, budgets interfaces.BudgetPlanner) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+const recurrenceOutcomeMetric = "agents_onboarding_recurrence_total"
+
+func newRecurrenceOutcomeCounter(o11y observability.Observability) observability.Counter {
+	return o11y.Metrics().Counter(
+		recurrenceOutcomeMetric,
+		"Total de resultados do passo de recorrencia do onboarding",
+		"1",
+	)
+}
+
+func recordRecurrenceOutcome(ctx context.Context, rec observability.Counter, outcome string) {
+	if rec == nil {
+		return
+	}
+	rec.Add(ctx, 1, observability.String("outcome", outcome))
+}
+
+func BuildRecurrenceStep(a agent.Agent, budgets interfaces.BudgetPlanner, rec observability.Counter) func(context.Context, OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 	return func(ctx context.Context, state OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		if state.ResumeText == "" {
 			state.Phase = PhaseRecurrence
@@ -1524,32 +1698,49 @@ func BuildRecurrenceStep(a agent.Agent, budgets interfaces.BudgetPlanner) func(c
 		state.ResumeText = ""
 		extracted, err := a.Execute(ctx, agent.Request{
 			Messages: []llm.Message{
-				{Role: "system", Content: recurrenceSystemPrompt},
+				{Role: "system", Content: recurrenceDecisionSystemPrompt},
 				{Role: "user", Content: resumeText},
 			},
-			Schema: &llm.Schema{Name: "recurrence_confirm", Strict: true, Schema: recurrenceSchema},
+			Schema: &llm.Schema{Name: "recurrence_decision", Strict: true, Schema: recurrenceDecisionSchema},
 		})
 		if err != nil {
 			return failStep(state, fmt.Errorf("agents.onboarding.recurrence: parse: %w", err))
 		}
-		var extract yesNoExtract
+		var extract recurrenceExtract
 		if err := json.Unmarshal(extracted.RawJSON, &extract); err != nil {
 			return failStep(state, fmt.Errorf("agents.onboarding.recurrence: unmarshal: %w", err))
 		}
-		if !extract.Confirmed {
+		intent, _ := ParseRecurrenceIntentKind(extract.Intent)
+		decision := DecideRecurrence(intent, extract.HasMonths, extract.Months)
+		switch decision.Outcome {
+		case recurrenceOutcomeInvalid:
+			recordRecurrenceOutcome(ctx, rec, decision.Outcome.String())
+			return suspendStep(state, recurrenceInvalidReprompt), nil
+		case recurrenceOutcomeAmbiguous:
+			recordRecurrenceOutcome(ctx, rec, decision.Outcome.String())
+			return suspendStep(state, conclusionRecurrencePrompt), nil
+		case recurrenceOutcomeNone:
+			state.RecurrenceConfirmation = recurrenceConfirmationNone
+			recordRecurrenceOutcome(ctx, rec, decision.Outcome.String())
 			return completeStep(state), nil
+		case recurrenceOutcomeDefault, recurrenceOutcomeSpecific:
+			userUUID, err := uuid.Parse(state.UserID)
+			if err != nil {
+				return failStep(state, fmt.Errorf("agents.onboarding.recurrence: parse_user_id: %w", err))
+			}
+			loc := competenceLocation(time.LoadLocation("America/Sao_Paulo"))
+			competence := time.Now().In(loc).Format("2006-01")
+			if err := budgets.CreateRecurrence(ctx, userUUID, competence, decision.Months); err != nil {
+				return failStep(state, fmt.Errorf("agents.onboarding.recurrence: create_recurrence: %w", err))
+			}
+			state.Recurrence = true
+			state.RecurrenceMonths = decision.Months
+			state.RecurrenceConfirmation = recurrenceConfirmationFor(decision.Months)
+			recordRecurrenceOutcome(ctx, rec, decision.Outcome.String())
+			return completeStep(state), nil
+		default:
+			return failStep(state, fmt.Errorf("agents.onboarding.recurrence: unknown_outcome: %d", decision.Outcome))
 		}
-		userUUID, err := uuid.Parse(state.UserID)
-		if err != nil {
-			return failStep(state, fmt.Errorf("agents.onboarding.recurrence: parse_user_id: %w", err))
-		}
-		loc := competenceLocation(time.LoadLocation("America/Sao_Paulo"))
-		competence := time.Now().In(loc).Format("2006-01")
-		if err := budgets.CreateRecurrence(ctx, userUUID, competence, 12); err != nil {
-			return failStep(state, fmt.Errorf("agents.onboarding.recurrence: create_recurrence: %w", err))
-		}
-		state.Recurrence = true
-		return completeStep(state), nil
 	}
 }
 
@@ -1636,9 +1827,11 @@ func BuildOnboardingWorkflow(
 	}
 	var dist observability.Counter
 	var mb observability.Counter
+	var rec observability.Counter
 	if o11y != nil {
 		dist = newDistributionOutcomeCounter(o11y)
 		mb = newMonthlyBudgetOutcomeCounter(o11y)
+		rec = newRecurrenceOutcomeCounter(o11y)
 	}
 	return workflow.Definition[OnboardingState]{
 		ID: OnboardingWorkflowID,
@@ -1648,7 +1841,7 @@ func BuildOnboardingWorkflow(
 			workflow.NewStepFunc(stepMonthlyBudgetID, wrap(BuildMonthlyBudgetStep(a, mb))),
 			workflow.NewStepFunc(stepBudgetReviewID, wrap(BuildBudgetReviewStep(a, budgets, dist))),
 			workflow.NewStepFunc(stepActivationID, wrap(BuildActivationStep(budgets))),
-			workflow.NewStepFunc(stepRecurrenceID, wrap(BuildRecurrenceStep(a, budgets))),
+			workflow.NewStepFunc(stepRecurrenceID, wrap(BuildRecurrenceStep(a, budgets, rec))),
 			workflow.NewStepFunc(stepCardsID, wrap(BuildCardsStep(a, cards))),
 			workflow.NewStepFunc(stepConclusionID, wrap(BuildConclusionStep(workingMem, budgets, cards))),
 		),

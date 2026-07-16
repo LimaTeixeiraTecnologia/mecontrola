@@ -18,6 +18,12 @@ internal/agents/application/workflows/onboarding_workflow.go:distributionIntentK
 internal/agents/application/workflows/onboarding_workflow.go:distributionBalanceKind.String
 internal/agents/application/workflows/onboarding_workflow.go:distributionBalanceKind.IsValid
 internal/agents/application/workflows/onboarding_workflow.go:ParseDistributionBalanceKind
+# recurrenceIntentKind.String/IsValid e recurrenceOutcomeKind.IsValid: metodos DMMF de tipos
+# fechados mantidos por simetria de API (ParseRecurrenceIntentKind e recurrenceOutcomeKind.String
+# ja wired em producao no BuildRecurrenceStep).
+internal/agents/application/workflows/onboarding_workflow.go:recurrenceIntentKind.String
+internal/agents/application/workflows/onboarding_workflow.go:recurrenceIntentKind.IsValid
+internal/agents/application/workflows/onboarding_workflow.go:recurrenceOutcomeKind.IsValid
 # Helpers de resolucao de categoria usados por testes e disponiveis para registry futuro; category_resolution.go
 # e pending_category_candidate.go foram reaproveitados pelo transaction-write novo (nao sao legado do cutover
 # da tarefa 9.0 apesar do nome do PendingCategoryCandidate).

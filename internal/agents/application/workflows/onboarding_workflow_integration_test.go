@@ -677,35 +677,56 @@ func (s *OnboardingWorkflowRealLLMSuite) TestSummaryConfirmExtractionGate() {
 	require.GreaterOrEqual(s.T(), ratio, 0.90, "gate de merge RF-42 (summary_confirm): ratio %.4f abaixo de 0.90 em %q", ratio, s.model)
 }
 
+type recurrenceGateOutcome int
+
+const (
+	recurrenceGateNone recurrenceGateOutcome = iota + 1
+	recurrenceGateDefault
+	recurrenceGateSpecific
+	recurrenceGateInvalid
+	recurrenceGateAmbiguous
+)
+
 func (s *OnboardingWorkflowRealLLMSuite) TestRecurrenceExtractionGate() {
 	obs := fake.NewProvider()
 	a := agents.BuildMeControlaAgent(s.provider, nil, nil, obs, 0)
 
-	type expected struct {
-		recurrence bool
-	}
-
 	scenarios := []struct {
 		name       string
 		resumeText string
-		expected   expected
+		outcome    recurrenceGateOutcome
+		months     int
 	}{
-		{name: "sim-simples", resumeText: "sim", expected: expected{recurrence: true}},
-		{name: "sim-quero-repetir", resumeText: "sim, quero repetir automaticamente", expected: expected{recurrence: true}},
-		{name: "nao-simples", resumeText: "não", expected: expected{recurrence: false}},
-		{name: "nao-prefiro-manual", resumeText: "não, prefiro configurar manualmente", expected: expected{recurrence: false}},
-		{name: "ambiguo-talvez", resumeText: "talvez depois", expected: expected{recurrence: false}},
+		{name: "negativa-nao", resumeText: "não", outcome: recurrenceGateNone},
+		{name: "negativa-num-quero", resumeText: "num quero", outcome: recurrenceGateNone},
+		{name: "negativa-so-esse-mes", resumeText: "só esse mês", outcome: recurrenceGateNone},
+		{name: "negativa-n-abreviado", resumeText: "n", outcome: recurrenceGateNone},
+		{name: "positiva-sim", resumeText: "sim", outcome: recurrenceGateDefault, months: 12},
+		{name: "positiva-quero", resumeText: "quero", outcome: recurrenceGateDefault, months: 12},
+		{name: "positiva-pode-repetir", resumeText: "pode repetir", outcome: recurrenceGateDefault, months: 12},
+		{name: "numerico-6-meses", resumeText: "6 meses", outcome: recurrenceGateSpecific, months: 6},
+		{name: "numerico-so-3", resumeText: "só 3", outcome: recurrenceGateSpecific, months: 3},
+		{name: "numerico-coloca-por-6", resumeText: "coloca por 6", outcome: recurrenceGateSpecific, months: 6},
+		{name: "extenso-seis-meses", resumeText: "seis meses", outcome: recurrenceGateSpecific, months: 6},
+		{name: "extenso-manter-por-oito-meses", resumeText: "manter por oito meses", outcome: recurrenceGateSpecific, months: 8},
+		{name: "invalido-0-meses", resumeText: "0 meses", outcome: recurrenceGateInvalid},
+		{name: "invalido-13-meses", resumeText: "13 meses", outcome: recurrenceGateInvalid},
+		{name: "invalido-24-meses", resumeText: "24 meses", outcome: recurrenceGateInvalid},
+		{name: "ambiguo-talvez", resumeText: "talvez depois", outcome: recurrenceGateAmbiguous},
+		{name: "ambiguo-sei-la", resumeText: "sei lá", outcome: recurrenceGateAmbiguous},
+		{name: "ambiguo-emoji", resumeText: "🤔", outcome: recurrenceGateAmbiguous},
 	}
 
 	hits := 0
+	falsoSucesso := 0
 	total := len(scenarios)
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			budgets := interfacemocks.NewBudgetPlanner(s.T())
-			if scenario.expected.recurrence {
+			if scenario.outcome == recurrenceGateDefault || scenario.outcome == recurrenceGateSpecific {
 				budgets.EXPECT().
-					CreateRecurrence(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string"), 12).
+					CreateRecurrence(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string"), scenario.months).
 					Return(nil).
 					Maybe()
 			}
@@ -713,7 +734,7 @@ func (s *OnboardingWorkflowRealLLMSuite) TestRecurrenceExtractionGate() {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 
-			step := workflows.BuildRecurrenceStep(a, budgets)
+			step := workflows.BuildRecurrenceStep(a, budgets, nil)
 			firstEntry, err := step(ctx, workflows.OnboardingState{UserID: "11111111-1111-1111-1111-111111111111"})
 			require.NoError(s.T(), err)
 			require.Equal(s.T(), workflow.StepStatusSuspended, firstEntry.Status)
@@ -722,18 +743,35 @@ func (s *OnboardingWorkflowRealLLMSuite) TestRecurrenceExtractionGate() {
 			resumeState.ResumeText = scenario.resumeText
 			out, err := step(ctx, resumeState)
 
-			ok := err == nil && out.Status == workflow.StepStatusCompleted && out.State.Recurrence == scenario.expected.recurrence
+			var ok bool
+			switch scenario.outcome {
+			case recurrenceGateNone:
+				ok = err == nil && out.Status == workflow.StepStatusCompleted &&
+					!out.State.Recurrence && out.State.RecurrenceMonths == 0
+			case recurrenceGateDefault:
+				ok = err == nil && out.Status == workflow.StepStatusCompleted &&
+					out.State.Recurrence && out.State.RecurrenceMonths == scenario.months
+			case recurrenceGateSpecific:
+				ok = err == nil && out.Status == workflow.StepStatusCompleted &&
+					out.State.Recurrence && out.State.RecurrenceMonths == scenario.months
+			case recurrenceGateInvalid, recurrenceGateAmbiguous:
+				ok = err == nil && out.Status == workflow.StepStatusSuspended && !out.State.Recurrence
+				if err == nil && out.State.Recurrence {
+					falsoSucesso++
+				}
+			}
 			if ok {
 				hits++
 			}
-			s.T().Logf("caso=%q modelo=%q status=%v recurrence=%v esperado=%v err=%v ok=%v",
-				scenario.name, s.model, out.Status, out.State.Recurrence, scenario.expected.recurrence, err, ok)
+			s.T().Logf("caso=%q modelo=%q status=%v recurrence=%v meses=%d esperado_meses=%d err=%v ok=%v",
+				scenario.name, s.model, out.Status, out.State.Recurrence, out.State.RecurrenceMonths, scenario.months, err, ok)
 		})
 	}
 
 	ratio := float64(hits) / float64(total)
-	s.T().Logf("gate real-LLM onboarding_recurrence modelo=%q hits=%d total=%d ratio=%.4f", s.model, hits, total, ratio)
-	require.GreaterOrEqual(s.T(), ratio, 0.90, "gate de merge RF-42 (recurrence): ratio %.4f abaixo de 0.90 em %q", ratio, s.model)
+	s.T().Logf("gate real-LLM onboarding_recurrence modelo=%q hits=%d total=%d ratio=%.4f falso_sucesso=%d", s.model, hits, total, ratio, falsoSucesso)
+	require.Equal(s.T(), 0, falsoSucesso, "gate de merge RF-17/RF-18 (recurrence): falso-sucesso detectado (recorrência aplicada em cenário inválido/ambíguo)")
+	require.GreaterOrEqual(s.T(), ratio, 0.90, "gate de merge RF-17/RF-18 (recurrence): ratio %.4f abaixo de 0.90 em %q", ratio, s.model)
 }
 
 func (s *OnboardingWorkflowRealLLMSuite) TestCardExtractionGate() {

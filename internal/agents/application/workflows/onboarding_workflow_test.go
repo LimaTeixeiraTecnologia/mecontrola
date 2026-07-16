@@ -323,6 +323,256 @@ func (s *OnboardingWorkflowSuite) TestDecideMonthlyBudgetCents() {
 	}
 }
 
+func (s *OnboardingWorkflowSuite) TestRecurrenceIntentKind_IsValid_ZeroValue() {
+	var zero recurrenceIntentKind
+	s.False(zero.IsValid())
+	s.Equal("unknown", zero.String())
+	s.True(recurrenceIntentNegative.IsValid())
+	s.True(recurrenceIntentPositive.IsValid())
+	s.True(recurrenceIntentUnclear.IsValid())
+	s.Equal("negative", recurrenceIntentNegative.String())
+	s.Equal("positive", recurrenceIntentPositive.String())
+	s.Equal("unclear", recurrenceIntentUnclear.String())
+}
+
+func (s *OnboardingWorkflowSuite) TestParseRecurrenceIntentKind() {
+	type args struct {
+		input string
+	}
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(kind recurrenceIntentKind, err error)
+	}{
+		{
+			name: "negative valido",
+			args: args{input: "negative"},
+			expect: func(kind recurrenceIntentKind, err error) {
+				s.NoError(err)
+				s.Equal(recurrenceIntentNegative, kind)
+			},
+		},
+		{
+			name: "positive valido case-insensitive com espacos",
+			args: args{input: "  Positive  "},
+			expect: func(kind recurrenceIntentKind, err error) {
+				s.NoError(err)
+				s.Equal(recurrenceIntentPositive, kind)
+			},
+		},
+		{
+			name: "unclear valido",
+			args: args{input: "unclear"},
+			expect: func(kind recurrenceIntentKind, err error) {
+				s.NoError(err)
+				s.Equal(recurrenceIntentUnclear, kind)
+			},
+		},
+		{
+			name: "invalido retorna erro tipado",
+			args: args{input: "bogus"},
+			expect: func(kind recurrenceIntentKind, err error) {
+				s.Error(err)
+				s.True(errors.Is(err, errInvalidRecurrenceIntent))
+				s.Equal(recurrenceIntentKind(0), kind)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			kind, err := ParseRecurrenceIntentKind(scenario.args.input)
+			scenario.expect(kind, err)
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestRecurrenceOutcomeKind_String_And_IsValid() {
+	var zero recurrenceOutcomeKind
+	s.False(zero.IsValid())
+	s.Equal("unknown", zero.String())
+
+	scenarios := []struct {
+		kind  recurrenceOutcomeKind
+		label string
+	}{
+		{recurrenceOutcomeNone, "no_recurrence"},
+		{recurrenceOutcomeDefault, "default_12"},
+		{recurrenceOutcomeSpecific, "specific_months"},
+		{recurrenceOutcomeInvalid, "invalid_reprompt"},
+		{recurrenceOutcomeAmbiguous, "ambiguous_reprompt"},
+	}
+	for _, scenario := range scenarios {
+		s.True(scenario.kind.IsValid())
+		s.Equal(scenario.label, scenario.kind.String())
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestDecideRecurrence() {
+	type args struct {
+		intent    recurrenceIntentKind
+		hasMonths bool
+		months    int
+	}
+	scenarios := []struct {
+		name   string
+		args   args
+		expect recurrenceDecision
+	}{
+		{
+			name:   "negativa sem meses resolve None",
+			args:   args{intent: recurrenceIntentNegative, hasMonths: false},
+			expect: recurrenceDecision{Outcome: recurrenceOutcomeNone},
+		},
+		{
+			name:   "positiva sem meses resolve Default 12",
+			args:   args{intent: recurrenceIntentPositive, hasMonths: false},
+			expect: recurrenceDecision{Outcome: recurrenceOutcomeDefault, Months: recurrenceDefaultMonths},
+		},
+		{
+			name:   "unclear sem meses resolve Ambiguous",
+			args:   args{intent: recurrenceIntentUnclear, hasMonths: false},
+			expect: recurrenceDecision{Outcome: recurrenceOutcomeAmbiguous},
+		},
+		{
+			name:   "intencao zero-value sem meses resolve Ambiguous",
+			args:   args{intent: recurrenceIntentKind(0), hasMonths: false},
+			expect: recurrenceDecision{Outcome: recurrenceOutcomeAmbiguous},
+		},
+		{
+			name:   "meses 1 resolve Specific",
+			args:   args{intent: recurrenceIntentUnclear, hasMonths: true, months: 1},
+			expect: recurrenceDecision{Outcome: recurrenceOutcomeSpecific, Months: 1},
+		},
+		{
+			name:   "meses 3 resolve Specific",
+			args:   args{intent: recurrenceIntentUnclear, hasMonths: true, months: 3},
+			expect: recurrenceDecision{Outcome: recurrenceOutcomeSpecific, Months: 3},
+		},
+		{
+			name:   "meses 12 resolve Specific",
+			args:   args{intent: recurrenceIntentUnclear, hasMonths: true, months: 12},
+			expect: recurrenceDecision{Outcome: recurrenceOutcomeSpecific, Months: 12},
+		},
+		{
+			name:   "meses 0 fora do intervalo resolve Invalid",
+			args:   args{intent: recurrenceIntentPositive, hasMonths: true, months: 0},
+			expect: recurrenceDecision{Outcome: recurrenceOutcomeInvalid},
+		},
+		{
+			name:   "meses 13 fora do intervalo resolve Invalid",
+			args:   args{intent: recurrenceIntentPositive, hasMonths: true, months: 13},
+			expect: recurrenceDecision{Outcome: recurrenceOutcomeInvalid},
+		},
+		{
+			name:   "meses 24 fora do intervalo resolve Invalid",
+			args:   args{intent: recurrenceIntentPositive, hasMonths: true, months: 24},
+			expect: recurrenceDecision{Outcome: recurrenceOutcomeInvalid},
+		},
+		{
+			name:   "precedencia: negativa com meses validos vence para Specific",
+			args:   args{intent: recurrenceIntentNegative, hasMonths: true, months: 6},
+			expect: recurrenceDecision{Outcome: recurrenceOutcomeSpecific, Months: 6},
+		},
+		{
+			name:   "precedencia: positiva com meses invalidos resolve Invalid",
+			args:   args{intent: recurrenceIntentPositive, hasMonths: true, months: 13},
+			expect: recurrenceDecision{Outcome: recurrenceOutcomeInvalid},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			decision := DecideRecurrence(scenario.args.intent, scenario.args.hasMonths, scenario.args.months)
+			s.Equal(scenario.expect, decision)
+		})
+	}
+}
+
+func (s *OnboardingWorkflowSuite) TestRecurrenceExtract_UnmarshalsIntoExtractStruct() {
+	payload, err := json.Marshal(recurrenceExtract{Intent: "positive", HasMonths: true, Months: 6})
+	s.NoError(err)
+	var extract recurrenceExtract
+	s.NoError(json.Unmarshal(payload, &extract))
+	s.Equal("positive", extract.Intent)
+	s.True(extract.HasMonths)
+	s.Equal(6, extract.Months)
+}
+
+func (s *OnboardingWorkflowSuite) TestRecurrenceDecisionSchema_HasIntentHasMonthsAndMonths() {
+	props, ok := recurrenceDecisionSchema["properties"].(map[string]any)
+	s.True(ok)
+	s.Len(props, 3)
+	s.Contains(props, "intent")
+	s.Contains(props, "hasMonths")
+	s.Contains(props, "months")
+	required, ok := recurrenceDecisionSchema["required"].([]any)
+	s.True(ok)
+	s.ElementsMatch([]any{"intent", "hasMonths", "months"}, required)
+	s.Equal(false, recurrenceDecisionSchema["additionalProperties"])
+	intent, ok := props["intent"].(map[string]any)
+	s.True(ok)
+	s.ElementsMatch([]any{"negative", "positive", "unclear"}, intent["enum"])
+}
+
+func (s *OnboardingWorkflowSuite) TestRecurrenceSchema_RemainsUnchangedForSummaryConfirm() {
+	props, ok := recurrenceSchema["properties"].(map[string]any)
+	s.True(ok)
+	s.Len(props, 1)
+	s.Contains(props, "confirmed")
+	required, ok := recurrenceSchema["required"].([]any)
+	s.True(ok)
+	s.ElementsMatch([]any{"confirmed"}, required)
+	s.Equal(false, recurrenceSchema["additionalProperties"])
+}
+
+func (s *OnboardingWorkflowSuite) TestRecurrenceDecisionSystemPrompt_ContainsExtensoExamplesAndUnclearRule() {
+	s.Contains(recurrenceDecisionSystemPrompt, "intent='positive'")
+	s.Contains(recurrenceDecisionSystemPrompt, "intent='negative'")
+	s.Contains(recurrenceDecisionSystemPrompt, "intent='unclear'")
+	s.Contains(recurrenceDecisionSystemPrompt, "\"seis\" -> 6")
+	s.Contains(recurrenceDecisionSystemPrompt, "\"doze\" -> 12")
+}
+
+func (s *OnboardingWorkflowSuite) TestConclusionRecurrencePrompt_SignalsAllThreeOptions() {
+	s.Contains(conclusionRecurrencePrompt, "sim")
+	s.Contains(conclusionRecurrencePrompt, "12 meses")
+	s.Contains(conclusionRecurrencePrompt, "1 a 12 meses")
+	s.Contains(conclusionRecurrencePrompt, "não")
+	s.NotContains(conclusionRecurrencePrompt, "**")
+}
+
+func (s *OnboardingWorkflowSuite) TestRecurrenceInvalidReprompt_SignalsValidRange() {
+	s.Contains(recurrenceInvalidReprompt, "1 e 12 meses")
+	s.NotContains(recurrenceInvalidReprompt, "**")
+}
+
+func (s *OnboardingWorkflowSuite) TestMonthsLabel_SingularAndPlural() {
+	s.Equal("1 mês", monthsLabel(1))
+	s.Equal("3 meses", monthsLabel(3))
+	s.Equal("12 meses", monthsLabel(12))
+}
+
+func (s *OnboardingWorkflowSuite) TestRecurrenceConfirmationFor_DefaultAndSpecific() {
+	s.Equal(recurrenceConfirmationDefault, recurrenceConfirmationFor(12))
+	s.Contains(recurrenceConfirmationFor(3), "3 meses")
+	s.Contains(recurrenceConfirmationFor(1), "1 mês")
+	s.NotContains(recurrenceConfirmationNone, "**")
+	s.NotContains(recurrenceConfirmationDefault, "**")
+}
+
+func (s *OnboardingWorkflowSuite) TestRecurrenceSummaryLine_Off() {
+	s.Equal("🔁 Recorrência: desligada", recurrenceSummaryLine(false, 0))
+}
+
+func (s *OnboardingWorkflowSuite) TestRecurrenceSummaryLine_SpecificMonths() {
+	s.Equal("🔁 Recorrência: ligada (repete pelos próximos 3 meses)", recurrenceSummaryLine(true, 3))
+}
+
+func (s *OnboardingWorkflowSuite) TestRecurrenceSummaryLine_LegacySnapshotWithoutMonthsFallsBackToTwelve() {
+	s.Equal("🔁 Recorrência: ligada (repete pelos próximos 12 meses)", recurrenceSummaryLine(true, 0))
+}
+
 func (s *OnboardingWorkflowSuite) TestCompetenceLocationFallsBackToUTC() {
 	saoPaulo, loadErr := time.LoadLocation("America/Sao_Paulo")
 	scenarios := []struct {
@@ -2900,8 +3150,8 @@ func (s *OnboardingWorkflowSuite) TestBuildActivationStep() {
 	}
 }
 
-func recurrenceExtractJSON(confirmed bool) []byte {
-	b, _ := json.Marshal(yesNoExtract{Confirmed: confirmed})
+func recurrenceDecisionJSON(intent string, hasMonths bool, months int) []byte {
+	b, _ := json.Marshal(recurrenceExtract{Intent: intent, HasMonths: hasMonths, Months: months})
 	return b
 }
 
@@ -2940,7 +3190,7 @@ func (s *OnboardingWorkflowSuite) TestBuildRecurrenceStep() {
 			},
 		},
 		{
-			name: "resposta afirmativa deve criar recorrencia de 12 meses e completar",
+			name: "resposta afirmativa sem quantidade deve criar recorrencia de 12 meses e confirmar",
 			args: args{state: OnboardingState{
 				UserID:             baseState.UserID,
 				Phase:              PhaseRecurrence,
@@ -2951,7 +3201,7 @@ func (s *OnboardingWorkflowSuite) TestBuildRecurrenceStep() {
 				agentMock: func() *agentmocks.Agent {
 					s.agentMock.EXPECT().
 						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
-						Return(agentpkg.Result{RawJSON: recurrenceExtractJSON(true)}, nil).Once()
+						Return(agentpkg.Result{RawJSON: recurrenceDecisionJSON("positive", false, 0)}, nil).Once()
 					return s.agentMock
 				}(),
 				budgetsMock: func() *interfacemocks.BudgetPlanner {
@@ -2965,11 +3215,72 @@ func (s *OnboardingWorkflowSuite) TestBuildRecurrenceStep() {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusCompleted, out.Status)
 				s.True(out.State.Recurrence)
+				s.Equal(12, out.State.RecurrenceMonths)
+				s.Equal(recurrenceConfirmationDefault, out.State.RecurrenceConfirmation)
 				s.Empty(out.State.ResumeText)
 			},
 		},
 		{
-			name: "resposta negativa nao deve criar recorrencia nem desfazer orcamento",
+			name: "resposta com quantidade especifica de 3 meses deve criar recorrencia por 3 meses",
+			args: args{state: OnboardingState{
+				UserID:             baseState.UserID,
+				Phase:              PhaseRecurrence,
+				MonthlyBudgetCents: baseState.MonthlyBudgetCents,
+				ResumeText:         "sim, mas coloca só pra 3 meses",
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: recurrenceDecisionJSON("positive", true, 3)}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					s.budgetsMock.EXPECT().
+						CreateRecurrence(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string"), 3).
+						Return(nil).Once()
+					return s.budgetsMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.True(out.State.Recurrence)
+				s.Equal(3, out.State.RecurrenceMonths)
+				s.Contains(out.State.RecurrenceConfirmation, "3 meses")
+			},
+		},
+		{
+			name: "resposta com quantidade especifica de 1 mes deve confirmar no singular",
+			args: args{state: OnboardingState{
+				UserID:             baseState.UserID,
+				Phase:              PhaseRecurrence,
+				MonthlyBudgetCents: baseState.MonthlyBudgetCents,
+				ResumeText:         "manter por um mês",
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: recurrenceDecisionJSON("positive", true, 1)}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: func() *interfacemocks.BudgetPlanner {
+					s.budgetsMock.EXPECT().
+						CreateRecurrence(mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string"), 1).
+						Return(nil).Once()
+					return s.budgetsMock
+				}(),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.Equal(1, out.State.RecurrenceMonths)
+				s.Contains(out.State.RecurrenceConfirmation, "1 mês")
+			},
+		},
+		{
+			name: "resposta negativa nao deve criar recorrencia e deve confirmar desativacao",
 			args: args{state: OnboardingState{
 				UserID:             baseState.UserID,
 				Phase:              PhaseRecurrence,
@@ -2980,19 +3291,68 @@ func (s *OnboardingWorkflowSuite) TestBuildRecurrenceStep() {
 				agentMock: func() *agentmocks.Agent {
 					s.agentMock.EXPECT().
 						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
-						Return(agentpkg.Result{RawJSON: recurrenceExtractJSON(false)}, nil).Once()
+						Return(agentpkg.Result{RawJSON: recurrenceDecisionJSON("negative", false, 0)}, nil).Once()
 					return s.agentMock
 				}(),
-				budgetsMock: s.budgetsMock,
+				budgetsMock: interfacemocks.NewBudgetPlanner(s.T()),
 			},
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
 				s.Equal(workflow.StepStatusCompleted, out.Status)
 				s.False(out.State.Recurrence)
+				s.Equal(recurrenceConfirmationNone, out.State.RecurrenceConfirmation)
 			},
 		},
 		{
-			name: "resposta ambigua deve seguir sem recorrencia e sem reprompt",
+			name: "quantidade fora do intervalo (13 meses) deve repergunta sem criar recorrencia",
+			args: args{state: OnboardingState{
+				UserID:             baseState.UserID,
+				Phase:              PhaseRecurrence,
+				MonthlyBudgetCents: baseState.MonthlyBudgetCents,
+				ResumeText:         "coloca por 13 meses",
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: recurrenceDecisionJSON("positive", true, 13)}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: interfacemocks.NewBudgetPlanner(s.T()),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(recurrenceInvalidReprompt, out.Suspend.Prompt)
+				s.False(out.State.Recurrence)
+			},
+		},
+		{
+			name: "quantidade fora do intervalo (0 meses) deve repergunta sem criar recorrencia",
+			args: args{state: OnboardingState{
+				UserID:             baseState.UserID,
+				Phase:              PhaseRecurrence,
+				MonthlyBudgetCents: baseState.MonthlyBudgetCents,
+				ResumeText:         "0 meses",
+			}},
+			dependencies: dependencies{
+				agentMock: func() *agentmocks.Agent {
+					s.agentMock.EXPECT().
+						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
+						Return(agentpkg.Result{RawJSON: recurrenceDecisionJSON("unclear", true, 0)}, nil).Once()
+					return s.agentMock
+				}(),
+				budgetsMock: interfacemocks.NewBudgetPlanner(s.T()),
+			},
+			expect: func(out workflow.StepOutput[OnboardingState], err error) {
+				s.NoError(err)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(recurrenceInvalidReprompt, out.Suspend.Prompt)
+				s.False(out.State.Recurrence)
+			},
+		},
+		{
+			name: "resposta ambigua deve repergunta sem criar recorrencia",
 			args: args{state: OnboardingState{
 				UserID:             baseState.UserID,
 				Phase:              PhaseRecurrence,
@@ -3003,20 +3363,20 @@ func (s *OnboardingWorkflowSuite) TestBuildRecurrenceStep() {
 				agentMock: func() *agentmocks.Agent {
 					s.agentMock.EXPECT().
 						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
-						Return(agentpkg.Result{RawJSON: recurrenceExtractJSON(false)}, nil).Once()
+						Return(agentpkg.Result{RawJSON: recurrenceDecisionJSON("unclear", false, 0)}, nil).Once()
 					return s.agentMock
 				}(),
-				budgetsMock: s.budgetsMock,
+				budgetsMock: interfacemocks.NewBudgetPlanner(s.T()),
 			},
 			expect: func(out workflow.StepOutput[OnboardingState], err error) {
 				s.NoError(err)
-				s.Equal(workflow.StepStatusCompleted, out.Status)
+				s.Equal(workflow.StepStatusSuspended, out.Status)
+				s.Equal(conclusionRecurrencePrompt, out.Suspend.Prompt)
 				s.False(out.State.Recurrence)
-				s.NotEqual(workflow.StepStatusSuspended, out.Status)
 			},
 		},
 		{
-			name: "erro ao criar recorrencia deve falhar sem desfazer orcamento",
+			name: "erro ao criar recorrencia deve falhar o step",
 			args: args{state: OnboardingState{
 				UserID:             baseState.UserID,
 				Phase:              PhaseRecurrence,
@@ -3027,7 +3387,7 @@ func (s *OnboardingWorkflowSuite) TestBuildRecurrenceStep() {
 				agentMock: func() *agentmocks.Agent {
 					s.agentMock.EXPECT().
 						Execute(mock.Anything, mock.AnythingOfType("agent.Request")).
-						Return(agentpkg.Result{RawJSON: recurrenceExtractJSON(true)}, nil).Once()
+						Return(agentpkg.Result{RawJSON: recurrenceDecisionJSON("positive", false, 0)}, nil).Once()
 					return s.agentMock
 				}(),
 				budgetsMock: func() *interfacemocks.BudgetPlanner {
@@ -3045,7 +3405,7 @@ func (s *OnboardingWorkflowSuite) TestBuildRecurrenceStep() {
 	}
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			step := workflow.NewStepFunc(stepRecurrenceID, BuildRecurrenceStep(scenario.dependencies.agentMock, scenario.dependencies.budgetsMock))
+			step := workflow.NewStepFunc(stepRecurrenceID, BuildRecurrenceStep(scenario.dependencies.agentMock, scenario.dependencies.budgetsMock, nil))
 			out, err := step.Execute(s.ctx, scenario.args.state)
 			scenario.expect(out, err)
 		})
@@ -3088,6 +3448,23 @@ func (s *OnboardingWorkflowSuite) TestBuildCardsStep() {
 
 		s.Error(err)
 		s.Equal(workflow.StepStatusFailed, out.Status)
+	})
+
+	s.Run("primeira entrada com confirmacao de recorrencia pendente deve prefixar a confirmacao ao prompt e limpar o estado", func() {
+		s.SetupTest()
+		s.cardsMock.EXPECT().ListCards(mock.Anything, userUUID).Return(nil, nil).Once()
+
+		step := workflow.NewStepFunc(stepCardsID, BuildCardsStep(s.agentMock, s.cardsMock))
+		out, err := step.Execute(s.ctx, OnboardingState{
+			UserID:                 userID,
+			RecurrenceConfirmation: recurrenceConfirmationDefault,
+		})
+
+		s.NoError(err)
+		s.Equal(workflow.StepStatusSuspended, out.Status)
+		s.Equal(recurrenceConfirmationDefault+"\n\n"+cardsPrompt(0), out.Suspend.Prompt)
+		s.Equal(PhaseCards, out.State.Phase)
+		s.Empty(out.State.RecurrenceConfirmation)
 	})
 
 	s.Run("recusa imediata deve marcar CardsDone e completar sem chamar CreateCard", func() {
@@ -3558,7 +3935,7 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_SummaryWithoutCardsInd
 	s.Contains(out.State.FinalMessage, conclusionFinalMessage())
 }
 
-func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_SummaryWithOneCardListsNicknameEqualsBank() {
+func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_SummaryWithOneCardListsNicknameEqualsBankLegacyRecurrenceWithoutMonths() {
 	state := OnboardingState{
 		UserID:             "11111111-1111-1111-1111-111111111111",
 		Goal:               "comprar uma casa",
@@ -3591,6 +3968,38 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_SummaryWithOneCardList
 	s.Contains(out.State.FinalMessage, "Cartões:")
 	s.Contains(out.State.FinalMessage, "- Nubank — vencimento dia 1")
 	s.Contains(out.State.FinalMessage, "🔁 Recorrência: ligada (repete pelos próximos 12 meses)")
+}
+
+func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_SummaryReflectsSpecificRecurrenceMonths() {
+	state := OnboardingState{
+		UserID:             "11111111-1111-1111-1111-111111111111",
+		Goal:               "comprar uma casa",
+		GoalValueCents:     40000000,
+		MonthlyBudgetCents: 800000,
+		Allocations:        defaultDistributionBP,
+		Recurrence:         true,
+		RecurrenceMonths:   3,
+	}
+	s.wmMock.EXPECT().
+		Upsert(mock.Anything, state.UserID, mock.AnythingOfType("string")).
+		Return(nil).Once()
+	s.wmMock.EXPECT().
+		UpsertMetadata(mock.Anything, state.UserID, mock.AnythingOfType("map[string]interface {}")).
+		Return(nil).Once()
+	allocations := suggestReturn(state.MonthlyBudgetCents, defaultDistributionBP)
+	s.budgetsMock.EXPECT().
+		SuggestAllocation(mock.Anything, state.MonthlyBudgetCents, allocationBPList(state.Allocations)).
+		Return(allocations, nil).Once()
+	s.cardsMock.EXPECT().
+		ListCards(mock.Anything, uuid.MustParse(state.UserID)).
+		Return(nil, nil).Once()
+
+	step := workflow.NewStepFunc(stepConclusionID, BuildConclusionStep(s.wmMock, s.budgetsMock, s.cardsMock))
+	out, err := step.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+	s.Contains(out.State.FinalMessage, "🔁 Recorrência: ligada (repete pelos próximos 3 meses)")
 }
 
 func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_SummaryWithMultipleCardsListsEachWithNicknameAndBank() {
@@ -3860,27 +4269,31 @@ func (s *OnboardingWorkflowSuite) TestM02_NoRendaTermInAnyOnboardingSurface() {
 	}
 
 	surfaces := map[string]string{
-		"welcomeCombinedPrompt":       welcomeCombinedPrompt,
-		"goalReprompt":                goalReprompt,
-		"goalValueReprompt":           goalValueReprompt,
-		"monthlyBudgetPrompt":         monthlyBudgetPrompt,
-		"monthlyBudgetReprompt":       monthlyBudgetReprompt,
-		"cardsReprompt":               cardsReprompt,
-		"conclusionRecurrencePrompt":  conclusionRecurrencePrompt,
-		"allocationInputSystemPrompt": allocationInputSystemPrompt,
-		"summaryConfirmSystemPrompt":  summaryConfirmSystemPrompt,
-		"goalWithValueSystemPrompt":   goalWithValueSystemPrompt,
-		"goalValueSystemPrompt":       goalValueSystemPrompt,
-		"monthlyBudgetSystemPrompt":   monthlyBudgetSystemPrompt,
-		"cardsSystemPrompt":           cardsSystemPrompt,
-		"recurrenceSystemPrompt":      recurrenceSystemPrompt,
-		"cardsPrompt(0)":              cardsPrompt(0),
-		"cardsPrompt(2)":              cardsPrompt(2),
-		"methodologyPrompt":           methodologyPrompt(sampleAllocations),
-		"methodologyReprompt":         methodologyReprompt("valores não fecham", sampleAllocations),
-		"summaryPrompt":               summaryPrompt(sampleState, sampleAllocations),
-		"conclusionFinalMessage":      conclusionFinalMessage(),
-		"renderAllocationLines":       renderAllocationLines(sampleAllocations),
+		"welcomeCombinedPrompt":          welcomeCombinedPrompt,
+		"goalReprompt":                   goalReprompt,
+		"goalValueReprompt":              goalValueReprompt,
+		"monthlyBudgetPrompt":            monthlyBudgetPrompt,
+		"monthlyBudgetReprompt":          monthlyBudgetReprompt,
+		"cardsReprompt":                  cardsReprompt,
+		"conclusionRecurrencePrompt":     conclusionRecurrencePrompt,
+		"allocationInputSystemPrompt":    allocationInputSystemPrompt,
+		"summaryConfirmSystemPrompt":     summaryConfirmSystemPrompt,
+		"goalWithValueSystemPrompt":      goalWithValueSystemPrompt,
+		"goalValueSystemPrompt":          goalValueSystemPrompt,
+		"monthlyBudgetSystemPrompt":      monthlyBudgetSystemPrompt,
+		"cardsSystemPrompt":              cardsSystemPrompt,
+		"recurrenceDecisionSystemPrompt": recurrenceDecisionSystemPrompt,
+		"recurrenceInvalidReprompt":      recurrenceInvalidReprompt,
+		"recurrenceConfirmationNone":     recurrenceConfirmationNone,
+		"recurrenceConfirmationDefault":  recurrenceConfirmationDefault,
+		"recurrenceConfirmationFor(3)":   recurrenceConfirmationFor(3),
+		"cardsPrompt(0)":                 cardsPrompt(0),
+		"cardsPrompt(2)":                 cardsPrompt(2),
+		"methodologyPrompt":              methodologyPrompt(sampleAllocations),
+		"methodologyReprompt":            methodologyReprompt("valores não fecham", sampleAllocations),
+		"summaryPrompt":                  summaryPrompt(sampleState, sampleAllocations),
+		"conclusionFinalMessage":         conclusionFinalMessage(),
+		"renderAllocationLines":          renderAllocationLines(sampleAllocations),
 	}
 
 	for label, text := range surfaces {

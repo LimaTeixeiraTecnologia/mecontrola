@@ -329,7 +329,7 @@ func (s *WhatsAppInboundConsumerIntegrationSuite) TestInteg_OnboardingFluxoDeCar
 	budgetExtract, _ := json.Marshal(map[string]any{"amountBRL": 1000})
 	distributionIntentAcceptExtract, _ := json.Marshal(map[string]any{"action": "accept", "mixed_unit": false})
 	summaryConfirmExtract, _ := json.Marshal(map[string]any{"confirmed": true})
-	recurrenceExtract, _ := json.Marshal(map[string]any{"confirmed": false})
+	recurrenceExtract, _ := json.Marshal(map[string]any{"intent": "negative", "hasMonths": false, "months": 0})
 	cardCreateExtract, _ := json.Marshal(map[string]any{"wantsCard": true, "nickname": "Nubank", "bank": "Nubank", "dueDay": 10})
 	cardRefuseExtract, _ := json.Marshal(map[string]any{"wantsCard": false, "nickname": "", "bank": "", "dueDay": 0})
 

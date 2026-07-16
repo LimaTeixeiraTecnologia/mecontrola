@@ -14,10 +14,10 @@ Estender `OnboardingState` com os campos aditivos de recorrência e refletir o p
 
 ## Subtarefas
 
-- [ ] 3.1 Adicionar a `OnboardingState` (`internal/agents/application/workflows/onboarding_workflow.go:310-325`) os campos `RecurrenceMonths int \`json:"recurrenceMonths"\`` e `RecurrenceConfirmation string \`json:"recurrenceConfirmation"\``, preservando `Recurrence bool`.
-- [ ] 3.2 Alterar `recurrenceSummaryLine` (`:966-971`) para a assinatura `(recurrence bool, months int)` refletindo N; fallback legado RF-20: `recurrence==true && months<=0 → 12`; `recurrence==false → "desligada"`.
-- [ ] 3.3 `conclusionSummaryMessage` (`:973-991`) passa `state.RecurrenceMonths` para `recurrenceSummaryLine`.
-- [ ] 3.4 Atualizar os testes de resumo existentes que assertam a copy: `onboarding_workflow_test.go:3557` ("🔁 Recorrência: desligada") e `:3593` ("...ligada..."), incluindo caso novo de N específico (ex.: 3 meses) e caso legado (`Recurrence==true`, `RecurrenceMonths==0` → "12 meses").
+- [x] 3.1 Adicionar a `OnboardingState` (`internal/agents/application/workflows/onboarding_workflow.go:310-325`) os campos `RecurrenceMonths int \`json:"recurrenceMonths"\`` e `RecurrenceConfirmation string \`json:"recurrenceConfirmation"\``, preservando `Recurrence bool`.
+- [x] 3.2 Alterar `recurrenceSummaryLine` (`:966-971`) para a assinatura `(recurrence bool, months int)` refletindo N; fallback legado RF-20: `recurrence==true && months<=0 → 12`; `recurrence==false → "desligada"`.
+- [x] 3.3 `conclusionSummaryMessage` (`:973-991`) passa `state.RecurrenceMonths` para `recurrenceSummaryLine`.
+- [x] 3.4 Atualizar os testes de resumo existentes que assertam a copy: `onboarding_workflow_test.go:3557` ("🔁 Recorrência: desligada") e `:3593` ("...ligada..."), incluindo caso novo de N específico (ex.: 3 meses) e caso legado (`Recurrence==true`, `RecurrenceMonths==0` → "12 meses").
 
 ## Detalhes de Implementação
 
@@ -45,7 +45,7 @@ A regra de leitura do fallback (legado `Recurrence==true` sem meses → 12) DEVE
 
 ## Testes da Tarefa
 
-- [ ] Testes unitários (resumo com N, desligada, legado-12)
+- [x] Testes unitários (resumo com N, desligada, legado-12)
 
 <critical>SEMPRE CRIAR E EXECUTAR TESTES DA TAREFA ANTES DE CONSIDERAR A TAREFA COMO `done`</critical>
 

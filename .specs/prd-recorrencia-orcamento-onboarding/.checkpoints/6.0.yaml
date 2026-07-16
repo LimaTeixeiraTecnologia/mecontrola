@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-recorrencia-orcamento-onboarding/6.0_execution_report.md
+summary: Gate real-LLM da recorrência (18 cenários, ratio 1.0000, 0 falso-sucesso) e fixture full-flow WhatsApp migrados para o novo schema {intent,hasMonths,months}.
+timestamp: 2026-07-16T00:49:49Z

@@ -12,12 +12,12 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Decisão pura `DecideRecurrence` e tipos-estado fechados | pending | — | — | domain-modeling-production, design-patterns-mandatory |
-| 2.0 | Schema dedicado, prompt e copy no Tom de Voz | pending | — | Não | mastra |
-| 3.0 | Estado com meses e resumo retrocompatível | pending | — | Não | mastra, domain-modeling-production |
-| 4.0 | Counter de outcome do step de recorrência | pending | — | Não | mastra |
-| 5.0 | Reescrita do `BuildRecurrenceStep` e confirmação encadeada | pending | 1.0, 2.0, 3.0, 4.0 | Não | mastra |
-| 6.0 | Gate real-LLM com 0 falso-sucesso e fixture full-flow | pending | 5.0 | — | mastra |
+| 1.0 | Decisão pura `DecideRecurrence` e tipos-estado fechados | done | — | — | domain-modeling-production, design-patterns-mandatory |
+| 2.0 | Schema dedicado, prompt e copy no Tom de Voz | done | — | Não | mastra |
+| 3.0 | Estado com meses e resumo retrocompatível | done | — | Não | mastra, domain-modeling-production |
+| 4.0 | Counter de outcome do step de recorrência | done | — | Não | mastra |
+| 5.0 | Reescrita do `BuildRecurrenceStep` e confirmação encadeada | done | 1.0, 2.0, 3.0, 4.0 | Não | mastra |
+| 6.0 | Gate real-LLM com 0 falso-sucesso e fixture full-flow | done | 5.0 | — | mastra |
 
 ## Dependências Críticas
 - 5.0 depende de 1.0 (decisão pura/tipos), 2.0 (schema/prompt/copy), 3.0 (campos de estado/resumo) e 4.0 (counter) — o step só é reescrito quando todos os blocos que ele consome existem.
