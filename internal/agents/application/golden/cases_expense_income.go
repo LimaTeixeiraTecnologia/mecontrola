@@ -115,6 +115,38 @@ func expenseIncomeCases() []Case {
 			),
 			ResponseDescribe: "valor cru único roteia para register_expense (o workflow pede a forma de pagamento), nunca aviso de múltiplos lançamentos",
 		},
+		{
+			Name:         "gastei 20 no cinema roteia sem falso multiplo",
+			Category:     CategoryExpenseIncome,
+			Origin:       "producao (+5511930111763, 2026-07-17): \"Gastei 20 no cinema\" recebia falso aviso de múltiplos lançamentos",
+			Input:        "Gastei 20 no cinema",
+			ToolSubset:   []string{"register_expense", "register_income"},
+			ExpectedTool: "register_expense",
+			ExpectedArgs: map[string]any{
+				"amountCents": 2000.0,
+			},
+			ResponseProperty: allOf(
+				nonEmptyResponse,
+				notContainsAny("mais de um lançamento", "um de cada vez", "um lançamento por vez", "separadamente"),
+			),
+			ResponseDescribe: "valor cru único de lazer roteia para register_expense, nunca aviso de múltiplos lançamentos",
+		},
+		{
+			Name:         "gastei 30 na padaria roteia sem falso multiplo",
+			Category:     CategoryExpenseIncome,
+			Origin:       "producao (+5511930111763, 2026-07-17): \"Gastei 30 na padaria\" recebia falso aviso de múltiplos lançamentos mesmo após o commit 825372d",
+			Input:        "Gastei 30 na padaria",
+			ToolSubset:   []string{"register_expense", "register_income"},
+			ExpectedTool: "register_expense",
+			ExpectedArgs: map[string]any{
+				"amountCents": 3000.0,
+			},
+			ResponseProperty: allOf(
+				nonEmptyResponse,
+				notContainsAny("mais de um lançamento", "um de cada vez", "um lançamento por vez", "separadamente"),
+			),
+			ResponseDescribe: "valor cru único de padaria roteia para register_expense, nunca aviso de múltiplos lançamentos",
+		},
 	}
 }
 

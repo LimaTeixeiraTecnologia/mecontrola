@@ -102,6 +102,12 @@ func buildRegisterIncomeExec(registrar entryRegistrar) func(context.Context, Reg
 				Message: "❌ Valor inválido. O valor deve ser positivo e não ultrapassar R$ 10.000.000,00.",
 			}, nil
 		}
+		if err := validateEntryDescription(in.Description); err != nil {
+			return RegisterIncomeOutput{
+				Outcome: "clarify",
+				Message: "❌ Não entendi de onde veio essa entrada. Me diz em uma palavra (ex.: salário, freela)? 🙂",
+			}, nil
+		}
 		result, err := registrar.RegisterIncome(ctx, usecases.RegisterIncomeCommand{
 			UserID:          userID,
 			ThreadID:        threadID,

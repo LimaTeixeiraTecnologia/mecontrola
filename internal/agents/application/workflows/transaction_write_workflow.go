@@ -128,10 +128,14 @@ func handleTransactionInitial(ctx context.Context, state TransactionWriteState, 
 }
 
 func categoryAwaitingFromCandidates(candidates []PendingCategoryCandidate) TransactionAwaitingSlot {
-	if len(candidates) == 1 {
+	if len(candidates) == 1 && candidateHasLeafSubcategory(candidates[0]) {
 		return TransactionAwaitingConfirmation
 	}
 	return TransactionAwaitingCategory
+}
+
+func candidateHasLeafSubcategory(c PendingCategoryCandidate) bool {
+	return c.SubcategoryID != uuid.Nil && c.SubcategoryID != c.RootCategoryID
 }
 
 func handleTransactionEditSearch(ctx context.Context, state TransactionWriteState, ledger interfaces.TransactionsLedger) (workflow.StepOutput[TransactionWriteState], error) {
@@ -285,7 +289,7 @@ func handleTransactionCategoryResume(ctx context.Context, state TransactionWrite
 
 	if cats != nil {
 		candidates, searchErr := SearchAndEnrichCandidates(ctx, cats, text, state.Kind, state.CategoryVersion)
-		if searchErr == nil && len(candidates) == 1 {
+		if searchErr == nil && len(candidates) == 1 && candidateHasLeafSubcategory(candidates[0]) {
 			return promoteTransactionCategoryToConfirmation(state, candidates[0])
 		}
 		if searchErr == nil && len(candidates) > 1 {
