@@ -90,43 +90,31 @@ func buildRegisterExpenseExec(registrar entryRegistrar, cards interfaces.CardMan
 		if err != nil {
 			return RegisterExpenseOutput{}, fmt.Errorf("register_expense: userId inválido: %w", err)
 		}
-		var cardID *uuid.UUID
-		if in.CardID != "" {
-			parsed, parseErr := uuid.Parse(in.CardID)
-			if parseErr != nil {
-				return RegisterExpenseOutput{}, fmt.Errorf("register_expense: cardId inválido: %w", parseErr)
+		cardID, err := resolveRegisterExpenseCard(ctx, cards, in.CardID, userID)
+		if err != nil {
+			var clarifyErr *clarifyError
+			if errors.As(err, &clarifyErr) {
+				return RegisterExpenseOutput{
+					Outcome: agent.ToolOutcomeClarify.String(),
+					Message: clarifyErr.message,
+				}, nil
 			}
-			if _, getErr := cards.GetCard(ctx, parsed, userID); getErr != nil {
-				if errors.Is(getErr, interfaces.ErrCardNotFound) {
-					return RegisterExpenseOutput{
-						Outcome: agent.ToolOutcomeClarify.String(),
-						Message: cardNotFoundClarifyMessage,
-					}, nil
-				}
-				return RegisterExpenseOutput{}, fmt.Errorf("register_expense: %w", getErr)
-			}
-			cardID = &parsed
+			return RegisterExpenseOutput{}, err
 		}
-		var categoryID uuid.UUID
-		if in.CategoryID != "" {
-			parsed, parseErr := uuid.Parse(in.CategoryID)
-			if parseErr != nil {
-				return RegisterExpenseOutput{}, fmt.Errorf("register_expense: categoryId inválido: %w", parseErr)
-			}
-			categoryID = parsed
-		}
-		var subcategoryID uuid.UUID
-		if in.SubcategoryID != "" {
-			parsed, parseErr := uuid.Parse(in.SubcategoryID)
-			if parseErr != nil {
-				return RegisterExpenseOutput{}, fmt.Errorf("register_expense: subcategoryId inválido: %w", parseErr)
-			}
-			subcategoryID = parsed
+		categoryID, subcategoryID, err := resolveRegisterExpenseCategoryIDs(in.CategoryID, in.SubcategoryID)
+		if err != nil {
+			return RegisterExpenseOutput{}, err
 		}
 		if err := validateEntryAmount(in.AmountCents); err != nil {
 			return RegisterExpenseOutput{
 				Outcome: "clarify",
 				Message: "❌ Valor inválido. O valor deve ser positivo e não ultrapassar R$ 10.000.000,00.",
+			}, nil
+		}
+		if err := validateEntryDescription(in.Description); err != nil {
+			return RegisterExpenseOutput{
+				Outcome: "clarify",
+				Message: "❌ Não entendi o que foi esse gasto. Me diz em uma palavra (ex.: mercado, farmácia)? 🙂",
 			}, nil
 		}
 		installments := in.Installments
@@ -163,4 +151,54 @@ func buildRegisterExpenseExec(registrar entryRegistrar, cards interfaces.CardMan
 			Message:    result.Message,
 		}, nil
 	}
+}
+
+func resolveRegisterExpenseCard(ctx context.Context, cards interfaces.CardManager, cardIDStr string, userID uuid.UUID) (*uuid.UUID, error) {
+	if cardIDStr == "" {
+		return nil, nil
+	}
+	parsed, err := uuid.Parse(cardIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("register_expense: cardId inválido: %w", err)
+	}
+	if _, getErr := cards.GetCard(ctx, parsed, userID); getErr != nil {
+		if errors.Is(getErr, interfaces.ErrCardNotFound) {
+			return nil, errCardNotFoundClarify
+		}
+		return nil, fmt.Errorf("register_expense: %w", getErr)
+	}
+	return &parsed, nil
+}
+
+func resolveRegisterExpenseCategoryIDs(categoryIDStr, subcategoryIDStr string) (uuid.UUID, uuid.UUID, error) {
+	categoryID, err := parseOptionalUUID(categoryIDStr, "categoryId")
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	subcategoryID, err := parseOptionalUUID(subcategoryIDStr, "subcategoryId")
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	return categoryID, subcategoryID, nil
+}
+
+func parseOptionalUUID(value, field string) (uuid.UUID, error) {
+	if value == "" {
+		return uuid.Nil, nil
+	}
+	parsed, err := uuid.Parse(value)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("register_expense: %s inválido: %w", field, err)
+	}
+	return parsed, nil
+}
+
+var errCardNotFoundClarify = &clarifyError{message: cardNotFoundClarifyMessage}
+
+type clarifyError struct {
+	message string
+}
+
+func (e *clarifyError) Error() string {
+	return e.message
 }

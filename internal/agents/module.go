@@ -244,6 +244,8 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		})
 	}
 
+	messageStore = workflows.NewHistoryHygieneStore(messageStore)
+
 	onboardingDef := workflows.BuildOnboardingWorkflow(onboardingAgent, cardManager, budgetPlanner, workingMem, threadGateway, messageStore, deps.O11y)
 
 	runStore := agentpostgres.NewRunStore(deps.DB)

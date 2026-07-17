@@ -324,6 +324,9 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 	if hasEntryRegistrationTool(tools) {
 		pre = append(pre, guards.NewMultiItemGuard())
 	}
+	if registerExpense := findTool(tools, registerExpenseToolID); registerExpense != nil {
+		pre = append(pre, guards.NewRegisterExpenseShortcutGuard(registerExpense))
+	}
 	if registerIncome := findTool(tools, registerIncomeToolID); registerIncome != nil {
 		pre = append(pre, guards.NewRegisterIncomeShortcutGuard(registerIncome))
 	}
@@ -332,6 +335,7 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 		guards.NewEmptyAnswerGuard(),
 		guards.NewInternalTermsGuard(),
 		guards.NewSuccessWithoutToolGuard(),
+		guards.NewMultiItemFalseBlockGuard(),
 		guards.NewCardProvenanceGuard(),
 	}
 	return WithGuardChain(built, o11y, pre, post)

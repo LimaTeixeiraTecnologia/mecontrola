@@ -53,3 +53,27 @@ func TestValidateEntryAmount(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateEntryDescription(t *testing.T) {
+	scenarios := []struct {
+		name        string
+		description string
+		wantErr     bool
+	}{
+		{name: "rejeita vazio", description: "", wantErr: true},
+		{name: "rejeita apenas espacos", description: "   ", wantErr: true},
+		{name: "aceita termo literal", description: "mercado", wantErr: false},
+		{name: "aceita com espacos ao redor", description: "  padaria  ", wantErr: false},
+	}
+
+	for _, s := range scenarios {
+		t.Run(s.name, func(t *testing.T) {
+			err := validateEntryDescription(s.description)
+			if s.wantErr {
+				require.ErrorIs(t, err, errDescriptionEmpty)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
