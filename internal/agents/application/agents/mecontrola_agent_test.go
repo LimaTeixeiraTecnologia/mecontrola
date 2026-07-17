@@ -206,14 +206,14 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 			},
 		},
 		{
-			name:         "deve conter fronteira multi-item verbatim (RF-16)",
+			name:         "deve delegar deteccao de multiplos lancamentos ao guard deterministico (RF-16)",
 			dependencies: dependencies{},
 			expect: func(instructions string) {
 				s.Contains(instructions, "REGRA ABSOLUTA DE LANÇAMENTO ÚNICO")
 				s.Contains(instructions, "UMA transação por mensagem")
-				s.Contains(instructions, "Percebi mais de um lançamento na mesma mensagem")
-				s.Contains(instructions, "registro um de cada vez")
-				s.Contains(instructions, "NÃO registre nem chame nenhuma ferramenta de escrita quando detectar múltiplos")
+				s.Contains(instructions, "VOCÊ NUNCA decide se a mensagem contém múltiplos lançamentos")
+				s.Contains(instructions, "essa checagem é feita ANTES de você, de forma determinística, pelo sistema")
+				s.NotContains(instructions, "Percebi mais de um lançamento na mesma mensagem")
 			},
 		},
 		{
@@ -224,8 +224,7 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 				s.Contains(instructions, "R$ 1.234,56")
 				s.Contains(instructions, "R$ 13.874,40")
 				s.Contains(instructions, "ignore pontos e vírgulas internos a um número monetário")
-				s.Contains(instructions, "Percebi mais de um lançamento na mesma mensagem")
-				s.Contains(instructions, "registro um de cada vez")
+				s.NotContains(instructions, "Percebi mais de um lançamento na mesma mensagem")
 			},
 		},
 		{

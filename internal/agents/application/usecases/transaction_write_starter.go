@@ -43,6 +43,8 @@ func (uc *TransactionWriteStarter) RegisterExpense(ctx context.Context, cmd Regi
 	ctx, span := uc.o11y.Tracer().Start(ctx, "agents.usecase.transaction_write_starter.expense")
 	defer span.End()
 
+	cmd.Description = workflows.NormalizeEntryDescription(cmd.Description)
+
 	candidates, catVersion, classifyErr := uc.classify(ctx, cmd.Description, interfaces.CategoryKindExpense, cmd.CategoryID, cmd.SubcategoryID, cmd.CategoryVersion)
 	if classifyErr != nil {
 		span.RecordError(classifyErr)
@@ -80,6 +82,8 @@ func (uc *TransactionWriteStarter) RegisterIncome(ctx context.Context, cmd Regis
 	ctx, span := uc.o11y.Tracer().Start(ctx, "agents.usecase.transaction_write_starter.income")
 	defer span.End()
 
+	cmd.Description = workflows.NormalizeEntryDescription(cmd.Description)
+
 	candidates, catVersion, classifyErr := uc.classify(ctx, cmd.Description, interfaces.CategoryKindIncome, cmd.CategoryID, cmd.SubcategoryID, cmd.CategoryVersion)
 	if classifyErr != nil {
 		span.RecordError(classifyErr)
@@ -109,6 +113,8 @@ func (uc *TransactionWriteStarter) RegisterIncome(ctx context.Context, cmd Regis
 func (uc *TransactionWriteStarter) CreateRecurrence(ctx context.Context, cmd CreateRecurrenceCommand) (RegisterResult, error) {
 	ctx, span := uc.o11y.Tracer().Start(ctx, "agents.usecase.transaction_write_starter.recurrence")
 	defer span.End()
+
+	cmd.Description = workflows.NormalizeEntryDescription(cmd.Description)
 
 	kind := interfaces.CategoryKindExpense
 	if cmd.Direction == registerDirectionIncome {
@@ -147,6 +153,8 @@ func (uc *TransactionWriteStarter) CreateRecurrence(ctx context.Context, cmd Cre
 func (uc *TransactionWriteStarter) EditEntry(ctx context.Context, cmd EditEntryCommand) (RegisterResult, error) {
 	ctx, span := uc.o11y.Tracer().Start(ctx, "agents.usecase.transaction_write_starter.edit")
 	defer span.End()
+
+	cmd.Description = workflows.NormalizeEntryDescription(cmd.Description)
 
 	state := workflows.TransactionWriteState{
 		Status:        workflows.TransactionWriteStatusActive,

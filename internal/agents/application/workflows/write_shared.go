@@ -83,6 +83,8 @@ var (
 	reMoney       = regexp.MustCompile(`(?i)R\$\s*[\d.,]+`)
 	reLaunchVerbs = regexp.MustCompile(`(?i)\b(gastei|paguei|comprei|recebi|ganhei)\b`)
 
+	reDescriptionParaphrase = regexp.MustCompile(`(?i)^(?:compras?|pagamentos?|recebimentos?|gastos?|paguei|comprei|recebi|gastei)\s+(?:de|do|da|dos|das|no|na|nos|nas|em|com)\s+(.+)$`)
+
 	reCancelPhrases = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)^cancela(r)?$`),
 		regexp.MustCompile(`(?i)^deixa\s+pra\s+lá$`),
@@ -146,6 +148,16 @@ func isCancelMessage(text string) bool {
 
 func isNewCompleteOperation(text string) bool {
 	return reMoney.MatchString(text) && reLaunchVerbs.MatchString(text)
+}
+
+func NormalizeEntryDescription(description string) string {
+	trimmed := strings.TrimSpace(description)
+	if match := reDescriptionParaphrase.FindStringSubmatch(trimmed); match != nil {
+		if rest := strings.TrimSpace(match[1]); rest != "" {
+			return rest
+		}
+	}
+	return trimmed
 }
 
 func recognizePaymentMethod(text string) string {

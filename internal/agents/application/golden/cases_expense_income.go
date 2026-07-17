@@ -99,6 +99,22 @@ func expenseIncomeCases() []Case {
 			),
 			ResponseDescribe: "receita com separador de milhar registra valor único e preserva descrição literal",
 		},
+		{
+			Name:         "valor cru sem reais roteia para register_expense sem falso multiplo",
+			Category:     CategoryExpenseIncome,
+			Origin:       "producao (+5511930111763, 2026-07-17): \"Gastei 500 no mercado\" disparava falso aviso de múltiplos lançamentos e bloqueava o registro",
+			Input:        "Gastei 500 no mercado",
+			ToolSubset:   []string{"register_expense", "register_income"},
+			ExpectedTool: "register_expense",
+			ExpectedArgs: map[string]any{
+				"amountCents": 50000.0,
+			},
+			ResponseProperty: allOf(
+				nonEmptyResponse,
+				notContainsAny("mais de um lançamento", "um de cada vez", "um lançamento por vez", "separadamente"),
+			),
+			ResponseDescribe: "valor cru único roteia para register_expense (o workflow pede a forma de pagamento), nunca aviso de múltiplos lançamentos",
+		},
 	}
 }
 
