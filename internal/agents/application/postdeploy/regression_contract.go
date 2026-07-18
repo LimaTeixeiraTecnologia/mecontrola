@@ -58,6 +58,7 @@ var RegisteredScorers = []string{
 	"no_hallucination",
 	"write_persistence_accuracy",
 	"required_args",
+	"payment_method_provenance",
 	"month_reference_correctness",
 }
 

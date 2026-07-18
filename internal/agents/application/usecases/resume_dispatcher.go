@@ -108,7 +108,7 @@ func (d *ResumeDispatcher) Continue(ctx context.Context, resourceID, threadID, m
 
 	ctx = agent.WithToolInvocationContext(ctx, resourceID, messageID, 0)
 
-	handled, reply, resumeErr := resumer.Resume(ctx, resourceID, threadID, message)
+	handled, reply, resumeErr := resumer.Resume(ctx, resourceID, threadID, message, messageID)
 	if resumeErr != nil {
 		span.RecordError(resumeErr)
 		d.total.Add(ctx, 1,

@@ -11,6 +11,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/fake"
 
 	agentsifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/messages"
 	usecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
@@ -166,7 +167,7 @@ func (s *TransactionsIntegrationSuite) TestResumeWithoutInboundIdentity_Reproduc
 
 	handled, reply, err := workflows.ContinueTransactionWrite(
 		context.Background(), engine, def,
-		workflows.TransactionWriteKey(userID.String(), threadID), "sim",
+		workflows.TransactionWriteKey(userID.String(), threadID), "sim", "wamid-inbound-noidentity",
 	)
 
 	s.Require().Error(err)
@@ -175,4 +176,114 @@ func (s *TransactionsIntegrationSuite) TestResumeWithoutInboundIdentity_Reproduc
 	s.NotEmpty(reply)
 	s.Equal(0, s.countTransactions(userID))
 	s.Equal(0, s.countWriteLedger(userID))
+}
+
+func (s *TransactionsIntegrationSuite) seedSuspendedExpenseAwaitingPayment(userID uuid.UUID, threadID, wamid string) {
+	o11y := fake.NewProvider()
+	store := workflowpostgres.NewPostgresStore(o11y, s.db)
+	engine := workflow.NewEngine[workflows.TransactionWriteState](store, o11y)
+	def := workflows.BuildTransactionWriteWorkflowWithObservability(s.adapter, nil, nil, testIdempotentWriter{uc: s.idemUC}, o11y)
+
+	var editorialVersion int64
+	s.Require().NoError(
+		s.db.QueryRowContext(s.ctx, `SELECT version FROM mecontrola.category_editorial_version LIMIT 1`).Scan(&editorialVersion),
+	)
+
+	state := workflows.TransactionWriteState{
+		Status:        workflows.TransactionWriteStatusActive,
+		OperationKind: workflows.TransactionOpRegisterExpense,
+		UserID:        userID,
+		ResourceID:    userID,
+		ThreadID:      threadID,
+		MessageID:     wamid,
+		AmountCents:   3000,
+		Description:   "padaria",
+		Installments:  1,
+		OccurredAt:    "2026-07-01",
+		Kind:          agentsifaces.CategoryKindExpense,
+		Candidates: []workflows.PendingCategoryCandidate{{
+			RootCategoryID:  s.expenseRootID,
+			SubcategoryID:   s.expenseLeafID,
+			Path:            "Alimentação > Restaurante",
+			RootSlug:        "integ-alimentacao",
+			SubcategorySlug: "integ-restaurante",
+		}},
+		CategoryVersion: editorialVersion,
+	}
+
+	key := workflows.TransactionWriteKey(userID.String(), threadID)
+	result, err := engine.Start(s.ctx, def, key, state)
+	s.Require().NoError(err)
+	s.Require().Equal(workflow.RunStatusSuspended, result.Status)
+	s.Require().Equal(workflows.TransactionAwaitingPaymentMethod, result.State.Awaiting)
+	s.Require().Equal(messages.ClarificationQuestion(messages.MissingFieldPaymentMethod), result.State.ResponseText)
+}
+
+func (s *TransactionsIntegrationSuite) TestResumeDispatcher_FullCycle_PaymentClarifyConfirmPersists() {
+	userID := uuid.New()
+	threadID := "+5511930000003"
+	s.seedSuspendedExpenseAwaitingPayment(userID, threadID, "wamid-expense-start")
+
+	dispatcher := s.buildTransactionWriteDispatcher()
+
+	handled, reply, err := dispatcher.Continue(context.Background(), userID.String(), threadID, "paguei no pix", "wamid-pm")
+	s.Require().NoError(err)
+	s.True(handled)
+	s.Contains(reply, "Posso registrar?")
+	s.Contains(reply, "pix")
+	s.Equal(0, s.countTransactions(userID))
+
+	handled, reply, err = dispatcher.Continue(context.Background(), userID.String(), threadID, "sim", "wamid-sim")
+	s.Require().NoError(err)
+	s.True(handled)
+	s.NotEmpty(reply)
+
+	s.Equal(1, s.countTransactions(userID))
+	s.Equal(1, s.countWriteLedger(userID))
+}
+
+func (s *TransactionsIntegrationSuite) TestResumeDispatcher_InvalidPaymentAnswer_RepromptThenCancel() {
+	userID := uuid.New()
+	threadID := "+5511930000004"
+	s.seedSuspendedExpenseAwaitingPayment(userID, threadID, "wamid-expense-start-2")
+
+	dispatcher := s.buildTransactionWriteDispatcher()
+
+	handled, reply, err := dispatcher.Continue(context.Background(), userID.String(), threadID, "Sim", "wamid-invalid-1")
+	s.Require().NoError(err)
+	s.True(handled)
+	s.Equal(messages.PaymentMethodReprompt(), reply)
+
+	handled, reply, err = dispatcher.Continue(context.Background(), userID.String(), threadID, "qualquer coisa", "wamid-invalid-2")
+	s.Require().NoError(err)
+	s.True(handled)
+	s.NotEmpty(reply)
+
+	s.Equal(0, s.countTransactions(userID))
+	s.Equal(0, s.countWriteLedger(userID))
+}
+
+func (s *TransactionsIntegrationSuite) TestResumeDispatcher_ReplayedWamid_NoDuplicateWrite() {
+	userID := uuid.New()
+	threadID := "+5511930000005"
+	s.seedSuspendedIncomeConfirmation(userID, threadID, "wamid-income-start")
+
+	dispatcher := s.buildTransactionWriteDispatcher()
+
+	handled, reply, err := dispatcher.Continue(context.Background(), userID.String(), threadID, "talvez", "wamid-ambiguo")
+	s.Require().NoError(err)
+	s.True(handled)
+	s.NotEmpty(reply)
+
+	handled, replayReply, err := dispatcher.Continue(context.Background(), userID.String(), threadID, "talvez", "wamid-ambiguo")
+	s.Require().NoError(err)
+	s.True(handled)
+	s.Equal(reply, replayReply)
+	s.Equal(0, s.countTransactions(userID))
+
+	handled, _, err = dispatcher.Continue(context.Background(), userID.String(), threadID, "sim", "wamid-sim-final")
+	s.Require().NoError(err)
+	s.True(handled)
+	s.Equal(1, s.countTransactions(userID))
+	s.Equal(1, s.countWriteLedger(userID))
 }

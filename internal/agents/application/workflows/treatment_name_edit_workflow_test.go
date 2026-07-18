@@ -346,7 +346,7 @@ func (s *TreatmentNameEditContinueSuite) SetupTest() {
 }
 
 func (s *TreatmentNameEditContinueSuite) TestNoSuspendedRunIsNotHandled() {
-	handled, responseText, err := ContinueTreatmentNameEdit(s.ctx, s.engine, s.def, s.key, "qualquer coisa")
+	handled, responseText, err := ContinueTreatmentNameEdit(s.ctx, s.engine, s.def, s.key, "qualquer coisa", "wamid-1")
 
 	s.NoError(err)
 	s.False(handled)
@@ -358,7 +358,7 @@ func (s *TreatmentNameEditContinueSuite) TestExpiredRunReturnsNotHandled() {
 	s.Require().NoError(startErr)
 	s.store.backdateSuspendedAt(TreatmentNameEditWorkflowID, s.key, time.Now().UTC().Add(-30*time.Minute))
 
-	handled, responseText, err := ContinueTreatmentNameEdit(s.ctx, s.engine, s.def, s.key, "Stef")
+	handled, responseText, err := ContinueTreatmentNameEdit(s.ctx, s.engine, s.def, s.key, "Stef", "wamid-2")
 
 	s.NoError(err)
 	s.False(handled)
@@ -382,7 +382,7 @@ func (s *TreatmentNameEditContinueSuite) TestResumeAppliesNameAndReturnsConfirma
 		UpsertMetadata(mock.Anything, s.resourceID, map[string]any{"nome_tratamento": "Stef"}).
 		Return(nil).Once()
 
-	handled, responseText, err := ContinueTreatmentNameEdit(s.ctx, s.engine, s.def, s.key, "pode me chamar de Stef")
+	handled, responseText, err := ContinueTreatmentNameEdit(s.ctx, s.engine, s.def, s.key, "pode me chamar de Stef", "wamid-3")
 
 	s.NoError(err)
 	s.True(handled)

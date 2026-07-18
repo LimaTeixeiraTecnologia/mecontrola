@@ -57,7 +57,7 @@ func (s *WorkflowResumerSuite) TestNewWorkflowResumer_ErroQuandoWorkflowNaoRegis
 		registry,
 		engine,
 		func(resourceID, threadID string) string { return resourceID + ":" + threadID },
-		func(_ context.Context, _ workflow.Engine[resumerTestState], _ workflow.Definition[resumerTestState], _, _ string) (bool, string, error) {
+		func(_ context.Context, _ workflow.Engine[resumerTestState], _ workflow.Definition[resumerTestState], _, _, _ string) (bool, string, error) {
 			return false, "", nil
 		},
 	)
@@ -83,7 +83,7 @@ func (s *WorkflowResumerSuite) TestResume_DelegaParaContinueFnComChaveCorreta() 
 		registry,
 		engine,
 		func(resourceID, threadID string) string { return resourceID + ":" + threadID + ":test-workflow" },
-		func(ctx context.Context, eng workflow.Engine[resumerTestState], d workflow.Definition[resumerTestState], key, _ string) (bool, string, error) {
+		func(ctx context.Context, eng workflow.Engine[resumerTestState], d workflow.Definition[resumerTestState], key, _, _ string) (bool, string, error) {
 			result, resumeErr := eng.Resume(ctx, d, key, nil)
 			if resumeErr != nil {
 				return false, "", resumeErr
@@ -94,7 +94,7 @@ func (s *WorkflowResumerSuite) TestResume_DelegaParaContinueFnComChaveCorreta() 
 	s.Require().NoError(err)
 	s.Equal("test-workflow", resumer.WorkflowID())
 
-	handled, reply, resumeErr := resumer.Resume(s.ctx, "user-1", "+5511", "sim")
+	handled, reply, resumeErr := resumer.Resume(s.ctx, "user-1", "+5511", "sim", "wamid-1")
 	s.NoError(resumeErr)
 	s.True(handled)
 	s.Equal("done", reply)
@@ -115,7 +115,7 @@ func (s *WorkflowResumerSuite) TestResume_PropagaErroDoContinueFn() {
 		registry,
 		engine,
 		func(resourceID, threadID string) string { return resourceID + ":" + threadID + ":test-workflow" },
-		func(ctx context.Context, eng workflow.Engine[resumerTestState], d workflow.Definition[resumerTestState], key, _ string) (bool, string, error) {
+		func(ctx context.Context, eng workflow.Engine[resumerTestState], d workflow.Definition[resumerTestState], key, _, _ string) (bool, string, error) {
 			_, resumeErr := eng.Resume(ctx, d, key, nil)
 			if resumeErr != nil {
 				return false, "", resumeErr
@@ -125,7 +125,7 @@ func (s *WorkflowResumerSuite) TestResume_PropagaErroDoContinueFn() {
 	)
 	s.Require().NoError(err)
 
-	handled, reply, resumeErr := resumer.Resume(s.ctx, "user-2", "+5511", "sim")
+	handled, reply, resumeErr := resumer.Resume(s.ctx, "user-2", "+5511", "sim", "wamid-2")
 	s.Error(resumeErr)
 	s.False(handled)
 	s.Empty(reply)

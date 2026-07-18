@@ -90,6 +90,7 @@ type Case struct {
 	ExpectedAnyOfTools []string
 	NoToolExpected     bool
 	ExpectedArgs       map[string]any
+	AbsentArgs         []string
 	ExpectedOutcome    agent.ToolOutcome
 	ResponseProperty   ResponsePropertyFunc
 	ResponseDescribe   string

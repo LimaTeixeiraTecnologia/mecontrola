@@ -468,7 +468,7 @@ func (s *BehavioralScorersSuite) TestRequiredArgsScorer() {
 			},
 		},
 		{
-			name: "deve retornar score 0 quando register_expense esta sem paymentMethod",
+			name: "deve retornar score 1 quando register_expense esta sem paymentMethod (sistema pergunta)",
 			args: args{sample: scorer.RunSample{ToolCalls: []scorer.ToolCallRecord{
 				{Name: "register_expense", Args: map[string]any{
 					"amountCents": float64(5000), "description": "mercado",
@@ -476,7 +476,7 @@ func (s *BehavioralScorersSuite) TestRequiredArgsScorer() {
 			}}},
 			expect: func(result scorer.ScoreResult, err error) {
 				s.NoError(err)
-				s.InDelta(0.0, result.Score, 0.001)
+				s.InDelta(1.0, result.Score, 0.001)
 			},
 		},
 		{
@@ -608,6 +608,121 @@ func (s *BehavioralScorersSuite) TestExpectedToolOracleScorer() {
 			scenario.expect(result, err)
 			s.Equal(scorer.ScorerKindCodeBased, sc.Kind())
 			s.Equal("expected_tool", sc.ID())
+		})
+	}
+}
+
+func (s *BehavioralScorersSuite) TestPaymentMethodProvenanceScorer() {
+	type args struct {
+		sample scorer.RunSample
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		expect func(result scorer.ScoreResult, err error)
+	}{
+		{
+			name: "deve retornar score 1 quando paymentMethod tem evidencia no texto",
+			args: args{sample: scorer.RunSample{
+				Input: "gastei 50 no mercado no pix",
+				ToolCalls: []scorer.ToolCallRecord{
+					{Name: "register_expense", Args: map[string]any{"amountCents": float64(5000), "paymentMethod": "pix"}},
+				},
+			}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(1.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve retornar score 1 quando paymentMethod foi omitido",
+			args: args{sample: scorer.RunSample{
+				Input: "gastei 50 no mercado",
+				ToolCalls: []scorer.ToolCallRecord{
+					{Name: "register_expense", Args: map[string]any{"amountCents": float64(5000), "description": "mercado"}},
+				},
+			}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(1.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve retornar score 0 quando paymentMethod foi inventado",
+			args: args{sample: scorer.RunSample{
+				Input: "gastei 50 no mercado",
+				ToolCalls: []scorer.ToolCallRecord{
+					{Name: "register_expense", Args: map[string]any{"amountCents": float64(5000), "paymentMethod": "pix"}},
+				},
+			}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(0.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve reconhecer credito por termo cartao",
+			args: args{sample: scorer.RunSample{
+				Input: "comprei um celular no cartão em 12x",
+				ToolCalls: []scorer.ToolCallRecord{
+					{Name: "register_expense", Args: map[string]any{"paymentMethod": "credit_card"}},
+				},
+			}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(1.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve ignorar turno sem verbo de lancamento",
+			args: args{sample: scorer.RunSample{
+				Input: "sim",
+				ToolCalls: []scorer.ToolCallRecord{
+					{Name: "register_expense", Args: map[string]any{"paymentMethod": "pix"}},
+				},
+			}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(1.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve respeitar escape de turno anterior via metadata",
+			args: args{sample: scorer.RunSample{
+				Input:    "gastei 50 no mercado",
+				Metadata: map[string]any{"payment_method_prior_turn": true},
+				ToolCalls: []scorer.ToolCallRecord{
+					{Name: "register_expense", Args: map[string]any{"paymentMethod": "pix"}},
+				},
+			}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(1.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "nao penaliza termo curto vr como substring",
+			args: args{sample: scorer.RunSample{
+				Input: "gastei 30 no almoço no vr",
+				ToolCalls: []scorer.ToolCallRecord{
+					{Name: "register_expense", Args: map[string]any{"paymentMethod": "vale_refeicao"}},
+				},
+			}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(1.0, result.Score, 0.001)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			sc := NewPaymentMethodProvenanceScorer()
+			result, err := sc.Score(s.ctx, scenario.args.sample)
+			scenario.expect(result, err)
+			s.Equal(scorer.ScorerKindCodeBased, sc.Kind())
+			s.Equal("payment_method_provenance", sc.ID())
 		})
 	}
 }

@@ -274,7 +274,32 @@ func goldenEditTreatmentNameTool(sink ToolCaptureSink) tool.ToolHandle {
 	)
 }
 
+func goldenRegisterExpensePaymentClarifyTool(sink ToolCaptureSink) tool.ToolHandle {
+	in := llm.Schema{Name: "register_expense_payment_clarify_input", Strict: false, Schema: goldenBaseSchema("description", "amountCents", "paymentMethod", "occurredAt")}
+	out := llm.Schema{
+		Name:   "register_expense_payment_clarify_output",
+		Strict: true,
+		Schema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{"outcome": map[string]any{"type": "string"}, "message": map[string]any{"type": "string"}},
+			"required":             []string{"outcome", "message"},
+			"additionalProperties": false,
+		},
+	}
+	type output struct {
+		Outcome string `json:"outcome"`
+		Message string `json:"message"`
+	}
+	return tool.NewTool[map[string]any, output]("register_expense", "Registra uma despesa; quando faltar a forma de pagamento, retorna a pergunta pronta em message para ser repassada verbatim.", in, out,
+		func(_ context.Context, in map[string]any) (output, error) {
+			sink("register_expense", in)
+			return output{Outcome: "clarify", Message: messages.ClarificationQuestion(messages.MissingFieldPaymentMethod)}, nil
+		},
+	)
+}
+
 var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
+	"register_expense_payment_clarify": goldenRegisterExpensePaymentClarifyTool,
 	"register_expense": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("register_expense", "Registra uma despesa", goldenBaseSchema("description", "amountCents", "paymentMethod", "occurredAt", "categoryId", "cardId"), sink)
 	},

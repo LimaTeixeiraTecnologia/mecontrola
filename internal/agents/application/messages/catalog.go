@@ -325,6 +325,10 @@ func SupportInfo() string {
 		"e nossa equipe responde em até 24 horas."
 }
 
+func PaymentMethodReprompt() string {
+	return "Não reconheci essa forma de pagamento. 💳 Me diz uma destas: pix, débito, débito em conta, crédito, dinheiro, boleto, transferência, vale-refeição ou vale-alimentação."
+}
+
 func ClarificationQuestion(field MissingField) string {
 	switch field {
 	case MissingFieldAmount:

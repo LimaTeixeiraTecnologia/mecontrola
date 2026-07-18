@@ -54,8 +54,8 @@ type mockWorkflowResumer struct {
 
 func (m *mockWorkflowResumer) WorkflowID() string { return m.workflowID }
 
-func (m *mockWorkflowResumer) Resume(ctx context.Context, resourceID, threadID, message string) (bool, string, error) {
-	args := m.Called(ctx, resourceID, threadID, message)
+func (m *mockWorkflowResumer) Resume(ctx context.Context, resourceID, threadID, message, messageID string) (bool, string, error) {
+	args := m.Called(ctx, resourceID, threadID, message, messageID)
 	return args.Bool(0), args.String(1), args.Error(2)
 }
 
@@ -138,7 +138,7 @@ func (s *ResumeDispatcherSuite) TestContinue() {
 				resumers: []WorkflowResumer{
 					func() *mockWorkflowResumer {
 						m := &mockWorkflowResumer{workflowID: "card-manage"}
-						m.On("Resume", mock.Anything, "user-1", "+5511", "sim").
+						m.On("Resume", mock.Anything, "user-1", "+5511", "sim", mock.Anything).
 							Return(true, "✅ Cartão atualizado.", nil).Once()
 						return m
 					}(),
@@ -205,7 +205,7 @@ func (s *ResumeDispatcherSuite) TestContinue() {
 				resumers: []WorkflowResumer{
 					func() *mockWorkflowResumer {
 						m := &mockWorkflowResumer{workflowID: "budget-manage"}
-						m.On("Resume", mock.Anything, "user-3", "+5511", "sim").
+						m.On("Resume", mock.Anything, "user-3", "+5511", "sim", mock.Anything).
 							Return(false, "", errors.New("engine falhou")).Once()
 						return m
 					}(),
@@ -244,7 +244,7 @@ func (s *ResumeDispatcherSuite) TestContinue_InjetaIdentidadeInboundNoContexto()
 		gotOK         bool
 	)
 	resumer := &mockWorkflowResumer{workflowID: "transaction-write"}
-	resumer.On("Resume", mock.Anything, "user-6", "+5511", "sim").
+	resumer.On("Resume", mock.Anything, "user-6", "+5511", "sim", mock.Anything).
 		Run(func(args mock.Arguments) {
 			ctx := args.Get(0).(context.Context)
 			gotResourceID, gotMessageID, _, gotOK = agent.InboundIdentityFromContext(ctx)
@@ -270,7 +270,7 @@ func (s *ResumeDispatcherSuite) TestContinue_AbreEFechaRunAuditavel() {
 	index := NewSuspendedRunIndex(store, "card-manage")
 
 	resumer := &mockWorkflowResumer{workflowID: "card-manage"}
-	resumer.On("Resume", mock.Anything, "user-4", "+5511", "sim").
+	resumer.On("Resume", mock.Anything, "user-4", "+5511", "sim", mock.Anything).
 		Return(true, "✅ Cartão atualizado.", nil).Once()
 
 	dispatcher, err := NewResumeDispatcher(index, s.threads, s.runs, s.obs, resumer)

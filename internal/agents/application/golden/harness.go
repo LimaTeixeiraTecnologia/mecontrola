@@ -43,7 +43,12 @@ func EvaluateCaseWithCapture(ctx context.Context, executor AgentExecutor, c Case
 		return CaseOutcome{Case: c, Passed: false, Detail: detail}
 	}
 
-	if detail, ok := checkExpectedArgs(c, capturedFn()); !ok {
+	captured := capturedFn()
+	if detail, ok := checkExpectedArgs(c, captured); !ok {
+		return CaseOutcome{Case: c, Passed: false, Detail: detail}
+	}
+
+	if detail, ok := checkAbsentArgs(c, captured); !ok {
 		return CaseOutcome{Case: c, Passed: false, Detail: detail}
 	}
 
@@ -79,6 +84,40 @@ func checkExpectedArgs(c Case, captured []CapturedToolCall) (string, bool) {
 		return "", true
 	}
 	return "tool " + toolName + " não foi capturada para checagem de args", false
+}
+
+func checkAbsentArgs(c Case, captured []CapturedToolCall) (string, bool) {
+	if len(c.AbsentArgs) == 0 {
+		return "", true
+	}
+	toolName := c.ExpectedTool
+	for _, call := range captured {
+		if call.Tool != toolName {
+			continue
+		}
+		for _, key := range absent(c.AbsentArgs, call.Args) {
+			return "arg proibido preenchido na tool " + toolName + ": " + key, false
+		}
+	}
+	return "", true
+}
+
+func absent(keys []string, args map[string]any) []string {
+	violations := make([]string, 0, len(keys))
+	for _, key := range keys {
+		v, present := args[key]
+		if !present {
+			continue
+		}
+		if str, ok := v.(string); ok && str == "" {
+			continue
+		}
+		if v == nil {
+			continue
+		}
+		violations = append(violations, key)
+	}
+	return violations
 }
 
 func argsEqual(got, expected any) bool {

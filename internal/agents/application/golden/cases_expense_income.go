@@ -3,6 +3,7 @@ package golden
 import (
 	"strings"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/messages"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 )
 
@@ -130,6 +131,34 @@ func expenseIncomeCases() []Case {
 				notContainsAny("mais de um lançamento", "um de cada vez", "um lançamento por vez", "separadamente"),
 			),
 			ResponseDescribe: "valor cru único de lazer roteia para register_expense, nunca aviso de múltiplos lançamentos",
+		},
+		{
+			Name:         "despesa sem forma de pagamento delega pergunta ao workflow",
+			Category:     CategoryExpenseIncome,
+			Origin:       "producao (+5511930111763, 2026-07-17): clarificação de pagamento é determinística do workflow; LLM não inventa paymentMethod nem formula a pergunta",
+			Input:        "gastei 50 no mercado hoje",
+			ToolSubset:   []string{"register_expense_payment_clarify"},
+			ExpectedTool: "register_expense",
+			AbsentArgs:   []string{"paymentMethod"},
+			ExpectedArgs: map[string]any{
+				"amountCents": 5000.0,
+			},
+			ResponseProperty: containsAny(messages.ClarificationQuestion(messages.MissingFieldPaymentMethod)),
+			ResponseDescribe: "chama register_expense sem paymentMethod e repassa verbatim a pergunta determinística de forma de pagamento",
+		},
+		{
+			Name:         "despesa debito preserva paymentMethod dito",
+			Category:     CategoryExpenseIncome,
+			Origin:       "synthetic (anti-regressão: remoção do required não pode derrubar o preenchimento quando o usuário informa)",
+			Input:        "gastei 80 na farmácia no débito",
+			ToolSubset:   []string{"register_expense"},
+			ExpectedTool: "register_expense",
+			ExpectedArgs: map[string]any{
+				"amountCents":   8000.0,
+				"paymentMethod": "debit_card",
+			},
+			ResponseProperty: nonEmptyResponse,
+			ResponseDescribe: "usuário informou débito; a tool recebe paymentMethod=debit_card",
 		},
 		{
 			Name:         "gastei 30 na padaria roteia sem falso multiplo",

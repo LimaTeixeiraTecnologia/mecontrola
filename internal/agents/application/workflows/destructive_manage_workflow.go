@@ -198,8 +198,9 @@ func ContinueDestructiveManage(
 	def workflow.Definition[DestructiveManageState],
 	key string,
 	userMessage string,
+	messageID string,
 ) (bool, string, error) {
-	resumeBytes, err := json.Marshal(map[string]string{"resumeText": userMessage})
+	resumeBytes, err := json.Marshal(map[string]string{"resumeText": userMessage, "incomingMessageId": messageID})
 	if err != nil {
 		return false, "", fmt.Errorf("workflows.destructive_manage: marshal resume: %w", err)
 	}

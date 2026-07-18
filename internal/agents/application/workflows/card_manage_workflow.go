@@ -337,8 +337,9 @@ func ContinueCardManage(
 	def workflow.Definition[CardManageState],
 	key string,
 	userMessage string,
+	messageID string,
 ) (bool, string, error) {
-	resumeBytes, err := json.Marshal(map[string]string{"resumeText": userMessage})
+	resumeBytes, err := json.Marshal(map[string]string{"resumeText": userMessage, "incomingMessageId": messageID})
 	if err != nil {
 		return false, "", fmt.Errorf("workflows.card_manage: marshal resume: %w", err)
 	}

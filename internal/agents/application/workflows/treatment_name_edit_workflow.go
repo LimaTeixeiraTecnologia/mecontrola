@@ -183,8 +183,9 @@ func ContinueTreatmentNameEdit(
 	def workflow.Definition[TreatmentNameEditState],
 	key string,
 	userMessage string,
+	messageID string,
 ) (bool, string, error) {
-	resumeBytes, err := json.Marshal(map[string]string{"resumeText": userMessage})
+	resumeBytes, err := json.Marshal(map[string]string{"resumeText": userMessage, "incomingMessageId": messageID})
 	if err != nil {
 		return false, "", fmt.Errorf("workflows.treatment_name_edit: marshal resume: %w", err)
 	}

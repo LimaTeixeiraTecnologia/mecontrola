@@ -115,6 +115,34 @@ var (
 		"mercado pago":    "mercado_pago",
 		"mercadopago":     "mercado_pago",
 		"cheque":          "cheque",
+
+		"cartao de credito": "credit_card",
+		"cartao de debito":  "debit_card",
+		"cartao credito":    "credit_card",
+		"cartao debito":     "debit_card",
+		"vale refeicao":     "vale_refeicao",
+		"vale-refeicao":     "vale_refeicao",
+		"vr":                "vale_refeicao",
+		"vale alimentacao":  "vale_alimentacao",
+		"vale-alimentacao":  "vale_alimentacao",
+		"va":                "vale_alimentacao",
+	}
+
+	paymentMethodLeadWords = map[string]bool{
+		"paguei": true,
+		"pagou":  true,
+		"pago":   true,
+		"foi":    true,
+		"usei":   true,
+		"no":     true,
+		"na":     true,
+		"em":     true,
+		"com":    true,
+		"de":     true,
+		"do":     true,
+		"da":     true,
+		"pelo":   true,
+		"pela":   true,
 	}
 )
 
@@ -164,6 +192,13 @@ func recognizePaymentMethod(text string) string {
 	normalized := normalizeText(text)
 	if pm, ok := knownPaymentMethods[normalized]; ok {
 		return pm
+	}
+	words := strings.Fields(normalized)
+	for len(words) > 1 && paymentMethodLeadWords[words[0]] {
+		words = words[1:]
+		if pm, ok := knownPaymentMethods[strings.Join(words, " ")]; ok {
+			return pm
+		}
 	}
 	return ""
 }

@@ -228,13 +228,15 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 			},
 		},
 		{
-			name:         "deve proibir inferencia de forma de pagamento e exigir pergunta com exemplos (RF-29/RF-30/RF-31/RF-32)",
+			name:         "deve proibir inferencia de forma de pagamento e delegar a pergunta ao sistema (RF-29/RF-30/RF-31/RF-32)",
 			dependencies: dependencies{},
 			expect: func(instructions string) {
 				s.Contains(instructions, "REGRA ABSOLUTA DE FORMA DE PAGAMENTO")
 				s.Contains(instructions, "NUNCA assuma, infira ou invente a forma de pagamento")
 				s.Contains(instructions, "dinheiro\" NÃO é padrão nem suposição válida")
-				s.Contains(instructions, "Como você pagou? Ex.: dinheiro, pix, débito, crédito, boleto, vale-refeição")
+				s.Contains(instructions, "OMITA paymentMethod")
+				s.Contains(instructions, "NUNCA pergunte a forma de pagamento você mesmo")
+				s.NotContains(instructions, "Como você pagou? Ex.: dinheiro, pix, débito, crédito, boleto, vale-refeição")
 				s.Contains(instructions, "Receita (register_income) NUNCA pergunta forma de pagamento")
 			},
 		},

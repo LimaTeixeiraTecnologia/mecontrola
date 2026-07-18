@@ -12,8 +12,9 @@ func pendingCases() []Case {
 			Input:            "confirma pagamento débito",
 			ToolSubset:       []string{"register_expense"},
 			ExpectedTool:     "register_expense",
+			ExpectedArgs:     map[string]any{"paymentMethod": "debit_card"},
 			ResponseProperty: nonEmptyResponse,
-			ResponseDescribe: "completa dado pendente (forma de pagamento) e registra",
+			ResponseDescribe: "usuário informou débito no follow-up; a LLM completa o dado pendente com paymentMethod=debit_card e registra",
 		},
 	}
 }

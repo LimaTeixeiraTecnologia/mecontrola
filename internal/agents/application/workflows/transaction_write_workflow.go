@@ -421,8 +421,7 @@ func handleTransactionConfirmationResume(ctx context.Context, state TransactionW
 		return completeTransaction(state, TransactionWriteStatusExpired, messages.WriteExpired())
 
 	case TransactionConfirmActionReplay:
-		state.ResumeText = ""
-		return workflow.StepOutput[TransactionWriteState]{State: state, Status: workflow.StepStatusCompleted}, nil
+		return suspendTransaction(state, messages.ConfirmationReprompt())
 
 	case TransactionConfirmActionReprompt:
 		state.ConfirmRepromptCount++
@@ -897,7 +896,7 @@ func buildTransactionSlotReprompt(state TransactionWriteState) string {
 		}
 		return messages.ClarificationQuestion(messages.MissingFieldCategory)
 	case TransactionAwaitingPaymentMethod:
-		return messages.ClarificationQuestion(messages.MissingFieldPaymentMethod)
+		return messages.PaymentMethodReprompt()
 	case TransactionAwaitingCard:
 		return messages.CardPrompt()
 	case TransactionAwaitingDate:
@@ -913,8 +912,9 @@ func ContinueTransactionWrite(
 	def workflow.Definition[TransactionWriteState],
 	key string,
 	userMessage string,
+	messageID string,
 ) (bool, string, error) {
-	resumeBytes, err := json.Marshal(map[string]string{"resumeText": userMessage})
+	resumeBytes, err := json.Marshal(map[string]string{"resumeText": userMessage, "incomingMessageId": messageID})
 	if err != nil {
 		return false, "", fmt.Errorf("workflows.transaction_write: marshal resume: %w", err)
 	}

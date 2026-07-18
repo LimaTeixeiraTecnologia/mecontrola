@@ -278,8 +278,9 @@ func ContinueGoalEdit(
 	def workflow.Definition[GoalEditState],
 	key string,
 	userMessage string,
+	messageID string,
 ) (bool, string, error) {
-	resumeBytes, err := json.Marshal(map[string]string{"resumeText": userMessage})
+	resumeBytes, err := json.Marshal(map[string]string{"resumeText": userMessage, "incomingMessageId": messageID})
 	if err != nil {
 		return false, "", fmt.Errorf("workflows.goal_edit: marshal resume: %w", err)
 	}

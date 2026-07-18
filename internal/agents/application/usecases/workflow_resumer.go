@@ -10,10 +10,10 @@ import (
 
 type WorkflowResumer interface {
 	WorkflowID() string
-	Resume(ctx context.Context, resourceID, threadID, message string) (bool, string, error)
+	Resume(ctx context.Context, resourceID, threadID, message, messageID string) (bool, string, error)
 }
 
-type continueWorkflowFunc[S any] func(ctx context.Context, engine workflow.Engine[S], def workflow.Definition[S], key, message string) (bool, string, error)
+type continueWorkflowFunc[S any] func(ctx context.Context, engine workflow.Engine[S], def workflow.Definition[S], key, message, messageID string) (bool, string, error)
 
 type workflowResumer[S any] struct {
 	workflowID string
@@ -47,7 +47,7 @@ func (r *workflowResumer[S]) WorkflowID() string {
 	return r.workflowID
 }
 
-func (r *workflowResumer[S]) Resume(ctx context.Context, resourceID, threadID, message string) (bool, string, error) {
+func (r *workflowResumer[S]) Resume(ctx context.Context, resourceID, threadID, message, messageID string) (bool, string, error) {
 	key := r.keyFn(resourceID, threadID)
-	return r.continueFn(ctx, r.engine, r.def, key, message)
+	return r.continueFn(ctx, r.engine, r.def, key, message, messageID)
 }

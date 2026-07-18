@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/messages"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
@@ -252,5 +253,77 @@ func TestDecideNewTransactionOperationReplacement(t *testing.T) {
 	}
 	if DecideNewTransactionOperationReplacement("pix") {
 		t.Fatal("expected false for slot-fill text")
+	}
+}
+
+func TestRecognizePaymentMethod_AliasesEPreposicoes(t *testing.T) {
+	scenarios := []struct {
+		text string
+		want string
+	}{
+		{text: "pix", want: "pix"},
+		{text: "no pix", want: "pix"},
+		{text: "paguei no pix", want: "pix"},
+		{text: "foi no débito", want: "debit_card"},
+		{text: "com dinheiro", want: "cash"},
+		{text: "cartão de crédito", want: "credit_card"},
+		{text: "no cartão de débito", want: "debit_card"},
+		{text: "vale refeição", want: "vale_refeicao"},
+		{text: "vr", want: "vale_refeicao"},
+		{text: "va", want: "vale_alimentacao"},
+		{text: "pelo boleto", want: "boleto"},
+		{text: "Sim", want: ""},
+		{text: "não sei", want: ""},
+		{text: "qualquer coisa", want: ""},
+	}
+
+	for _, scenario := range scenarios {
+		t.Run(scenario.text, func(t *testing.T) {
+			if got := recognizePaymentMethod(scenario.text); got != scenario.want {
+				t.Fatalf("recognizePaymentMethod(%q): expected %q, got %q", scenario.text, scenario.want, got)
+			}
+		})
+	}
+}
+
+func TestDecideTransactionSlotResume_SimInvalidoNoSlotDePagamento(t *testing.T) {
+	state := TransactionWriteState{SuspendedAt: time.Now().UTC(), Awaiting: TransactionAwaitingPaymentMethod}
+	decision := DecideTransactionSlotResume(state, "Sim", time.Now().UTC())
+	if decision.Action != TransactionSlotActionReprompt {
+		t.Fatalf("expected reprompt for 'Sim', got %v", decision.Action)
+	}
+
+	state.RepromptCount = transactionMaxReprompts
+	decision = DecideTransactionSlotResume(state, "Sim", time.Now().UTC())
+	if decision.Action != TransactionSlotActionCancel {
+		t.Fatalf("expected cancel after reprompt cap, got %v", decision.Action)
+	}
+}
+
+func TestBuildTransactionSlotReprompt_PaymentMethodMensagemDedicada(t *testing.T) {
+	state := TransactionWriteState{Awaiting: TransactionAwaitingPaymentMethod}
+	got := buildTransactionSlotReprompt(state)
+	want := messages.PaymentMethodReprompt()
+	if got != want {
+		t.Fatalf("expected reprompt dedicado %q, got %q", want, got)
+	}
+	if got == messages.ClarificationQuestion(messages.MissingFieldPaymentMethod) {
+		t.Fatal("reprompt nao pode ser identico a pergunta inicial")
+	}
+}
+
+func TestDecideTransactionConfirmation_ReplayComWamidDoResume(t *testing.T) {
+	state := TransactionWriteState{
+		SuspendedAt:        time.Now().UTC(),
+		ProcessedMessageID: "wamid-sim-1",
+	}
+	action := DecideTransactionConfirmation(state, PendingMessage{Text: "sim", MessageID: "wamid-sim-1"}, time.Now().UTC())
+	if action != TransactionConfirmActionReplay {
+		t.Fatalf("expected replay for repeated wamid, got %v", action)
+	}
+
+	action = DecideTransactionConfirmation(state, PendingMessage{Text: "sim", MessageID: "wamid-sim-2"}, time.Now().UTC())
+	if action != TransactionConfirmActionAccept {
+		t.Fatalf("expected accept for new wamid, got %v", action)
 	}
 }

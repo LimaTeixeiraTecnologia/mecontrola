@@ -3,8 +3,10 @@ package scorers
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/scorer"
 )
@@ -28,7 +30,7 @@ var mecontrolaMonthRefTools = []string{
 }
 
 var mecontrolaRequiredArgsByTool = map[string][]string{
-	"register_expense":  {"amountCents", "description", "paymentMethod"},
+	"register_expense":  {"amountCents", "description"},
 	"register_income":   {"amountCents", "description"},
 	"create_recurrence": {"direction", "paymentMethod", "amountCents", "description", "frequency", "dayOfMonth"},
 	"adjust_allocation": {"competence", "rootSlug", "percentage"},
@@ -255,6 +257,85 @@ func (s *requiredArgsScorer) Score(_ context.Context, sample scorer.RunSample) (
 	return scorer.ScoreResult{Score: 1.0, Reason: "args obrigatórios presentes em todas as write-tools chamadas"}, nil
 }
 
+var rePaymentLaunchVerbs = regexp.MustCompile(`(?i)\b(gastei|paguei|comprei|parcelei)\b`)
+
+var paymentMethodEvidenceTerms = map[string][]string{
+	"pix":              {"pix"},
+	"cash":             {"dinheiro", "especie", "espécie"},
+	"debit_card":       {"debito", "débito"},
+	"debit_in_account": {"debito em conta", "débito em conta", "conta"},
+	"credit_card":      {"credito", "crédito", "cartao", "cartão", "parcel"},
+	"boleto":           {"boleto"},
+	"ted":              {"ted"},
+	"doc":              {"doc"},
+	"transferencia":    {"transfer"},
+	"vale_refeicao":    {"vale", "vr", "refeicao", "refeição"},
+	"vale_alimentacao": {"vale", "va", "alimentacao", "alimentação"},
+	"apple_pay":        {"apple"},
+	"google_pay":       {"google"},
+	"picpay":           {"picpay"},
+	"mercado_pago":     {"mercado pago", "mercadopago"},
+	"cheque":           {"cheque"},
+}
+
+type paymentMethodProvenanceScorer struct{}
+
+func (s *paymentMethodProvenanceScorer) ID() string              { return "payment_method_provenance" }
+func (s *paymentMethodProvenanceScorer) Kind() scorer.ScorerKind { return scorer.ScorerKindCodeBased }
+
+func (s *paymentMethodProvenanceScorer) Score(_ context.Context, sample scorer.RunSample) (scorer.ScoreResult, error) {
+	if priorTurn, ok := sample.Metadata["payment_method_prior_turn"].(bool); ok && priorTurn {
+		return scorer.ScoreResult{Score: 1.0, Reason: "forma de pagamento veio de turno anterior (metadata)"}, nil
+	}
+	input := strings.ToLower(sample.Input)
+	if !rePaymentLaunchVerbs.MatchString(input) {
+		return scorer.ScoreResult{Score: 1.0, Reason: "sem verbo de lançamento no turno; proveniência não avaliada"}, nil
+	}
+	for _, tc := range sample.ToolCalls {
+		if tc.Name != "register_expense" {
+			continue
+		}
+		raw, present := tc.Args["paymentMethod"]
+		if !present {
+			continue
+		}
+		method, ok := raw.(string)
+		if !ok || method == "" {
+			continue
+		}
+		if !hasPaymentEvidence(input, method) {
+			return scorer.ScoreResult{
+				Score:    0.0,
+				Reason:   fmt.Sprintf("paymentMethod inventado: %q sem evidência no texto do usuário", method),
+				Metadata: map[string]any{"tool": tc.Name, "paymentMethod": method},
+			}, nil
+		}
+	}
+	return scorer.ScoreResult{Score: 1.0, Reason: "paymentMethod ausente ou com evidência textual no input"}, nil
+}
+
+func hasPaymentEvidence(input, method string) bool {
+	terms, ok := paymentMethodEvidenceTerms[method]
+	if !ok {
+		return false
+	}
+	words := strings.FieldsFunc(input, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	})
+	for _, term := range terms {
+		if len(term) <= 3 {
+			if slices.Contains(words, term) {
+				return true
+			}
+			continue
+		}
+		if strings.Contains(input, term) {
+			return true
+		}
+	}
+	return false
+}
+
 func isZeroArgValue(v any) bool {
 	switch val := v.(type) {
 	case nil:
@@ -391,6 +472,8 @@ func NewNoDuplicateWriteScorer() scorer.Scorer { return &noDuplicateWriteScorer{
 func NewNoHallucinationScorer() scorer.Scorer { return &noHallucinationScorer{} }
 
 func NewRequiredArgsScorer() scorer.Scorer { return &requiredArgsScorer{} }
+
+func NewPaymentMethodProvenanceScorer() scorer.Scorer { return &paymentMethodProvenanceScorer{} }
 
 func NewMonthReferenceCorrectnessScorer() scorer.Scorer { return &monthReferenceCorrectnessScorer{} }
 
