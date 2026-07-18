@@ -103,6 +103,7 @@ func pick(seed MotivationSeed, phrases []string) string {
 
 type ConfirmationView struct {
 	AmountFormatted string
+	DateFormatted   string
 	PaymentMethod   string
 	Category        string
 	Origin          string
@@ -242,14 +243,14 @@ func TreatmentNameTooLong() string {
 
 func ExpenseConfirmationBlock(v ConfirmationView) string {
 	return fmt.Sprintf(
-		"✅ Encontrei este lançamento:\n\n💰 Valor: %s\n💳 Pagamento: %s\n📂 Categoria: %s\n\nPosso registrar?",
-		v.AmountFormatted, v.PaymentMethod, v.Category,
+		"💰 Valor: %s\n📅 Data: %s\n📂 Categoria: %s\n💳 Forma de pagamento: %s\n\nPosso registrar?",
+		v.AmountFormatted, v.DateFormatted, v.Category, v.PaymentMethod,
 	)
 }
 
 func IncomeConfirmationBlock(v ConfirmationView) string {
 	return fmt.Sprintf(
-		"✅ Encontrei esta entrada:\n\n💰 Valor: %s\n📥 Origem: %s\n\nPosso registrar?",
+		"💰 Valor: %s\n📥 Origem: %s\n\nPosso registrar?",
 		v.AmountFormatted, v.Origin,
 	)
 }

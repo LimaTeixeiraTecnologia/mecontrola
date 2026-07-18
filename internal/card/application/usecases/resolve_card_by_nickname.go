@@ -58,6 +58,25 @@ func (u *ResolveCardByNickname) Execute(ctx context.Context, in input.ResolveCar
 		}
 	}
 
+	if len([]rune(target)) >= 2 {
+		lowerTarget := strings.ToLower(target)
+		matches := 0
+		matchIdx := -1
+		for i, c := range cards {
+			if c.IsDeleted() {
+				continue
+			}
+			if strings.Contains(strings.ToLower(c.Nickname.String()), lowerTarget) {
+				matches++
+				matchIdx = i
+			}
+		}
+		if matches == 1 {
+			span.SetAttributes(observability.String("outcome", "success_partial_unique"))
+			return mappers.M.ToCardOutput(cards[matchIdx]), nil
+		}
+	}
+
 	span.SetAttributes(observability.String("outcome", "not_found"))
 	return output.Card{}, fmt.Errorf("card/resolve_card_by_nickname: %w", domain.ErrCardNotFound)
 }

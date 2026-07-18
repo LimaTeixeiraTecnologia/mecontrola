@@ -12,10 +12,11 @@ import (
 func TestExpenseConfirmationBlock(t *testing.T) {
 	got := messages.ExpenseConfirmationBlock(messages.ConfirmationView{
 		AmountFormatted: "R$ 300,00",
+		DateFormatted:   "hoje",
 		PaymentMethod:   "Dinheiro",
 		Category:        "Casa",
 	})
-	want := "✅ Encontrei este lançamento:\n\n💰 Valor: R$ 300,00\n💳 Pagamento: Dinheiro\n📂 Categoria: Casa\n\nPosso registrar?"
+	want := "💰 Valor: R$ 300,00\n📅 Data: hoje\n📂 Categoria: Casa\n💳 Forma de pagamento: Dinheiro\n\nPosso registrar?"
 	assert.Equal(t, want, got)
 }
 
@@ -24,7 +25,7 @@ func TestIncomeConfirmationBlock(t *testing.T) {
 		AmountFormatted: "R$ 2.000,00",
 		Origin:          "Salário",
 	})
-	want := "✅ Encontrei esta entrada:\n\n💰 Valor: R$ 2.000,00\n📥 Origem: Salário\n\nPosso registrar?"
+	want := "💰 Valor: R$ 2.000,00\n📥 Origem: Salário\n\nPosso registrar?"
 	assert.Equal(t, want, got)
 }
 

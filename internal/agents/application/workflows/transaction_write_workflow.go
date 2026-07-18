@@ -288,18 +288,40 @@ func handleTransactionCategoryResume(ctx context.Context, state TransactionWrite
 	}
 
 	if cats != nil {
-		candidates, searchErr := SearchAndEnrichCandidates(ctx, cats, text, state.Kind, state.CategoryVersion)
-		if searchErr == nil && len(candidates) == 1 && candidateHasLeafSubcategory(candidates[0]) {
-			return promoteTransactionCategoryToConfirmation(state, candidates[0])
-		}
-		if searchErr == nil && len(candidates) > 1 {
-			state.Candidates = candidates
-			state.RepromptCount = 0
-			return suspendTransaction(state, buildCandidatesPrompt(candidates))
+		if out, handled := resolveCategoryBySearch(ctx, cats, state, text); handled {
+			return out, nil
 		}
 	}
 
 	return transactionCategoryReprompt(state, buildTransactionSlotReprompt(state))
+}
+
+func resolveCategoryBySearch(ctx context.Context, cats categoryValidator, state TransactionWriteState, text string) (workflow.StepOutput[TransactionWriteState], bool) {
+	candidates, effectiveVersion, searchErr := SearchAndEnrichCandidates(ctx, cats, text, state.Kind, state.CategoryVersion)
+	if searchErr != nil {
+		return workflow.StepOutput[TransactionWriteState]{}, false
+	}
+	if state.CategoryVersion == 0 && effectiveVersion > 0 {
+		state.CategoryVersion = effectiveVersion
+	}
+	if len(candidates) == 1 && candidateHasLeafSubcategory(candidates[0]) {
+		out, _ := promoteTransactionCategoryToConfirmation(state, candidates[0])
+		return out, true
+	}
+	if len(candidates) > 1 {
+		state.Candidates = candidates
+		state.RepromptCount = 0
+		out, _ := suspendTransaction(state, buildCandidatesPrompt(candidates))
+		return out, true
+	}
+	rootCandidates, rootErr := RootCategoryLeafCandidates(ctx, cats, state.UserID, text, state.Kind)
+	if rootErr == nil && len(rootCandidates) > 0 {
+		state.Candidates = rootCandidates
+		state.RepromptCount = 0
+		out, _ := suspendTransaction(state, buildCandidatesPrompt(rootCandidates))
+		return out, true
+	}
+	return workflow.StepOutput[TransactionWriteState]{}, false
 }
 
 func promoteTransactionCategoryToConfirmation(state TransactionWriteState, candidate PendingCategoryCandidate) (workflow.StepOutput[TransactionWriteState], error) {
@@ -489,7 +511,7 @@ func validateTransactionCategoryForWrite(ctx context.Context, state TransactionW
 }
 
 func reclassifyTransactionByKind(ctx context.Context, state TransactionWriteState, cats categoryValidator) (TransactionWriteState, bool, *workflow.StepOutput[TransactionWriteState]) {
-	candidates, searchErr := SearchAndEnrichCandidates(ctx, cats, state.Description, state.Kind, state.CategoryVersion)
+	candidates, _, searchErr := SearchAndEnrichCandidates(ctx, cats, state.Description, state.Kind, state.CategoryVersion)
 	if searchErr == nil && len(candidates) > 0 {
 		state.Candidates = []PendingCategoryCandidate{candidates[0]}
 		return state, true, nil
@@ -853,9 +875,20 @@ func confirmSummaryEdit(state TransactionWriteState) string {
 func confirmSummaryExpense(state TransactionWriteState) string {
 	return messages.ExpenseConfirmationBlock(messages.ConfirmationView{
 		AmountFormatted: money.FromCents(state.AmountCents).BRL(),
+		DateFormatted:   formatConfirmDate(state.OccurredAt, time.Now().UTC()),
 		PaymentMethod:   formatPaymentLabel(state.PaymentMethod),
 		Category:        categoryPathFor(state),
 	})
+}
+
+func formatConfirmDate(occurredAt string, now time.Time) string {
+	if occurredAt == "" || occurredAt == now.Format("2006-01-02") {
+		return "hoje"
+	}
+	if parsed, err := time.Parse("2006-01-02", occurredAt); err == nil {
+		return parsed.Format("02/01/2006")
+	}
+	return occurredAt
 }
 
 func buildTransactionConfirmSummary(state TransactionWriteState) string {

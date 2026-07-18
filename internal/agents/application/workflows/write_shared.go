@@ -48,6 +48,7 @@ type cardNicknameSolver interface {
 type categoryValidator interface {
 	SearchDictionary(ctx context.Context, term, kind string) (interfaces.CategorySearchResult, error)
 	ResolveForWrite(ctx context.Context, input interfaces.CategoryWriteRequest) (interfaces.CategoryWriteDecision, error)
+	ListCategories(ctx context.Context, userID uuid.UUID) ([]interfaces.Category, error)
 }
 
 type PendingMessage struct {

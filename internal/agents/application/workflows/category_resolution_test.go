@@ -56,7 +56,7 @@ func TestSearchAndEnrichCandidates_SingleCandidate_Accepted(t *testing.T) {
 		}, nil).
 		Once()
 
-	candidates, err := SearchAndEnrichCandidates(ctx, m, "supermercado", interfaces.CategoryKindExpense, 3)
+	candidates, _, err := SearchAndEnrichCandidates(ctx, m, "supermercado", interfaces.CategoryKindExpense, 3)
 
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)
@@ -99,7 +99,7 @@ func TestSearchAndEnrichCandidates_MultipleValidCandidates_G7_10(t *testing.T) {
 		Return(interfaces.CategoryWriteDecision{RootCategoryID: rootID, SubcategoryID: sub3, RootSlug: "custo-fixo", SubcategorySlug: "terapia-e-saude-mental", Path: "custo-fixo > terapia-e-saude-mental", EditorialVersion: 2}, nil).
 		Once()
 
-	candidates, err := SearchAndEnrichCandidates(ctx, m, "saúde", interfaces.CategoryKindExpense, 2)
+	candidates, _, err := SearchAndEnrichCandidates(ctx, m, "saúde", interfaces.CategoryKindExpense, 2)
 
 	require.NoError(t, err)
 	require.Len(t, candidates, 3)
@@ -129,7 +129,7 @@ func TestSearchAndEnrichCandidates_RootOnlySkipped_G7_03(t *testing.T) {
 		}, nil).
 		Once()
 
-	candidates, err := SearchAndEnrichCandidates(ctx, m, "custo fixo", interfaces.CategoryKindExpense, 1)
+	candidates, _, err := SearchAndEnrichCandidates(ctx, m, "custo fixo", interfaces.CategoryKindExpense, 1)
 
 	require.NoError(t, err)
 	require.Empty(t, candidates)
@@ -162,7 +162,7 @@ func TestSearchAndEnrichCandidates_ResolveForWriteFails_CandidateRejected_G7_11(
 		Return(interfaces.CategoryWriteDecision{RootCategoryID: rootID, SubcategoryID: sub2, RootSlug: "custo-fixo", SubcategorySlug: "medicamentos-continuos", Path: "custo-fixo > medicamentos-continuos", EditorialVersion: 1}, nil).
 		Once()
 
-	candidates, err := SearchAndEnrichCandidates(ctx, m, "medicamento", interfaces.CategoryKindExpense, 1)
+	candidates, _, err := SearchAndEnrichCandidates(ctx, m, "medicamento", interfaces.CategoryKindExpense, 1)
 
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)
@@ -190,7 +190,7 @@ func TestSearchAndEnrichCandidates_AllCandidatesRejectByResolve_ZeroResult_G7_11
 		Return(interfaces.CategoryWriteDecision{}, errors.New("version mismatch")).
 		Once()
 
-	candidates, err := SearchAndEnrichCandidates(ctx, m, "farmácia", interfaces.CategoryKindExpense, 2)
+	candidates, _, err := SearchAndEnrichCandidates(ctx, m, "farmácia", interfaces.CategoryKindExpense, 2)
 
 	require.NoError(t, err)
 	require.Empty(t, candidates)
@@ -205,7 +205,7 @@ func TestSearchAndEnrichCandidates_SearchError_ReturnsError(t *testing.T) {
 		Return(interfaces.CategorySearchResult{}, errors.New("db error")).
 		Once()
 
-	_, err := SearchAndEnrichCandidates(ctx, m, "xyz", interfaces.CategoryKindExpense, 1)
+	_, _, err := SearchAndEnrichCandidates(ctx, m, "xyz", interfaces.CategoryKindExpense, 1)
 	require.Error(t, err)
 }
 
@@ -230,7 +230,7 @@ func TestSearchAndEnrichCandidates_G7_12_NewDescriptionResolves(t *testing.T) {
 		Return(interfaces.CategoryWriteDecision{RootCategoryID: rootID, SubcategoryID: subID, RootSlug: "custo-fixo", SubcategorySlug: "medicamentos-e-farmacia", Path: "custo-fixo > medicamentos-e-farmacia", EditorialVersion: 1}, nil).
 		Once()
 
-	candidates, err := SearchAndEnrichCandidates(ctx, m, "farmácia", interfaces.CategoryKindExpense, 1)
+	candidates, _, err := SearchAndEnrichCandidates(ctx, m, "farmácia", interfaces.CategoryKindExpense, 1)
 
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)

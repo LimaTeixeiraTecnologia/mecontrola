@@ -44,6 +44,8 @@ REGRA ABSOLUTA ANTI-SIMULAÇÃO:
 - O campo isReplay=true numa resposta de escrita indica repetição idempotente — confirme ao usuário sem registrar novamente
 - NUNCA chame uma ferramenta de escrita mais de uma vez para a mesma operação por mensagem do usuário
 - Para erro de registro: responda exatamente "Não consegui registrar. Tente novamente em breve." — sem adicionar detalhes técnicos
+- NUNCA componha você mesmo um bloco de confirmação de lançamento ("✅ Encontrei este lançamento", "Posso registrar?", "Posso atualizar?") — esse bloco só existe como campo message de outcome=clarify retornado por uma ferramenta de escrita; sem chamada de ferramenta nesta mensagem, ele é proibido
+- Em register_expense/register_income, categoryId e subcategoryId são EXCLUSIVAMENTE UUIDs retornados por classify_category — NUNCA passe slug, nome ou texto de categoria nesses campos; sem UUID válido em mãos, OMITA os dois campos e deixe a ferramenta resolver
 - NUNCA afirme "cadastrei o 💳", "💳 cadastrado com sucesso" ou "não consegui cadastrar o 💳" sem ter chamado create_card nesta conversa e sem que a confirmação subsequente tenha sido resolvida pelo sistema. A mensagem final de sucesso ou falha do cadastro de 💳 é texto determinístico devolvido pelo sistema após o usuário confirmar — você DEVE apenas repassá-la verbatim, nunca formulá-la por conta própria
 
 REGRA ABSOLUTA DE CAMPOS OBRIGATÓRIOS:
@@ -309,6 +311,7 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 		guards.NewEmptyAnswerGuard(),
 		guards.NewInternalTermsGuard(),
 		guards.NewSuccessWithoutToolGuard(),
+		guards.NewConfirmationWithoutToolGuard(),
 		guards.NewMultiItemFalseBlockGuard(),
 		guards.NewCardProvenanceGuard(),
 	}

@@ -171,26 +171,20 @@ func resolveRegisterExpenseCard(ctx context.Context, cards interfaces.CardManage
 }
 
 func resolveRegisterExpenseCategoryIDs(categoryIDStr, subcategoryIDStr string) (uuid.UUID, uuid.UUID, error) {
-	categoryID, err := parseOptionalUUID(categoryIDStr, "categoryId")
-	if err != nil {
-		return uuid.Nil, uuid.Nil, err
-	}
-	subcategoryID, err := parseOptionalUUID(subcategoryIDStr, "subcategoryId")
-	if err != nil {
-		return uuid.Nil, uuid.Nil, err
+	categoryID := parseOptionalUUID(categoryIDStr)
+	subcategoryID := parseOptionalUUID(subcategoryIDStr)
+	if categoryID == uuid.Nil {
+		return uuid.Nil, uuid.Nil, nil
 	}
 	return categoryID, subcategoryID, nil
 }
 
-func parseOptionalUUID(value, field string) (uuid.UUID, error) {
-	if value == "" {
-		return uuid.Nil, nil
-	}
+func parseOptionalUUID(value string) uuid.UUID {
 	parsed, err := uuid.Parse(value)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("register_expense: %s inválido: %w", field, err)
+		return uuid.Nil
 	}
-	return parsed, nil
+	return parsed
 }
 
 var errCardNotFoundClarify = &clarifyError{message: cardNotFoundClarifyMessage}
