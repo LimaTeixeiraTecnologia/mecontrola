@@ -55,6 +55,15 @@ func buildGoldenHarnessProvider(t *testing.T) llm.Provider {
 	}, fake.NewProvider())
 }
 
+var goldenPaymentMethodEnum = []string{"pix", "debit_card", "debit_in_account", "cash", "boleto", "ted", "credit_card", "doc", "vale_refeicao", "vale_alimentacao", "transferencia", "apple_pay", "google_pay", "picpay", "mercado_pago", "cheque"}
+
+func goldenSchemaWithPaymentEnum(fields ...string) map[string]any {
+	schema := goldenBaseSchema(fields...)
+	props := schema["properties"].(map[string]any)
+	props["paymentMethod"] = map[string]any{"type": "string", "enum": goldenPaymentMethodEnum}
+	return schema
+}
+
 func goldenBaseSchema(fields ...string) map[string]any {
 	props := map[string]any{}
 	for _, f := range fields {
@@ -275,7 +284,7 @@ func goldenEditTreatmentNameTool(sink ToolCaptureSink) tool.ToolHandle {
 }
 
 func goldenRegisterExpensePaymentClarifyTool(sink ToolCaptureSink) tool.ToolHandle {
-	in := llm.Schema{Name: "register_expense_payment_clarify_input", Strict: false, Schema: goldenBaseSchema("description", "amountCents", "paymentMethod", "occurredAt")}
+	in := llm.Schema{Name: "register_expense_payment_clarify_input", Strict: false, Schema: goldenSchemaWithPaymentEnum("description", "amountCents", "paymentMethod", "occurredAt")}
 	out := llm.Schema{
 		Name:   "register_expense_payment_clarify_output",
 		Strict: true,
@@ -301,7 +310,7 @@ func goldenRegisterExpensePaymentClarifyTool(sink ToolCaptureSink) tool.ToolHand
 var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
 	"register_expense_payment_clarify": goldenRegisterExpensePaymentClarifyTool,
 	"register_expense": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("register_expense", "Registra uma despesa", goldenBaseSchema("description", "amountCents", "paymentMethod", "occurredAt", "categoryId", "cardId"), sink)
+		return goldenCaptureTool("register_expense", "Registra uma despesa", goldenSchemaWithPaymentEnum("description", "amountCents", "paymentMethod", "occurredAt", "categoryId", "cardId"), sink)
 	},
 	"register_income": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("register_income", "Registra uma receita", goldenBaseSchema("description", "amountCents", "occurredAt"), sink)
