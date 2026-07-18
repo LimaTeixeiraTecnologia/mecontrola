@@ -17,20 +17,23 @@ import (
 var ErrUnknownSuspendedWorkflow = errors.New("usecases.resume_dispatcher: workflow suspenso sem resumer registrado")
 
 type ResumeDispatcher struct {
-	index           *SuspendedRunIndex
-	resumers        map[string]WorkflowResumer
-	threads         memory.ThreadGateway
-	runs            agent.RunStore
-	o11y            observability.Observability
-	total           observability.Counter
-	durationHist    observability.Histogram
-	runUpdateErrors observability.Counter
+	index               *SuspendedRunIndex
+	resumers            map[string]WorkflowResumer
+	threads             memory.ThreadGateway
+	runs                agent.RunStore
+	messages            memory.MessageStore
+	o11y                observability.Observability
+	total               observability.Counter
+	durationHist        observability.Histogram
+	runUpdateErrors     observability.Counter
+	messageAppendErrors observability.Counter
 }
 
 func NewResumeDispatcher(
 	index *SuspendedRunIndex,
 	threads memory.ThreadGateway,
 	runs agent.RunStore,
+	messages memory.MessageStore,
 	o11y observability.Observability,
 	resumers ...WorkflowResumer,
 ) (*ResumeDispatcher, error) {
@@ -58,10 +61,16 @@ func NewResumeDispatcher(
 		resumers:        m,
 		threads:         threads,
 		runs:            runs,
+		messages:        messages,
 		o11y:            o11y,
 		total:           total,
 		durationHist:    durationHist,
 		runUpdateErrors: newRunUpdateErrorsCounter(o11y),
+		messageAppendErrors: o11y.Metrics().Counter(
+			"agents_resume_message_append_errors_total",
+			"Total de falhas ao anexar mensagens de resume na thread",
+			"1",
+		),
 	}, nil
 }
 
@@ -120,6 +129,9 @@ func (d *ResumeDispatcher) Continue(ctx context.Context, resourceID, threadID, m
 			observability.String("outcome", "resume_error"),
 		)
 		d.closeRun(ctx, run, agent.RunStatusFailed, "resume", resumeErr.Error(), start)
+		if handled && reply != "" {
+			d.appendExchange(ctx, run, workflowID, message, reply)
+		}
 		return handled, reply, fmt.Errorf("usecases.resume_dispatcher: resume: %w", resumeErr)
 	}
 
@@ -137,7 +149,48 @@ func (d *ResumeDispatcher) Continue(ctx context.Context, resourceID, threadID, m
 	)
 	d.closeRun(ctx, run, agent.RunStatusSucceeded, "close", "", start)
 
+	if handled && reply != "" {
+		d.appendExchange(ctx, run, workflowID, message, reply)
+	}
+
 	return handled, reply, nil
+}
+
+func (d *ResumeDispatcher) appendExchange(ctx context.Context, run agent.Run, workflowID, userMessage, reply string) {
+	if d.messages == nil {
+		return
+	}
+	pairs := []memory.Message{
+		{
+			ID:               uuid.New(),
+			PlatformThreadID: run.PlatformThreadID,
+			ResourceID:       run.ResourceID,
+			Role:             memory.RoleUser,
+			Content:          userMessage,
+			CreatedAt:        time.Now().UTC(),
+		},
+		{
+			ID:               uuid.New(),
+			PlatformThreadID: run.PlatformThreadID,
+			ResourceID:       run.ResourceID,
+			Role:             memory.RoleAssistant,
+			Content:          reply,
+			CreatedAt:        time.Now().UTC(),
+		},
+	}
+	for _, msg := range pairs {
+		if err := d.messages.Append(ctx, run.PlatformThreadID, msg); err != nil {
+			d.messageAppendErrors.Add(ctx, 1,
+				observability.String("workflow", workflowID),
+				observability.String("role", msg.Role.String()),
+			)
+			d.o11y.Logger().Warn(ctx, "agents.usecase.resume_dispatcher: append message falhou",
+				observability.String("workflow", workflowID),
+				observability.String("role", msg.Role.String()),
+				observability.Error(err),
+			)
+		}
+	}
 }
 
 func (d *ResumeDispatcher) openRun(ctx context.Context, resourceID, threadID, wamid, workflowID string, start time.Time) (agent.Run, error) {

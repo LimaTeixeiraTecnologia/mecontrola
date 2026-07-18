@@ -47,6 +47,19 @@ func (f *fakeDispatcherRunStore) Load(_ context.Context, _ uuid.UUID) (agent.Run
 	return agent.Run{}, nil
 }
 
+type fakeDispatcherMessageStore struct {
+	appended []memory.Message
+}
+
+func (f *fakeDispatcherMessageStore) Append(_ context.Context, _ uuid.UUID, m memory.Message) error {
+	f.appended = append(f.appended, m)
+	return nil
+}
+
+func (f *fakeDispatcherMessageStore) Recent(_ context.Context, _ uuid.UUID, _ int) ([]memory.Message, error) {
+	return nil, nil
+}
+
 type mockWorkflowResumer struct {
 	mock.Mock
 	workflowID string
@@ -85,7 +98,7 @@ func (s *ResumeDispatcherSuite) TestNewResumeDispatcher_ErroQuandoWorkflowDuplic
 	store := newFakeSuspendedRunStore()
 	index := NewSuspendedRunIndex(store, "transaction-write")
 
-	dispatcher, err := NewResumeDispatcher(index, s.threads, s.runs, s.obs, r1, r2)
+	dispatcher, err := NewResumeDispatcher(index, s.threads, s.runs, &fakeDispatcherMessageStore{}, s.obs, r1, r2)
 	s.Error(err)
 	s.Nil(dispatcher)
 }
@@ -224,7 +237,7 @@ func (s *ResumeDispatcherSuite) TestContinue() {
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
 			index := NewSuspendedRunIndex(scenario.dependencies.store, scenario.dependencies.indexWorkflowIDs...)
-			dispatcher, err := NewResumeDispatcher(index, scenario.dependencies.threads, scenario.dependencies.runs, s.obs, scenario.dependencies.resumers...)
+			dispatcher, err := NewResumeDispatcher(index, scenario.dependencies.threads, scenario.dependencies.runs, &fakeDispatcherMessageStore{}, s.obs, scenario.dependencies.resumers...)
 			s.Require().NoError(err)
 
 			handled, reply, dispatchErr := dispatcher.Continue(s.ctx, scenario.args.resourceID, scenario.args.threadID, "sim", "wamid-001")
@@ -251,7 +264,7 @@ func (s *ResumeDispatcherSuite) TestContinue_InjetaIdentidadeInboundNoContexto()
 		}).
 		Return(true, "✅ Prontinho.", nil).Once()
 
-	dispatcher, err := NewResumeDispatcher(index, s.threads, s.runs, s.obs, resumer)
+	dispatcher, err := NewResumeDispatcher(index, s.threads, s.runs, &fakeDispatcherMessageStore{}, s.obs, resumer)
 	s.Require().NoError(err)
 
 	handled, reply, dispatchErr := dispatcher.Continue(s.ctx, "user-6", "+5511", "sim", "wamid-006")
@@ -273,7 +286,7 @@ func (s *ResumeDispatcherSuite) TestContinue_AbreEFechaRunAuditavel() {
 	resumer.On("Resume", mock.Anything, "user-4", "+5511", "sim", mock.Anything).
 		Return(true, "✅ Cartão atualizado.", nil).Once()
 
-	dispatcher, err := NewResumeDispatcher(index, s.threads, s.runs, s.obs, resumer)
+	dispatcher, err := NewResumeDispatcher(index, s.threads, s.runs, &fakeDispatcherMessageStore{}, s.obs, resumer)
 	s.Require().NoError(err)
 
 	_, _, dispatchErr := dispatcher.Continue(s.ctx, "user-4", "+5511", "sim", "wamid-002")
@@ -295,7 +308,7 @@ func (s *ResumeDispatcherSuite) TestContinue_FalhaAoAbrirThreadNaoAbreRun() {
 
 	s.threads.err = errors.New("thread store down")
 
-	dispatcher, err := NewResumeDispatcher(index, s.threads, s.runs, s.obs, resumer)
+	dispatcher, err := NewResumeDispatcher(index, s.threads, s.runs, &fakeDispatcherMessageStore{}, s.obs, resumer)
 	s.Require().NoError(err)
 
 	handled, reply, dispatchErr := dispatcher.Continue(s.ctx, "user-5", "+5511", "sim", "wamid-003")
@@ -304,4 +317,43 @@ func (s *ResumeDispatcherSuite) TestContinue_FalhaAoAbrirThreadNaoAbreRun() {
 	s.Empty(reply)
 	s.Empty(s.runs.inserted)
 	resumer.AssertNotCalled(s.T(), "Resume", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func (s *ResumeDispatcherSuite) TestContinue_AnexaParUsuarioAssistenteNaThread() {
+	store := newFakeSuspendedRunStore()
+	store.put("transaction-write", "user-7:+5511:transaction-write", workflow.RunStatusSuspended)
+	index := NewSuspendedRunIndex(store, "transaction-write")
+
+	resumer := &mockWorkflowResumer{workflowID: "transaction-write"}
+	resumer.On("Resume", mock.Anything, "user-7", "+5511", "pix", mock.Anything).
+		Return(true, "✅ Encontrei este lançamento. Posso registrar?", nil).Once()
+
+	messages := &fakeDispatcherMessageStore{}
+	dispatcher, err := NewResumeDispatcher(index, s.threads, s.runs, messages, s.obs, resumer)
+	s.Require().NoError(err)
+
+	handled, _, dispatchErr := dispatcher.Continue(s.ctx, "user-7", "+5511", "pix", "wamid-007")
+	s.NoError(dispatchErr)
+	s.True(handled)
+
+	s.Require().Len(messages.appended, 2)
+	s.Equal(memory.RoleUser, messages.appended[0].Role)
+	s.Equal("pix", messages.appended[0].Content)
+	s.Equal(memory.RoleAssistant, messages.appended[1].Role)
+	s.Equal("✅ Encontrei este lançamento. Posso registrar?", messages.appended[1].Content)
+	s.Equal("user-7", messages.appended[0].ResourceID)
+}
+
+func (s *ResumeDispatcherSuite) TestContinue_NaoAnexaQuandoNaoHandled() {
+	store := newFakeSuspendedRunStore()
+	index := NewSuspendedRunIndex(store, "transaction-write")
+
+	messages := &fakeDispatcherMessageStore{}
+	dispatcher, err := NewResumeDispatcher(index, s.threads, s.runs, messages, s.obs)
+	s.Require().NoError(err)
+
+	handled, _, dispatchErr := dispatcher.Continue(s.ctx, "user-8", "+5511", "oi", "wamid-008")
+	s.NoError(dispatchErr)
+	s.False(handled)
+	s.Empty(messages.appended)
 }

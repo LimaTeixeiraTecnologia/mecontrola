@@ -44,6 +44,16 @@ func (stubResumeThreadGateway) GetOrCreate(_ context.Context, _, _ string) (memo
 	return memory.Thread{ID: uuid.New()}, nil
 }
 
+type stubResumeMessageStore struct{}
+
+func (stubResumeMessageStore) Append(_ context.Context, _ uuid.UUID, _ memory.Message) error {
+	return nil
+}
+
+func (stubResumeMessageStore) Recent(_ context.Context, _ uuid.UUID, _ int) ([]memory.Message, error) {
+	return nil, nil
+}
+
 type stubResumeRunStore struct{}
 
 func (stubResumeRunStore) Insert(_ context.Context, _ agent.Run) error { return nil }
@@ -68,7 +78,7 @@ func (s *TransactionsIntegrationSuite) buildTransactionWriteDispatcher() *usecas
 	s.Require().NoError(err)
 
 	index := usecases.NewSuspendedRunIndex(store, workflows.TransactionWriteWorkflowID)
-	dispatcher, err := usecases.NewResumeDispatcher(index, stubResumeThreadGateway{}, stubResumeRunStore{}, o11y, resumer)
+	dispatcher, err := usecases.NewResumeDispatcher(index, stubResumeThreadGateway{}, stubResumeRunStore{}, stubResumeMessageStore{}, o11y, resumer)
 	s.Require().NoError(err)
 	return dispatcher
 }

@@ -328,7 +328,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		workflows.TreatmentNameEditWorkflowID,
 	)
 	resumeDispatcher, err := usecases.NewResumeDispatcher(
-		suspendedRunIndex, threadGateway, runStore, deps.O11y,
+		suspendedRunIndex, threadGateway, runStore, messageStore, deps.O11y,
 		transactionWriteResumer, budgetManageResumer, cardManageResumer, goalEditResumer, destructiveManageResumer,
 		treatmentNameEditResumer,
 	)

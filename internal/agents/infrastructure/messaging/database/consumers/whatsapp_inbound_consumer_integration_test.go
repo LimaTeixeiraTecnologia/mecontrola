@@ -184,7 +184,7 @@ func (s *WhatsAppInboundConsumerIntegrationSuite) buildTransactionWriteResumeDis
 	s.Require().NoError(err)
 
 	index := usecases.NewSuspendedRunIndex(workflowStore, workflows.TransactionWriteWorkflowID)
-	dispatcher, err := usecases.NewResumeDispatcher(index, threads, runs, o11y, resumer)
+	dispatcher, err := usecases.NewResumeDispatcher(index, threads, runs, mempostgres.NewMessageRepository(s.db, o11y), o11y, resumer)
 	s.Require().NoError(err)
 
 	return dispatcher, engine, def
