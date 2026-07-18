@@ -11,6 +11,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/messages"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
+	catinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	wf "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
@@ -305,6 +306,9 @@ func (uc *TransactionWriteStarter) searchByDescription(
 ) ([]workflows.PendingCategoryCandidate, int64, error) {
 	result, err := uc.categories.SearchDictionary(ctx, description, kind.String())
 	if err != nil {
+		if errors.Is(err, catinput.ErrInvalidQuery) {
+			return nil, 0, nil
+		}
 		return nil, 0, fmt.Errorf("search dictionary: %w", err)
 	}
 	candidates, enrichErr := workflows.EnrichCandidatesFromSearch(ctx, uc.categories, result, kind, result.Version)

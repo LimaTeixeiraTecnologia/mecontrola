@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -13,6 +14,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	imocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces/mocks"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
+	catinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	wf "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
@@ -208,4 +210,57 @@ func (s *TransactionWriteStarterSuite) TestEditEntry_WithoutTargetID_UsesSearchC
 	s.Nil(s.engine.lastState.TargetTransactionID)
 	s.Equal(int64(9000), s.engine.lastState.EditSearchAmountCents)
 	s.Equal("mercado", s.engine.lastState.EditSearchTerm)
+}
+
+func (s *TransactionWriteStarterSuite) TestRegisterExpense_ExplicitCategory_CarriesManualEvidenceContract() {
+	s.categories.EXPECT().
+		ResolveForWrite(mock.Anything, mock.Anything).
+		Return(interfaces.CategoryWriteDecision{
+			RootCategoryID:  s.catRootID,
+			SubcategoryID:   s.catSubID,
+			RootSlug:        "custo-fixo",
+			SubcategorySlug: "mercado",
+			Path:            "Custo Fixo > Mercado",
+		}, nil).Once()
+
+	_, err := s.uc.RegisterExpense(s.ctx, RegisterExpenseCommand{
+		UserID:        s.userID,
+		ThreadID:      "thr-010",
+		WAMID:         "wamid-010",
+		AmountCents:   600000,
+		Description:   "TV",
+		PaymentMethod: "credit_card",
+		CategoryID:    s.catRootID,
+		SubcategoryID: s.catSubID,
+	})
+
+	s.Require().NoError(err)
+	s.Require().Len(s.engine.lastState.Candidates, 1)
+	candidate := s.engine.lastState.Candidates[0]
+	s.Equal("manual_confirmed", candidate.Confidence)
+	s.Equal("manual_canonical", candidate.MatchQuality)
+	s.Equal("manual_canonical", candidate.SignalType)
+	s.Equal("mercado", candidate.MatchedTerm)
+	s.Equal("manual canonical id validated", candidate.MatchReason)
+}
+
+func (s *TransactionWriteStarterSuite) TestRegisterExpense_ShortTermInvalidQuery_AsksCategoryInsteadOfError() {
+	s.categories.EXPECT().
+		SearchDictionary(mock.Anything, "TV", "expense").
+		Return(interfaces.CategorySearchResult{}, fmt.Errorf("agents/binding/categories_reader: buscar dicionário: %w", catinput.ErrInvalidQuery)).
+		Once()
+
+	result, err := s.uc.RegisterExpense(s.ctx, RegisterExpenseCommand{
+		UserID:        s.userID,
+		ThreadID:      "thr-011",
+		WAMID:         "wamid-011",
+		AmountCents:   600000,
+		Description:   "TV",
+		PaymentMethod: "credit_card",
+	})
+
+	s.Require().NoError(err)
+	s.Equal(agent.ToolOutcomeClarify, result.Outcome)
+	s.True(s.engine.startCalled)
+	s.Empty(s.engine.lastState.Candidates)
 }

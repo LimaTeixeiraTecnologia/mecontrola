@@ -716,3 +716,22 @@ func (s *EngineTestSuite) TestStart_ErrorWithoutFailedStatusKeepsPriorState() {
 	s.Equal(RunStatusFailed, result.Status)
 	s.Equal(1, result.State.Value)
 }
+
+func (s *EngineTestSuite) TestStart_SingleStepRoot_FailedPreservesOutputState() {
+	failing := NewStepFunc("write", func(_ context.Context, st engineTestState) (StepOutput[engineTestState], error) {
+		st.Value = 77
+		return StepOutput[engineTestState]{State: st, Status: StepStatusFailed}, errors.New("write falhou")
+	})
+	def := Definition[engineTestState]{
+		ID:      "single_failed_output_workflow",
+		Root:    failing,
+		Durable: true,
+	}
+
+	eng := NewEngine[engineTestState](s.store, s.obs)
+	result, err := eng.Start(s.ctx, def, "user:ch", engineTestState{Value: 0})
+
+	s.Error(err)
+	s.Equal(RunStatusFailed, result.Status)
+	s.Equal(77, result.State.Value)
+}

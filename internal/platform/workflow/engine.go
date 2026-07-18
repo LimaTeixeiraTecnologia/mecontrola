@@ -392,6 +392,9 @@ func (e *engine[S]) execute(ctx context.Context, def Definition[S], snap Snapsho
 func (e *engine[S]) executeStep(ctx context.Context, def Definition[S], snap Snapshot, step Step[S], state S, idx int) (RunResult[S], error) {
 	out, err := e.runStep(ctx, def, snap, step, state, idx)
 	if err != nil {
+		if out.Status == StepStatusFailed {
+			state = out.State
+		}
 		return e.finalizeFailed(ctx, def, snap, state, err)
 	}
 
