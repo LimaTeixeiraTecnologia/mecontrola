@@ -297,3 +297,66 @@ func (s *TransactionsIntegrationSuite) TestResumeDispatcher_ReplayedWamid_NoDupl
 	s.Equal(1, s.countTransactions(userID))
 	s.Equal(1, s.countWriteLedger(userID))
 }
+
+func (s *TransactionsIntegrationSuite) TestResumeDispatcher_CreditInstallmentsWithExplicitCategoryPersists() {
+	userID := uuid.New()
+	threadID := "+5511930000006"
+	wamid := "wamid-credit-explicit"
+
+	o11y := fake.NewProvider()
+	store := workflowpostgres.NewPostgresStore(o11y, s.db)
+	engine := workflow.NewEngine[workflows.TransactionWriteState](store, o11y)
+	def := workflows.BuildTransactionWriteWorkflowWithObservability(s.adapter, nil, nil, testIdempotentWriter{uc: s.idemUC}, o11y)
+
+	var editorialVersion int64
+	s.Require().NoError(
+		s.db.QueryRowContext(s.ctx, `SELECT version FROM mecontrola.category_editorial_version LIMIT 1`).Scan(&editorialVersion),
+	)
+
+	cardID := s.cardID
+	state := workflows.TransactionWriteState{
+		Status:        workflows.TransactionWriteStatusActive,
+		Awaiting:      workflows.TransactionAwaitingConfirmation,
+		OperationKind: workflows.TransactionOpRegisterExpense,
+		UserID:        userID,
+		ResourceID:    userID,
+		ThreadID:      threadID,
+		MessageID:     wamid,
+		AmountCents:   600000,
+		Description:   "TV",
+		PaymentMethod: "credit_card",
+		CardID:        &cardID,
+		Installments:  10,
+		OccurredAt:    "2026-07-18",
+		Kind:          agentsifaces.CategoryKindExpense,
+		Candidates: []workflows.PendingCategoryCandidate{{
+			RootCategoryID:  s.expenseRootID,
+			SubcategoryID:   s.expenseLeafID,
+			Path:            "Alimentação > Restaurante",
+			RootSlug:        "integ-alimentacao",
+			SubcategorySlug: "integ-restaurante",
+			Score:           1.0,
+			Confidence:      "manual_confirmed",
+			MatchQuality:    "manual_canonical",
+			SignalType:      "manual_canonical",
+			MatchedTerm:     "integ-restaurante",
+			MatchReason:     "manual canonical id validated",
+		}},
+		CategoryVersion: editorialVersion,
+		SuspendedAt:     time.Now().UTC(),
+	}
+
+	key := workflows.TransactionWriteKey(userID.String(), threadID)
+	result, err := engine.Start(s.ctx, def, key, state)
+	s.Require().NoError(err)
+	s.Require().Equal(workflow.RunStatusSuspended, result.Status)
+
+	dispatcher := s.buildTransactionWriteDispatcher()
+	handled, reply, err := dispatcher.Continue(context.Background(), userID.String(), threadID, "sim", "wamid-credit-sim")
+	s.Require().NoError(err)
+	s.True(handled)
+	s.NotEmpty(reply)
+
+	s.Equal(1, s.countTransactions(userID))
+	s.Equal(1, s.countWriteLedger(userID))
+}

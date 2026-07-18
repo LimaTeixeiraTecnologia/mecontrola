@@ -307,6 +307,9 @@ func (e *engine[S]) execute(ctx context.Context, def Definition[S], snap Snapsho
 		step := seq.steps[i]
 		out, stepErr := e.runStep(ctx, def, snap, step, current, i)
 		if stepErr != nil {
+			if out.Status == StepStatusFailed {
+				current = out.State
+			}
 			snap.Status = RunStatusFailed
 			snap.LastError = stepErr.Error()
 			snap.Attempts++

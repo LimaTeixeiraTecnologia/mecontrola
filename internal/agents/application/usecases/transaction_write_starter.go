@@ -289,9 +289,11 @@ func (uc *TransactionWriteStarter) resolveExplicit(
 		SubcategorySlug: decision.SubcategorySlug,
 		Path:            decision.Path,
 		Score:           1.0,
-		Confidence:      "high",
-		MatchQuality:    "exact",
-		MatchReason:     "explicit",
+		Confidence:      "manual_confirmed",
+		MatchQuality:    "manual_canonical",
+		SignalType:      "manual_canonical",
+		MatchedTerm:     decision.SubcategorySlug,
+		MatchReason:     "manual canonical id validated",
 	}
 	return []workflows.PendingCategoryCandidate{candidate}, decision.EditorialVersion, nil
 }

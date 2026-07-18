@@ -264,6 +264,26 @@ func (s *MultiItemGuardSuite) TestInspect_MultiItemGuard() {
 				s.False(decision.Handled)
 			},
 		},
+		{
+			name: "correcao de valor com intencao de edicao nao bloqueia",
+			args: args{messages: []llm.Message{
+				{Role: "system", Content: "instructions"},
+				{Role: "user", Content: "No mercado eu gastei 29 e não 30 posso editar?"},
+			}},
+			expect: func(decision GuardDecision) {
+				s.False(decision.Handled)
+			},
+		},
+		{
+			name: "pedido explicito de corrigir valor nao bloqueia",
+			args: args{messages: []llm.Message{
+				{Role: "system", Content: "instructions"},
+				{Role: "user", Content: "corrige o lançamento de 30 para 29"},
+			}},
+			expect: func(decision GuardDecision) {
+				s.False(decision.Handled)
+			},
+		},
 	}
 
 	for _, scenario := range scenarios {
@@ -271,6 +291,26 @@ func (s *MultiItemGuardSuite) TestInspect_MultiItemGuard() {
 			guard := NewMultiItemGuard()
 			decision := guard.Inspect(s.ctx, agent.Request{Messages: scenario.args.messages})
 			scenario.expect(decision)
+		})
+	}
+}
+
+func (s *MultiItemGuardSuite) TestIsCorrectionOrEditIntent() {
+	scenarios := []struct {
+		text string
+		want bool
+	}{
+		{text: "No mercado eu gastei 29 e não 30 posso editar?", want: true},
+		{text: "corrige o lançamento de 30 para 29", want: true},
+		{text: "na verdade foi 25", want: true},
+		{text: "errei o valor, foi 12", want: true},
+		{text: "gastei 30 no ônibus e 15 no café", want: false},
+		{text: "gastei 50 no mercado", want: false},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.text, func() {
+			s.Equal(scenario.want, IsCorrectionOrEditIntent(scenario.text))
 		})
 	}
 }

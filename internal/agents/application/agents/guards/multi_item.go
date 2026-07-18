@@ -22,6 +22,7 @@ var (
 	multiItemInstallmentRe = regexp.MustCompile(`(?i)\d{1,2}\s*x\b`)
 	multiItemOrdinalRe     = regexp.MustCompile(`\d+(?:º|ª)`)
 	multiItemMoneyTokenRe  = regexp.MustCompile(`(?i)r\$\s*\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d{1,3}(?:\.\d{3})+,\d{1,2}|\d+,\d{1,2}|\d+\s*(?:reais|real)\b|\d+`)
+	multiItemCorrectionRe  = regexp.MustCompile(`(?i)\b(editar?|edite|edita|corrigir|corrige|corrija|alterar?|altera|altere|mudar?|muda|mude|atualizar?|atualiza|atualize|errei|errado|errada)\b|\be\s+n[aã]o\b|\bn[aã]o\s+foi\b|\bna\s+verdade\b`)
 )
 
 const moneyWordPlaceholder = "\x00MONEYWORD\x00"
@@ -62,8 +63,13 @@ func (g *multiItemGuard) Name() string {
 	return "multi_item"
 }
 
+func IsCorrectionOrEditIntent(message string) bool {
+	return multiItemCorrectionRe.MatchString(message)
+}
+
 func (g *multiItemGuard) Inspect(_ context.Context, in agent.Request) GuardDecision {
-	if !DetectMultipleMonetaryValues(lastUserMessageContent(in.Messages)) {
+	message := lastUserMessageContent(in.Messages)
+	if !DetectMultipleMonetaryValues(message) || IsCorrectionOrEditIntent(message) {
 		return GuardDecision{}
 	}
 	return GuardDecision{

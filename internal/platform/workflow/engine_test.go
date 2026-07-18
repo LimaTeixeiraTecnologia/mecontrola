@@ -682,3 +682,37 @@ func (s *EngineTestSuite) TestFakeStore_DeleteCompleted_Retention() {
 	s.False(foundOld)
 	s.True(foundRecent)
 }
+
+func (s *EngineTestSuite) TestStart_FailedStepWithErrorPreservesOutputState() {
+	failing := NewStepFunc("write", func(_ context.Context, st engineTestState) (StepOutput[engineTestState], error) {
+		st.Value = 42
+		return StepOutput[engineTestState]{State: st, Status: StepStatusFailed}, errors.New("write falhou")
+	})
+	def := Definition[engineTestState]{
+		ID:      "failed_output_state_workflow",
+		Root:    Sequence("root", makeEngineStep("a", 1), failing),
+		Durable: true,
+	}
+
+	eng := NewEngine[engineTestState](s.store, s.obs)
+	result, err := eng.Start(s.ctx, def, "user:ch", engineTestState{Value: 0})
+
+	s.Error(err)
+	s.Equal(RunStatusFailed, result.Status)
+	s.Equal(42, result.State.Value)
+}
+
+func (s *EngineTestSuite) TestStart_ErrorWithoutFailedStatusKeepsPriorState() {
+	def := Definition[engineTestState]{
+		ID:      "error_zero_output_workflow",
+		Root:    Sequence("root", makeEngineStep("a", 1), makeErrorEngineStep("boom", errors.New("boom"))),
+		Durable: true,
+	}
+
+	eng := NewEngine[engineTestState](s.store, s.obs)
+	result, err := eng.Start(s.ctx, def, "user:ch", engineTestState{Value: 0})
+
+	s.Error(err)
+	s.Equal(RunStatusFailed, result.Status)
+	s.Equal(1, result.State.Value)
+}
