@@ -172,6 +172,9 @@ func (c *WhatsAppInboundConsumer) tryDispatchResume(ctx context.Context, span ob
 			observability.String("outcome", "resume_error"),
 		)
 		span.RecordError(err)
+		if handled && reply != "" && !errors.Is(err, context.DeadlineExceeded) {
+			return true, c.sendReply(ctx, p.Peer, reply, "resume_error")
+		}
 		return false, fmt.Errorf("agents.consumer.whatsapp_inbound: resume: %w", err)
 	}
 	if handled {

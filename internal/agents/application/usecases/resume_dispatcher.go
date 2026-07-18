@@ -106,6 +106,8 @@ func (d *ResumeDispatcher) Continue(ctx context.Context, resourceID, threadID, m
 		return false, "", fmt.Errorf("usecases.resume_dispatcher: open_run: %w", runErr)
 	}
 
+	ctx = agent.WithToolInvocationContext(ctx, resourceID, messageID, 0)
+
 	handled, reply, resumeErr := resumer.Resume(ctx, resourceID, threadID, message)
 	if resumeErr != nil {
 		span.RecordError(resumeErr)

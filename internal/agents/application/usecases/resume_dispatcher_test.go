@@ -233,6 +233,37 @@ func (s *ResumeDispatcherSuite) TestContinue() {
 	}
 }
 
+func (s *ResumeDispatcherSuite) TestContinue_InjetaIdentidadeInboundNoContexto() {
+	store := newFakeSuspendedRunStore()
+	store.put("transaction-write", "user-6:+5511:transaction-write", workflow.RunStatusSuspended)
+	index := NewSuspendedRunIndex(store, "transaction-write")
+
+	var (
+		gotResourceID string
+		gotMessageID  string
+		gotOK         bool
+	)
+	resumer := &mockWorkflowResumer{workflowID: "transaction-write"}
+	resumer.On("Resume", mock.Anything, "user-6", "+5511", "sim").
+		Run(func(args mock.Arguments) {
+			ctx := args.Get(0).(context.Context)
+			gotResourceID, gotMessageID, _, gotOK = agent.InboundIdentityFromContext(ctx)
+		}).
+		Return(true, "✅ Prontinho.", nil).Once()
+
+	dispatcher, err := NewResumeDispatcher(index, s.threads, s.runs, s.obs, resumer)
+	s.Require().NoError(err)
+
+	handled, reply, dispatchErr := dispatcher.Continue(s.ctx, "user-6", "+5511", "sim", "wamid-006")
+	s.NoError(dispatchErr)
+	s.True(handled)
+	s.Equal("✅ Prontinho.", reply)
+
+	s.True(gotOK)
+	s.Equal("user-6", gotResourceID)
+	s.Equal("wamid-006", gotMessageID)
+}
+
 func (s *ResumeDispatcherSuite) TestContinue_AbreEFechaRunAuditavel() {
 	store := newFakeSuspendedRunStore()
 	store.put("card-manage", "user-4:+5511:card-manage", workflow.RunStatusSuspended)

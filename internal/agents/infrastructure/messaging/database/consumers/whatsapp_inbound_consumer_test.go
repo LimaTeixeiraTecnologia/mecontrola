@@ -584,6 +584,38 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 				s.Contains(err.Error(), "resume")
 			},
 		},
+		{
+			name: "deve entregar a mensagem de falha e ACK quando resume falha com reply ao usuario",
+			args: args{
+				event: &mockEvent{
+					eventType: "agents.whatsapp.inbound.v1",
+					payload: buildEnvelope(whatsAppInboundPayload{
+						UserID:    "user-wf-444",
+						Peer:      "+5511222222222",
+						Text:      "sim",
+						MessageID: "wamid-011",
+					}),
+				},
+			},
+			dependencies: dependencies{
+				inboundMock: &mockHandleInbound{},
+				senderMock: func() *mockWhatsAppSender {
+					m := &mockWhatsAppSender{}
+					m.On("SendTextMessage", mock.Anything, "+5511222222222", "❌ Tive uma dificuldade para registrar. Pode tentar de novo?").
+						Return(nil).Once()
+					return m
+				}(),
+				dispatcherMock: func() *mockResumeDispatcher {
+					m := &mockResumeDispatcher{}
+					m.On("Continue", mock.Anything, "user-wf-444", "+5511222222222", "sim", "wamid-011").
+						Return(true, "❌ Tive uma dificuldade para registrar. Pode tentar de novo?", errors.New("idempotent_write falhou")).Once()
+					return m
+				}(),
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
 	}
 
 	for _, scenario := range scenarios {
