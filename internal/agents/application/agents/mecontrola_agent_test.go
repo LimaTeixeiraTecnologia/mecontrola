@@ -156,6 +156,15 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 			},
 		},
 		{
+			name:         "deve registrar somente a mensagem atual em reafirmacao",
+			dependencies: dependencies{},
+			expect: func(instructions string) {
+				s.Contains(instructions, "REGRA DE REAFIRMAÇÃO")
+				s.Contains(instructions, "NUNCA re-registre valor, descrição ou lançamento de mensagens anteriores do histórico")
+				s.Contains(instructions, "PROIBIDO chamar register_expense/register_income mais de UMA vez na mesma mensagem")
+			},
+		},
+		{
 			name:         "deve delegar lista de candidatos de categoria ao sistema",
 			dependencies: dependencies{},
 			expect: func(instructions string) {
