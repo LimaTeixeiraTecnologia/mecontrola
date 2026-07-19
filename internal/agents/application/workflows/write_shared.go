@@ -217,14 +217,6 @@ func DecidePaymentAnswer(text string) PaymentAnswer {
 	return PaymentAnswer{}
 }
 
-func recognizePaymentMethod(text string) string {
-	answer := DecidePaymentAnswer(text)
-	if answer.CardHint != "" {
-		return ""
-	}
-	return answer.Method
-}
-
 func parseWeekday(text string, now time.Time) (string, bool) {
 	normalized := normalizeText(text)
 	past := false

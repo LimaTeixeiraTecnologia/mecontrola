@@ -279,8 +279,12 @@ func TestRecognizePaymentMethod_AliasesEPreposicoes(t *testing.T) {
 
 	for _, scenario := range scenarios {
 		t.Run(scenario.text, func(t *testing.T) {
-			if got := recognizePaymentMethod(scenario.text); got != scenario.want {
-				t.Fatalf("recognizePaymentMethod(%q): expected %q, got %q", scenario.text, scenario.want, got)
+			answer := DecidePaymentAnswer(scenario.text)
+			if answer.Method != scenario.want {
+				t.Fatalf("DecidePaymentAnswer(%q).Method: expected %q, got %q", scenario.text, scenario.want, answer.Method)
+			}
+			if answer.CardHint != "" {
+				t.Fatalf("DecidePaymentAnswer(%q): hint inesperado %q", scenario.text, answer.CardHint)
 			}
 		})
 	}

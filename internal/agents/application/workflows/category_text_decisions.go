@@ -30,25 +30,6 @@ const (
 	UserCategoryActionNoMatch
 )
 
-func (a UserCategoryAction) String() string {
-	switch a {
-	case UserCategoryActionMatchedLeaf:
-		return "matched_leaf"
-	case UserCategoryActionMatchedRoot:
-		return "matched_root"
-	case UserCategoryActionMatchedMany:
-		return "matched_many"
-	case UserCategoryActionNoMatch:
-		return "no_match"
-	default:
-		return "unknown"
-	}
-}
-
-func (a UserCategoryAction) IsValid() bool {
-	return a >= UserCategoryActionMatchedLeaf && a <= UserCategoryActionNoMatch
-}
-
 type UserCategoryMatch struct {
 	Action UserCategoryAction
 	Leaf   CategoryCatalogEntry
