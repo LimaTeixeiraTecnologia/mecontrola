@@ -456,3 +456,201 @@ func (s *TransactionWriteWorkflowSuite) TestRecurrence_SuspendsWithRecurrenceBlo
 	s.Equal(workflow.RunStatusSucceeded, result.Status)
 	s.Equal(TransactionWriteStatusCompleted, result.State.Status)
 }
+
+func (s *TransactionWriteWorkflowSuite) newRootListingState() TransactionWriteState {
+	state := s.newExpenseState()
+	state.Awaiting = TransactionAwaitingCategory
+	state.PaymentMethod = ""
+	state.Kind = ifaces.CategoryKindExpense
+	state.Candidates = []PendingCategoryCandidate{
+		{RootCategoryID: testRootCustoFixoID, RootSlug: "custo-fixo", Path: "Custo Fixo"},
+		{RootCategoryID: testRootPrazeresID, RootSlug: "prazeres", Path: "Prazeres"},
+	}
+	return state
+}
+
+func (s *TransactionWriteWorkflowSuite) TestStart_RootListing_PromptsNumberedRoots() {
+	state := s.newRootListingState()
+	k := s.key("thr-root-listing")
+
+	result, err := s.engine.Start(s.ctx, s.def, k, state)
+
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSuspended, result.Status)
+	s.Contains(result.State.ResponseText, "Em qual categoria isso se encaixa? 📂")
+	s.Contains(result.State.ResponseText, "1. *Custo Fixo*")
+	s.Contains(result.State.ResponseText, "2. *Prazeres*")
+}
+
+func (s *TransactionWriteWorkflowSuite) TestResume_RootChoice_ExpandsLeaves() {
+	cats := imocks.NewCategoriesReader(s.T())
+	cats.EXPECT().
+		ListCategories(mock.Anything, s.userID).
+		Return([]ifaces.Category{{
+			ID: testRootCustoFixoID, Slug: "custo-fixo", Name: "Custo Fixo", Kind: "expense",
+			Subcategories: []ifaces.Category{
+				{ID: testLeafCombustivel, Slug: "combustivel", Name: "Combustível"},
+				{ID: testLeafSupermercado, Slug: "supermercado", Name: "Supermercado"},
+			},
+		}}, nil).
+		Once()
+	cats.EXPECT().
+		SearchDictionary(mock.Anything, mock.Anything, mock.Anything).
+		Return(ifaces.CategorySearchResult{}, nil).
+		Maybe()
+	def := BuildTransactionWriteWorkflowWithObservability(s.ledger, nil, cats, nil, nil)
+
+	state := s.newRootListingState()
+	k := s.key("thr-root-expand")
+
+	_, err := s.engine.Start(s.ctx, def, k, state)
+	s.Require().NoError(err)
+
+	result, err := s.engine.Resume(s.ctx, def, k, s.resumePayload("1"))
+
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSuspended, result.Status)
+	s.Contains(result.State.ResponseText, "Dentro de *Custo Fixo*, qual subcategoria? 📂")
+	s.Contains(result.State.ResponseText, "1. *Combustível*")
+	s.Contains(result.State.ResponseText, "2. *Supermercado*")
+	s.Require().Len(result.State.Candidates, 2)
+	s.Equal(testLeafCombustivel, result.State.Candidates[0].SubcategoryID)
+}
+
+func (s *TransactionWriteWorkflowSuite) TestResume_CategorySlot_LeafNameSelectsAndConfirms() {
+	state := s.newExpenseState()
+	state.Awaiting = TransactionAwaitingCategory
+	state.Candidates = []PendingCategoryCandidate{
+		{RootCategoryID: testRootCustoFixoID, RootSlug: "custo-fixo", SubcategoryID: testLeafCombustivel, SubcategorySlug: "combustivel", Path: "Custo Fixo > Combustível"},
+		{RootCategoryID: testRootCustoFixoID, RootSlug: "custo-fixo", SubcategoryID: testLeafSupermercado, SubcategorySlug: "supermercado", Path: "Custo Fixo > Supermercado"},
+	}
+	k := s.key("thr-leaf-name")
+
+	_, err := s.engine.Start(s.ctx, s.def, k, state)
+	s.Require().NoError(err)
+
+	result, err := s.engine.Resume(s.ctx, s.def, k, s.resumePayload("Custo fixo > combustível"))
+
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSuspended, result.Status)
+	s.Contains(result.State.ResponseText, "Posso registrar?")
+	s.Require().Len(result.State.Candidates, 1)
+	s.Equal(testLeafCombustivel, result.State.Candidates[0].SubcategoryID)
+}
+
+func (s *TransactionWriteWorkflowSuite) TestResume_PaymentSlot_CardNicknameResolves() {
+	cards := imocks.NewCardManager(s.T())
+	cardID := uuid.New()
+	cards.EXPECT().
+		ResolveCardByNickname(mock.Anything, s.userID, "xp").
+		Return(ifaces.Card{ID: cardID.String(), Nickname: "XP"}, nil).
+		Once()
+	def := BuildTransactionWriteWorkflowWithObservability(s.ledger, cards, nil, nil, nil)
+
+	state := s.newExpenseState()
+	state.Awaiting = TransactionAwaitingPaymentMethod
+	state.PaymentMethod = ""
+	k := s.key("thr-payment-card")
+
+	_, err := s.engine.Start(s.ctx, def, k, state)
+	s.Require().NoError(err)
+
+	result, err := s.engine.Resume(s.ctx, def, k, s.resumePayload("Cartão de crédito XP"))
+
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSuspended, result.Status)
+	s.Contains(result.State.ResponseText, "Posso registrar?")
+	s.Equal(PaymentMethodCreditCard, result.State.PaymentMethod)
+	s.Require().NotNil(result.State.CardID)
+	s.Equal(cardID, *result.State.CardID)
+}
+
+func (s *TransactionWriteWorkflowSuite) TestResume_PaymentSlot_RestatementReplacesAndReparses() {
+	state := s.newExpenseState()
+	state.Awaiting = TransactionAwaitingPaymentMethod
+	state.PaymentMethod = ""
+	k := s.key("thr-payment-replace")
+
+	_, err := s.engine.Start(s.ctx, s.def, k, state)
+	s.Require().NoError(err)
+
+	handled, reply, err := ContinueTransactionWrite(s.ctx, s.engine, s.def, k, "Paguei 100 reais no abastecimento do veículo no cartão xp", "wamid-replace")
+
+	s.Require().NoError(err)
+	s.False(handled)
+	s.Empty(reply)
+
+	snap, found, loadErr := s.store.Load(s.ctx, TransactionWriteWorkflowID, k)
+	s.Require().NoError(loadErr)
+	s.Require().True(found)
+	s.Equal(workflow.RunStatusSucceeded, snap.Status)
+}
+
+func (s *TransactionWriteWorkflowSuite) TestJourney_RootListing_LeafChoice_Payment_Confirm_WritesWithVersion() {
+	cats := imocks.NewCategoriesReader(s.T())
+	cats.EXPECT().CatalogVersion(mock.Anything).Return(int64(9), nil).Maybe()
+	cats.EXPECT().
+		ListCategories(mock.Anything, s.userID).
+		Return([]ifaces.Category{{
+			ID: testRootCustoFixoID, Slug: "custo-fixo", Name: "Custo Fixo", Kind: "expense",
+			Subcategories: []ifaces.Category{
+				{ID: testLeafCombustivel, Slug: "combustivel", Name: "Combustível"},
+				{ID: testLeafSupermercado, Slug: "supermercado", Name: "Supermercado"},
+			},
+		}}, nil).
+		Once()
+	cats.EXPECT().
+		SearchDictionary(mock.Anything, mock.Anything, mock.Anything).
+		Return(ifaces.CategorySearchResult{Version: 9}, nil).
+		Maybe()
+	cats.EXPECT().
+		ResolveForWrite(mock.Anything, ifaces.CategoryWriteRequest{
+			RootCategoryID:  testRootCustoFixoID,
+			SubcategoryID:   testLeafSupermercado,
+			Kind:            ifaces.CategoryKindExpense,
+			ExpectedVersion: 9,
+		}).
+		Return(ifaces.CategoryWriteDecision{
+			RootCategoryID:   testRootCustoFixoID,
+			SubcategoryID:    testLeafSupermercado,
+			RootSlug:         "custo-fixo",
+			SubcategorySlug:  "supermercado",
+			Path:             "Custo Fixo > Supermercado",
+			EditorialVersion: 9,
+		}, nil).
+		Once()
+	txID := uuid.New()
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.Anything).
+		Return(ifaces.EntryRef{ID: txID, Kind: ifaces.EntryKindTransaction}, nil).
+		Once()
+	def := BuildTransactionWriteWorkflowWithObservability(s.ledger, nil, cats, nil, nil)
+
+	state := s.newRootListingState()
+	state.CategoryVersion = 9
+	k := s.key("thr-journey-version")
+
+	startResult, err := s.engine.Start(s.ctx, def, k, state)
+	s.Require().NoError(err)
+	s.Contains(startResult.State.ResponseText, "Em qual categoria isso se encaixa? 📂")
+
+	leafList, err := s.engine.Resume(s.ctx, def, k, s.resumePayload("1"))
+	s.Require().NoError(err)
+	s.Contains(leafList.State.ResponseText, "Dentro de *Custo Fixo*, qual subcategoria? 📂")
+
+	paymentAsk, err := s.engine.Resume(s.ctx, def, k, s.resumePayload("Supermercado"))
+	s.Require().NoError(err)
+	s.Contains(paymentAsk.State.ResponseText, "Como você pagou?")
+
+	confirmAsk, err := s.engine.Resume(s.ctx, def, k, s.resumePayload("pix"))
+	s.Require().NoError(err)
+	s.Contains(confirmAsk.State.ResponseText, "Posso registrar?")
+	s.Contains(confirmAsk.State.ResponseText, "Custo Fixo > Supermercado")
+
+	final, err := s.engine.Resume(s.ctx, def, k, s.resumePayload("sim"))
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSucceeded, final.Status)
+	s.Equal(TransactionWriteStatusCompleted, final.State.Status)
+	s.Equal(txID, final.State.ResourceID)
+	s.Equal(int64(9), final.State.CategoryVersion)
+}

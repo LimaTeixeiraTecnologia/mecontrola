@@ -63,6 +63,7 @@ func (s *TransactionWriteStarterSuite) SetupTest() {
 	s.obs = fake.NewProvider()
 	s.ctx = context.Background()
 	s.categories = imocks.NewCategoriesReader(s.T())
+	s.categories.EXPECT().CatalogVersion(mock.Anything).Return(int64(9), nil).Maybe()
 	s.ledger = imocks.NewTransactionsLedger(s.T())
 	s.engine = &fakeTransactionWriteEngine{
 		startResult: wf.RunResult[workflows.TransactionWriteState]{
@@ -81,9 +82,10 @@ func (s *TransactionWriteStarterSuite) SetupTest() {
 func (s *TransactionWriteStarterSuite) TestRegisterExpense_ExplicitCategory_StartsWorkflow() {
 	s.categories.EXPECT().
 		ResolveForWrite(mock.Anything, interfaces.CategoryWriteRequest{
-			RootCategoryID: s.catRootID,
-			SubcategoryID:  s.catSubID,
-			Kind:           interfaces.CategoryKindExpense,
+			RootCategoryID:  s.catRootID,
+			SubcategoryID:   s.catSubID,
+			Kind:            interfaces.CategoryKindExpense,
+			ExpectedVersion: 9,
 		}).
 		Return(interfaces.CategoryWriteDecision{
 			RootCategoryID:  s.catRootID,
@@ -245,9 +247,14 @@ func (s *TransactionWriteStarterSuite) TestRegisterExpense_ExplicitCategory_Carr
 }
 
 func (s *TransactionWriteStarterSuite) TestRegisterExpense_ShortTermInvalidQuery_AsksCategoryInsteadOfError() {
+	rootID := uuid.New()
 	s.categories.EXPECT().
 		SearchDictionary(mock.Anything, "TV", "expense").
 		Return(interfaces.CategorySearchResult{}, fmt.Errorf("agents/binding/categories_reader: buscar dicionário: %w", catinput.ErrInvalidQuery)).
+		Once()
+	s.categories.EXPECT().
+		ListCategories(mock.Anything, s.userID).
+		Return([]interfaces.Category{{ID: rootID, Slug: "custo-fixo", Name: "Custo Fixo", Kind: "expense"}}, nil).
 		Once()
 
 	result, err := s.uc.RegisterExpense(s.ctx, RegisterExpenseCommand{
@@ -262,5 +269,85 @@ func (s *TransactionWriteStarterSuite) TestRegisterExpense_ShortTermInvalidQuery
 	s.Require().NoError(err)
 	s.Equal(agent.ToolOutcomeClarify, result.Outcome)
 	s.True(s.engine.startCalled)
-	s.Empty(s.engine.lastState.Candidates)
+	s.Require().Len(s.engine.lastState.Candidates, 1)
+	s.Equal(rootID, s.engine.lastState.Candidates[0].RootCategoryID)
+	s.Equal(uuid.Nil, s.engine.lastState.Candidates[0].SubcategoryID)
+	s.Equal("Custo Fixo", s.engine.lastState.Candidates[0].Path)
+}
+
+func (s *TransactionWriteStarterSuite) TestRegisterExpense_CategoryTextLeaf_ResolvesWithCatalogVersion() {
+	s.categories.EXPECT().
+		ListCategories(mock.Anything, s.userID).
+		Return([]interfaces.Category{{
+			ID: s.catRootID, Slug: "custo-fixo", Name: "Custo Fixo", Kind: "expense",
+			Subcategories: []interfaces.Category{{ID: s.catSubID, Slug: "combustivel", Name: "Combustível"}},
+		}}, nil).
+		Once()
+	s.categories.EXPECT().
+		ResolveForWrite(mock.Anything, interfaces.CategoryWriteRequest{
+			RootCategoryID:  s.catRootID,
+			SubcategoryID:   s.catSubID,
+			Kind:            interfaces.CategoryKindExpense,
+			ExpectedVersion: 9,
+		}).
+		Return(interfaces.CategoryWriteDecision{
+			RootCategoryID:   s.catRootID,
+			SubcategoryID:    s.catSubID,
+			RootSlug:         "custo-fixo",
+			SubcategorySlug:  "combustivel",
+			Path:             "Custo Fixo > Combustível",
+			EditorialVersion: 9,
+		}, nil).
+		Once()
+
+	result, err := s.uc.RegisterExpense(s.ctx, RegisterExpenseCommand{
+		UserID:       s.userID,
+		ThreadID:     "thr-020",
+		WAMID:        "wamid-020",
+		AmountCents:  10000,
+		Description:  "abastecimento do veículo",
+		CategoryText: "combustível",
+	})
+
+	s.Require().NoError(err)
+	s.Equal(agent.ToolOutcomeClarify, result.Outcome)
+	s.Require().Len(s.engine.lastState.Candidates, 1)
+	s.Equal(s.catSubID, s.engine.lastState.Candidates[0].SubcategoryID)
+	s.Equal("Custo Fixo > Combustível", s.engine.lastState.Candidates[0].Path)
+	s.Equal(int64(9), s.engine.lastState.CategoryVersion)
+}
+
+func (s *TransactionWriteStarterSuite) TestRegisterExpense_CategoryTextRoot_ListsLeavesWithCatalogVersion() {
+	leafA := uuid.New()
+	leafB := uuid.New()
+	s.categories.EXPECT().
+		ListCategories(mock.Anything, s.userID).
+		Return([]interfaces.Category{{
+			ID: s.catRootID, Slug: "custo-fixo", Name: "Custo Fixo", Kind: "expense",
+			Subcategories: []interfaces.Category{
+				{ID: leafA, Slug: "combustivel", Name: "Combustível"},
+				{ID: leafB, Slug: "supermercado", Name: "Supermercado"},
+			},
+		}}, nil).
+		Once()
+	s.categories.EXPECT().
+		SearchDictionary(mock.Anything, "tv nova", "expense").
+		Return(interfaces.CategorySearchResult{}, fmt.Errorf("buscar dicionário: %w", catinput.ErrInvalidQuery)).
+		Once()
+
+	result, err := s.uc.RegisterExpense(s.ctx, RegisterExpenseCommand{
+		UserID:       s.userID,
+		ThreadID:     "thr-021",
+		WAMID:        "wamid-021",
+		AmountCents:  50000,
+		Description:  "tv nova",
+		CategoryText: "custos fixos",
+	})
+
+	s.Require().NoError(err)
+	s.Equal(agent.ToolOutcomeClarify, result.Outcome)
+	s.Require().Len(s.engine.lastState.Candidates, 2)
+	s.Equal(leafA, s.engine.lastState.Candidates[0].SubcategoryID)
+	s.Equal(int64(9), s.engine.lastState.CategoryVersion,
+		"candidatos derivados do catálogo devem carregar a versão editorial vigente para o ResolveForWrite na escrita")
 }

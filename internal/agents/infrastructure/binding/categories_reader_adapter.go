@@ -136,6 +136,18 @@ func (a *categoriesReaderAdapter) ListCategories(ctx context.Context, _ uuid.UUI
 	return result, nil
 }
 
+func (a *categoriesReaderAdapter) CatalogVersion(ctx context.Context) (int64, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.categories_reader.catalog_version")
+	defer span.End()
+
+	out, err := a.listCategories.Execute(ctx, &catinput.ListCategoriesInput{})
+	if err != nil {
+		span.RecordError(err)
+		return 0, fmt.Errorf("agents/binding/categories_reader: versão do catálogo: %w", err)
+	}
+	return out.Version, nil
+}
+
 func mapCategoryTree(c catoutput.CategoryTreeOutput) agentsifaces.Category {
 	subs := make([]agentsifaces.Category, 0, len(c.Subcategories))
 	for _, s := range c.Subcategories {

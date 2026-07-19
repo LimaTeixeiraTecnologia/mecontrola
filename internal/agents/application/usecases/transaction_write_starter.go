@@ -46,11 +46,21 @@ func (uc *TransactionWriteStarter) RegisterExpense(ctx context.Context, cmd Regi
 
 	cmd.Description = workflows.NormalizeEntryDescription(cmd.Description)
 
-	candidates, catVersion, classifyErr := uc.classify(ctx, cmd.Description, interfaces.CategoryKindExpense, cmd.CategoryID, cmd.SubcategoryID, cmd.CategoryVersion)
+	candidates, catVersion, classifyErr := uc.classify(ctx, classifyRequest{
+		UserID:        cmd.UserID,
+		Description:   cmd.Description,
+		CategoryText:  cmd.CategoryText,
+		Kind:          interfaces.CategoryKindExpense,
+		RootID:        cmd.CategoryID,
+		SubcategoryID: cmd.SubcategoryID,
+		Version:       cmd.CategoryVersion,
+	})
 	if classifyErr != nil {
 		span.RecordError(classifyErr)
 		return RegisterResult{}, fmt.Errorf("agents.usecase.transaction_write_starter.expense: classify: %w", classifyErr)
 	}
+
+	cmd.PaymentMethod = workflows.DecidePaymentMethodFromCard(cmd.PaymentMethod, cmd.CardID != nil)
 
 	installments := cmd.Installments
 	if installments <= 0 {
@@ -85,7 +95,15 @@ func (uc *TransactionWriteStarter) RegisterIncome(ctx context.Context, cmd Regis
 
 	cmd.Description = workflows.NormalizeEntryDescription(cmd.Description)
 
-	candidates, catVersion, classifyErr := uc.classify(ctx, cmd.Description, interfaces.CategoryKindIncome, cmd.CategoryID, cmd.SubcategoryID, cmd.CategoryVersion)
+	candidates, catVersion, classifyErr := uc.classify(ctx, classifyRequest{
+		UserID:        cmd.UserID,
+		Description:   cmd.Description,
+		CategoryText:  cmd.CategoryText,
+		Kind:          interfaces.CategoryKindIncome,
+		RootID:        cmd.CategoryID,
+		SubcategoryID: cmd.SubcategoryID,
+		Version:       cmd.CategoryVersion,
+	})
 	if classifyErr != nil {
 		span.RecordError(classifyErr)
 		return RegisterResult{}, fmt.Errorf("agents.usecase.transaction_write_starter.income: classify: %w", classifyErr)
@@ -122,11 +140,21 @@ func (uc *TransactionWriteStarter) CreateRecurrence(ctx context.Context, cmd Cre
 		kind = interfaces.CategoryKindIncome
 	}
 
-	candidates, catVersion, classifyErr := uc.classify(ctx, cmd.Description, kind, cmd.CategoryID, cmd.SubcategoryID, cmd.CategoryVersion)
+	candidates, catVersion, classifyErr := uc.classify(ctx, classifyRequest{
+		UserID:        cmd.UserID,
+		Description:   cmd.Description,
+		CategoryText:  cmd.CategoryText,
+		Kind:          kind,
+		RootID:        cmd.CategoryID,
+		SubcategoryID: cmd.SubcategoryID,
+		Version:       cmd.CategoryVersion,
+	})
 	if classifyErr != nil {
 		span.RecordError(classifyErr)
 		return RegisterResult{}, fmt.Errorf("agents.usecase.transaction_write_starter.recurrence: classify: %w", classifyErr)
 	}
+
+	cmd.PaymentMethod = workflows.DecidePaymentMethodFromCard(cmd.PaymentMethod, cmd.CardID != nil)
 
 	state := workflows.TransactionWriteState{
 		Status:               workflows.TransactionWriteStatusActive,
@@ -252,17 +280,106 @@ func transactionWritePrompt(result wf.RunResult[workflows.TransactionWriteState]
 	return result.State.ResponseText
 }
 
-func (uc *TransactionWriteStarter) classify(
-	ctx context.Context,
-	description string,
-	kind interfaces.CategoryKind,
-	rootID, subcategoryID uuid.UUID,
-	version int64,
-) ([]workflows.PendingCategoryCandidate, int64, error) {
-	if subcategoryID != uuid.Nil {
-		return uc.resolveExplicit(ctx, kind, rootID, subcategoryID, version)
+type classifyRequest struct {
+	UserID        uuid.UUID
+	Description   string
+	CategoryText  string
+	Kind          interfaces.CategoryKind
+	RootID        uuid.UUID
+	SubcategoryID uuid.UUID
+	Version       int64
+}
+
+func (uc *TransactionWriteStarter) classify(ctx context.Context, req classifyRequest) ([]workflows.PendingCategoryCandidate, int64, error) {
+	if req.SubcategoryID != uuid.Nil {
+		candidates, version, err := uc.resolveExplicit(ctx, req.Kind, req.RootID, req.SubcategoryID, uc.ensureCatalogVersion(ctx, req.Version))
+		if err != nil || len(candidates) > 0 {
+			return candidates, version, err
+		}
 	}
-	return uc.searchByDescription(ctx, description, kind)
+
+	if req.CategoryText != "" {
+		candidates, version, err := uc.resolveByCategoryText(ctx, req)
+		if err != nil || len(candidates) > 0 {
+			return candidates, uc.ensureCatalogVersion(ctx, version), err
+		}
+	}
+
+	candidates, version, err := uc.searchByDescription(ctx, req.Description, req.Kind)
+	if err != nil || len(candidates) > 0 {
+		return candidates, version, err
+	}
+
+	version = uc.ensureCatalogVersion(ctx, version)
+	roots, listErr := uc.categories.ListCategories(ctx, req.UserID)
+	if listErr != nil {
+		return nil, version, nil
+	}
+	return workflows.BuildRootOnlyCandidates(roots, req.Kind), version, nil
+}
+
+func (uc *TransactionWriteStarter) ensureCatalogVersion(ctx context.Context, current int64) int64 {
+	if current > 0 {
+		return current
+	}
+	version, err := uc.categories.CatalogVersion(ctx)
+	if err != nil {
+		return current
+	}
+	return version
+}
+
+func (uc *TransactionWriteStarter) resolveByCategoryText(ctx context.Context, req classifyRequest) ([]workflows.PendingCategoryCandidate, int64, error) {
+	roots, err := uc.categories.ListCategories(ctx, req.UserID)
+	if err != nil {
+		return nil, 0, nil
+	}
+	match := workflows.DecideUserCategoryText(workflows.FlattenCategoryCatalog(roots, req.Kind), req.CategoryText)
+	switch match.Action {
+	case workflows.UserCategoryActionMatchedLeaf:
+		candidates, version, resolveErr := uc.resolveExplicit(ctx, req.Kind, match.Leaf.RootID, match.Leaf.LeafID, uc.ensureCatalogVersion(ctx, req.Version))
+		if resolveErr == nil && len(candidates) > 0 {
+			return candidates, version, nil
+		}
+		return nil, 0, nil
+	case workflows.UserCategoryActionMatchedRoot:
+		return uc.rootLeavesNarrowedByDescription(ctx, req, match)
+	case workflows.UserCategoryActionMatchedMany:
+		return catalogEntriesToCandidates(match.Leaves), 0, nil
+	default:
+		candidates, version, searchErr := uc.searchByDescription(ctx, req.CategoryText, req.Kind)
+		if searchErr != nil {
+			return nil, 0, nil
+		}
+		return candidates, version, nil
+	}
+}
+
+func (uc *TransactionWriteStarter) rootLeavesNarrowedByDescription(ctx context.Context, req classifyRequest, match workflows.UserCategoryMatch) ([]workflows.PendingCategoryCandidate, int64, error) {
+	if len(match.Leaves) == 1 {
+		return catalogEntriesToCandidates(match.Leaves), 0, nil
+	}
+	searched, version, searchErr := uc.searchByDescription(ctx, req.Description, req.Kind)
+	if searchErr == nil {
+		narrowed := make([]workflows.PendingCategoryCandidate, 0, len(searched))
+		for _, c := range searched {
+			if c.RootCategoryID == match.RootID {
+				narrowed = append(narrowed, c)
+			}
+		}
+		if len(narrowed) > 0 {
+			return narrowed, version, nil
+		}
+	}
+	return catalogEntriesToCandidates(match.Leaves), 0, nil
+}
+
+func catalogEntriesToCandidates(entries []workflows.CategoryCatalogEntry) []workflows.PendingCategoryCandidate {
+	candidates := make([]workflows.PendingCategoryCandidate, 0, len(entries))
+	for _, entry := range entries {
+		candidates = append(candidates, workflows.CatalogEntryToCandidate(entry))
+	}
+	return candidates
 }
 
 func (uc *TransactionWriteStarter) resolveExplicit(

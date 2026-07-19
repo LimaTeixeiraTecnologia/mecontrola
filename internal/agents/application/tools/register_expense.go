@@ -26,6 +26,7 @@ type RegisterExpenseInput struct {
 	CategoryID      string `json:"categoryId,omitempty"`
 	SubcategoryID   string `json:"subcategoryId,omitempty"`
 	CategoryVersion int64  `json:"categoryVersion,omitempty"`
+	CategoryText    string `json:"categoryText,omitempty"`
 }
 
 type RegisterExpenseOutput struct {
@@ -52,6 +53,7 @@ func BuildRegisterExpenseTool(registrar entryRegistrar, cards interfaces.CardMan
 				"categoryId":      map[string]any{"type": "string"},
 				"subcategoryId":   map[string]any{"type": "string"},
 				"categoryVersion": map[string]any{"type": "integer"},
+				"categoryText":    map[string]any{"type": "string"},
 			},
 			"required":             []string{"amountCents", "description"},
 			"additionalProperties": false,
@@ -73,7 +75,7 @@ func BuildRegisterExpenseTool(registrar entryRegistrar, cards interfaces.CardMan
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewVerbatimTool("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário; a categoria é resolvida automaticamente por busca textual do campo description (nunca parafraseie o termo do usuário). Para compra no 💳 de crédito, use paymentMethod=credit_card com cardId (obtido via resolve_card) e installments (1 para à vista, 2..24 para parcelada).", in, out, buildRegisterExpenseExec(registrar, cards), extractRegisterExpenseVerbatim)
+	return tool.NewVerbatimTool("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário; a categoria é resolvida automaticamente por busca textual do campo description (nunca parafraseie o termo do usuário). Se o usuário citar a categoria desejada, copie o trecho literal no campo categoryText. Para compra no 💳 de crédito, use paymentMethod=credit_card com cardId (obtido via resolve_card) e installments (1 para à vista, 2..24 para parcelada).", in, out, buildRegisterExpenseExec(registrar, cards), extractRegisterExpenseVerbatim)
 }
 
 func extractRegisterExpenseVerbatim(o RegisterExpenseOutput) (string, bool) {
@@ -135,6 +137,7 @@ func buildRegisterExpenseExec(registrar entryRegistrar, cards interfaces.CardMan
 			CategoryID:      categoryID,
 			SubcategoryID:   subcategoryID,
 			CategoryVersion: in.CategoryVersion,
+			CategoryText:    in.CategoryText,
 		})
 		if err != nil {
 			return RegisterExpenseOutput{}, fmt.Errorf("register_expense: %w", err)

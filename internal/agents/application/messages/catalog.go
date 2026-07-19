@@ -330,6 +330,49 @@ func PaymentMethodReprompt() string {
 	return "Não reconheci essa forma de pagamento. 💳 Me diz uma destas: pix, débito, débito em conta, crédito, dinheiro, boleto, transferência, vale-refeição ou vale-alimentação."
 }
 
+const categoryOptionsShown = 12
+
+func numberedCategoryOptions(b *strings.Builder, options []string) {
+	shown := min(len(options), categoryOptionsShown)
+	for i := range shown {
+		fmt.Fprintf(b, "\n%d. *%s*", i+1, options[i])
+	}
+	if len(options) > shown {
+		b.WriteString("\n\nOu me diga o nome da subcategoria. 🙂")
+		return
+	}
+	b.WriteString("\n\nResponda o número ou o nome. 🙂")
+}
+
+func CategoryRootOptions(options []string) string {
+	var b strings.Builder
+	b.WriteString("Em qual categoria isso se encaixa? 📂")
+	numberedCategoryOptions(&b, options)
+	return b.String()
+}
+
+func CategorySubcategoryOptions(rootName string, options []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Dentro de *%s*, qual subcategoria? 📂", rootName)
+	numberedCategoryOptions(&b, options)
+	return b.String()
+}
+
+func CategoryLeafOptions(options []string) string {
+	var b strings.Builder
+	b.WriteString("Qual se encaixa melhor? 📂")
+	numberedCategoryOptions(&b, options)
+	return b.String()
+}
+
+func CategoryRootNeedsLeaf() string {
+	return "Essa categoria precisa de uma subcategoria específica. Qual você quer usar?"
+}
+
+func CategoryKindMismatchReprompt() string {
+	return "Não encontrei uma categoria compatível para esse tipo de lançamento. Qual é a categoria?"
+}
+
 func ClarificationQuestion(field MissingField) string {
 	switch field {
 	case MissingFieldAmount:

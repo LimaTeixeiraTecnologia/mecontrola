@@ -81,7 +81,7 @@ func makeTransactionWriteStep(ledger interfaces.TransactionsLedger, cards cardNi
 		case TransactionAwaitingConfirmation:
 			return handleTransactionConfirmationResume(ctx, state, now, ledger, cats, idem, metrics)
 		default:
-			return handleTransactionSlotResume(state, now)
+			return handleTransactionSlotResume(ctx, state, now, cards)
 		}
 	}
 }
@@ -283,7 +283,7 @@ func handleTransactionCategoryResume(ctx context.Context, state TransactionWrite
 			return promoteTransactionCategoryToConfirmation(state, decision.Candidate)
 		}
 		if decErr == nil && decision.Action == CategoryChoiceActionRootOnly {
-			return transactionCategoryReprompt(state, "Essa categoria precisa de uma subcategoria específica. Qual você quer usar?")
+			return expandTransactionRootChoice(ctx, state, decision.Candidate, cats)
 		}
 	}
 
@@ -294,6 +294,43 @@ func handleTransactionCategoryResume(ctx context.Context, state TransactionWrite
 	}
 
 	return transactionCategoryReprompt(state, buildTransactionSlotReprompt(state))
+}
+
+func expandTransactionRootChoice(ctx context.Context, state TransactionWriteState, root PendingCategoryCandidate, cats categoryValidator) (workflow.StepOutput[TransactionWriteState], error) {
+	if cats == nil {
+		return transactionCategoryReprompt(state, messages.CategoryRootNeedsLeaf())
+	}
+	leaves, err := RootLeafCandidatesByRootID(ctx, cats, state.UserID, root.RootCategoryID, state.Kind)
+	if err != nil || len(leaves) == 0 {
+		return transactionCategoryReprompt(state, messages.CategoryRootNeedsLeaf())
+	}
+	if len(leaves) == 1 {
+		return promoteTransactionCategoryToConfirmation(state, leaves[0])
+	}
+	if filtered := filterCandidatesByRoot(searchTransactionCandidates(ctx, cats, state), root.RootCategoryID); len(filtered) == 1 {
+		return promoteTransactionCategoryToConfirmation(state, filtered[0])
+	}
+	state.Candidates = leaves
+	state.RepromptCount = 0
+	return suspendTransaction(state, buildCandidatesPrompt(leaves))
+}
+
+func searchTransactionCandidates(ctx context.Context, cats categoryValidator, state TransactionWriteState) []PendingCategoryCandidate {
+	candidates, _, err := SearchAndEnrichCandidates(ctx, cats, state.Description, state.Kind, state.CategoryVersion)
+	if err != nil {
+		return nil
+	}
+	return candidates
+}
+
+func filterCandidatesByRoot(candidates []PendingCategoryCandidate, rootID uuid.UUID) []PendingCategoryCandidate {
+	filtered := make([]PendingCategoryCandidate, 0, len(candidates))
+	for _, c := range candidates {
+		if c.RootCategoryID == rootID && candidateHasLeafSubcategory(c) {
+			filtered = append(filtered, c)
+		}
+	}
+	return filtered
 }
 
 func resolveCategoryBySearch(ctx context.Context, cats categoryValidator, state TransactionWriteState, text string) (workflow.StepOutput[TransactionWriteState], bool) {
@@ -316,12 +353,33 @@ func resolveCategoryBySearch(ctx context.Context, cats categoryValidator, state 
 	}
 	rootCandidates, rootErr := RootCategoryLeafCandidates(ctx, cats, state.UserID, text, state.Kind)
 	if rootErr == nil && len(rootCandidates) > 0 {
+		if len(rootCandidates) == 1 {
+			out, _ := promoteTransactionCategoryToConfirmation(state, rootCandidates[0])
+			return out, true
+		}
 		state.Candidates = rootCandidates
 		state.RepromptCount = 0
 		out, _ := suspendTransaction(state, buildCandidatesPrompt(rootCandidates))
 		return out, true
 	}
+	if state.RepromptCount >= transactionMaxReprompts {
+		return workflow.StepOutput[TransactionWriteState]{}, false
+	}
+	if roots := listRootOnlyCandidates(ctx, cats, state.UserID, state.Kind); len(roots) > 0 {
+		state.Candidates = roots
+		state.RepromptCount++
+		out, _ := suspendTransaction(state, buildCandidatesPrompt(roots))
+		return out, true
+	}
 	return workflow.StepOutput[TransactionWriteState]{}, false
+}
+
+func listRootOnlyCandidates(ctx context.Context, cats categoryValidator, userID uuid.UUID, kind interfaces.CategoryKind) []PendingCategoryCandidate {
+	roots, err := cats.ListCategories(ctx, userID)
+	if err != nil {
+		return nil
+	}
+	return BuildRootOnlyCandidates(roots, kind)
 }
 
 func promoteTransactionCategoryToConfirmation(state TransactionWriteState, candidate PendingCategoryCandidate) (workflow.StepOutput[TransactionWriteState], error) {
@@ -364,8 +422,13 @@ func handleTransactionCardResume(ctx context.Context, state TransactionWriteStat
 		return completeTransaction(state, TransactionWriteStatusReplaced, "")
 	}
 
+	lookup := text
+	if answer := DecidePaymentAnswer(text); answer.CardHint != "" {
+		lookup = answer.CardHint
+	}
+
 	if cards != nil {
-		card, err := cards.ResolveCardByNickname(ctx, state.UserID, text)
+		card, err := cards.ResolveCardByNickname(ctx, state.UserID, lookup)
 		if err == nil {
 			cardUUID, parseErr := uuid.Parse(card.ID)
 			if parseErr == nil {
@@ -385,7 +448,7 @@ func handleTransactionCardResume(ctx context.Context, state TransactionWriteStat
 	return suspendTransaction(state, messages.CardPrompt())
 }
 
-func handleTransactionSlotResume(state TransactionWriteState, now time.Time) (workflow.StepOutput[TransactionWriteState], error) {
+func handleTransactionSlotResume(ctx context.Context, state TransactionWriteState, now time.Time, cards cardNicknameSolver) (workflow.StepOutput[TransactionWriteState], error) {
 	decision := DecideTransactionSlotResume(state, state.ResumeText, now)
 
 	switch decision.Action {
@@ -402,6 +465,9 @@ func handleTransactionSlotResume(state TransactionWriteState, now time.Time) (wo
 		state.RepromptCount++
 		return suspendTransaction(state, buildTransactionSlotReprompt(state))
 
+	case TransactionSlotActionFillPaymentWithCard:
+		return advanceTransactionAfterSlotFill(fillTransactionPaymentWithCard(ctx, state, decision, cards))
+
 	case TransactionSlotActionFill:
 		if decision.Slot == TransactionAwaitingPaymentMethod && decision.FilledValue != "" {
 			state.PaymentMethod = decision.FilledValue
@@ -409,22 +475,41 @@ func handleTransactionSlotResume(state TransactionWriteState, now time.Time) (wo
 		if decision.Slot == TransactionAwaitingDate && decision.FilledValue != "" {
 			state.OccurredAt = decision.FilledValue
 		}
-		state.RepromptCount = 0
-
-		next := DecideTransactionInitialAwaiting(state.OperationKind, initialAwaitingArgs{
-			CategoryAwaiting: TransactionAwaitingConfirmation,
-			PaymentMethod:    state.PaymentMethod,
-			HasCard:          state.CardID != nil,
-		})
-		state.Awaiting = next
-		if next == TransactionAwaitingConfirmation {
-			return suspendTransaction(state, buildTransactionConfirmSummary(state))
-		}
-		return suspendTransaction(state, buildTransactionSlotPrompt(state))
+		return advanceTransactionAfterSlotFill(state)
 
 	default:
 		return completeTransaction(state, TransactionWriteStatusCancelled, messages.WriteFailure())
 	}
+}
+
+func fillTransactionPaymentWithCard(ctx context.Context, state TransactionWriteState, decision TransactionSlotDecision, cards cardNicknameSolver) TransactionWriteState {
+	state.PaymentMethod = decision.FilledValue
+	if cards == nil || state.CardID != nil {
+		return state
+	}
+	card, err := cards.ResolveCardByNickname(ctx, state.UserID, decision.CardHint)
+	if err != nil {
+		return state
+	}
+	if cardUUID, parseErr := uuid.Parse(card.ID); parseErr == nil {
+		state.CardID = &cardUUID
+	}
+	return state
+}
+
+func advanceTransactionAfterSlotFill(state TransactionWriteState) (workflow.StepOutput[TransactionWriteState], error) {
+	state.RepromptCount = 0
+
+	next := DecideTransactionInitialAwaiting(state.OperationKind, initialAwaitingArgs{
+		CategoryAwaiting: TransactionAwaitingConfirmation,
+		PaymentMethod:    state.PaymentMethod,
+		HasCard:          state.CardID != nil,
+	})
+	state.Awaiting = next
+	if next == TransactionAwaitingConfirmation {
+		return suspendTransaction(state, buildTransactionConfirmSummary(state))
+	}
+	return suspendTransaction(state, buildTransactionSlotPrompt(state))
 }
 
 func handleTransactionConfirmationResume(ctx context.Context, state TransactionWriteState, now time.Time, ledger interfaces.TransactionsLedger, cats categoryValidator, idem IdempotentWriter, metrics *transactionWriteMetrics) (workflow.StepOutput[TransactionWriteState], error) {
@@ -490,6 +575,11 @@ func validateTransactionCategoryForWrite(ctx context.Context, state TransactionW
 	if cats == nil {
 		return state, true, nil, nil
 	}
+	if state.CategoryVersion <= 0 {
+		if version, versionErr := cats.CatalogVersion(ctx); versionErr == nil && version > 0 {
+			state.CategoryVersion = version
+		}
+	}
 	if _, err := cats.ResolveForWrite(ctx, interfaces.CategoryWriteRequest{
 		RootCategoryID:  c.RootCategoryID,
 		SubcategoryID:   c.SubcategoryID,
@@ -519,7 +609,7 @@ func reclassifyTransactionByKind(ctx context.Context, state TransactionWriteStat
 
 	state.Awaiting = TransactionAwaitingCategory
 	state.Candidates = nil
-	output, _ := transactionCategoryReprompt(state, "Não encontrei uma categoria compatível para esse tipo de lançamento. Qual é a categoria?")
+	output, _ := transactionCategoryReprompt(state, messages.CategoryKindMismatchReprompt())
 	return state, false, &output
 }
 
@@ -902,7 +992,7 @@ func buildTransactionConfirmSummary(state TransactionWriteState) string {
 func buildTransactionSlotPrompt(state TransactionWriteState) string {
 	switch state.Awaiting {
 	case TransactionAwaitingCategory:
-		if len(state.Candidates) > 1 {
+		if len(state.Candidates) > 0 {
 			return buildCandidatesPrompt(state.Candidates)
 		}
 		return messages.ClarificationQuestion(messages.MissingFieldCategory)
@@ -924,7 +1014,7 @@ func buildTransactionSlotPrompt(state TransactionWriteState) string {
 func buildTransactionSlotReprompt(state TransactionWriteState) string {
 	switch state.Awaiting {
 	case TransactionAwaitingCategory:
-		if len(state.Candidates) > 1 {
+		if len(state.Candidates) > 0 {
 			return buildCandidatesPrompt(state.Candidates)
 		}
 		return messages.ClarificationQuestion(messages.MissingFieldCategory)
@@ -959,6 +1049,10 @@ func ContinueTransactionWrite(
 
 	if resumeErr != nil {
 		return true, result.State.ResponseText, fmt.Errorf("workflows.transaction_write: resume: %w", resumeErr)
+	}
+
+	if result.State.Status == TransactionWriteStatusReplaced && result.State.ResponseText == "" {
+		return false, "", nil
 	}
 
 	return true, result.State.ResponseText, nil

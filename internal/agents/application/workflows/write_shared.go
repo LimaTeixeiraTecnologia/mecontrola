@@ -3,7 +3,6 @@ package workflows
 import (
 	"context"
 	"errors"
-	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/messages"
 	catusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 )
@@ -49,6 +49,7 @@ type categoryValidator interface {
 	SearchDictionary(ctx context.Context, term, kind string) (interfaces.CategorySearchResult, error)
 	ResolveForWrite(ctx context.Context, input interfaces.CategoryWriteRequest) (interfaces.CategoryWriteDecision, error)
 	ListCategories(ctx context.Context, userID uuid.UUID) ([]interfaces.Category, error)
+	CatalogVersion(ctx context.Context) (int64, error)
 }
 
 type PendingMessage struct {
@@ -81,7 +82,7 @@ var (
 		"domingo": time.Sunday,
 	}
 
-	reMoney       = regexp.MustCompile(`(?i)R\$\s*[\d.,]+`)
+	reMoney       = regexp.MustCompile(`(?i)(R\$\s*\d[\d.,]*|\b\d[\d.,]*\s*(?:reais|real|contos?|pilas?|mangos?)\b|\b\d{1,3}(?:\.\d{3})*,\d{2}\b)`)
 	reLaunchVerbs = regexp.MustCompile(`(?i)\b(gastei|paguei|comprei|recebi|ganhei)\b`)
 
 	reDescriptionParaphrase = regexp.MustCompile(`(?i)^(?:compras?|pagamentos?|recebimentos?|gastos?|paguei|comprei|recebi|gastei)\s+(?:de|do|da|dos|das|no|na|nos|nas|em|com)\s+(.+)$`)
@@ -189,19 +190,39 @@ func NormalizeEntryDescription(description string) string {
 	return trimmed
 }
 
-func recognizePaymentMethod(text string) string {
-	normalized := normalizeText(text)
-	if pm, ok := knownPaymentMethods[normalized]; ok {
-		return pm
-	}
-	words := strings.Fields(normalized)
-	for len(words) > 1 && paymentMethodLeadWords[words[0]] {
-		words = words[1:]
+type PaymentAnswer struct {
+	Method   string
+	CardHint string
+}
+
+func DecidePaymentAnswer(text string) PaymentAnswer {
+	words := strings.Fields(normalizeText(text))
+	for {
 		if pm, ok := knownPaymentMethods[strings.Join(words, " ")]; ok {
-			return pm
+			return PaymentAnswer{Method: pm}
 		}
+		if len(words) > 1 && paymentMethodLeadWords[words[0]] {
+			words = words[1:]
+			continue
+		}
+		break
 	}
-	return ""
+	for i := len(words) - 1; i >= 1; i-- {
+		pm, ok := knownPaymentMethods[strings.Join(words[:i], " ")]
+		if !ok || pm != PaymentMethodCreditCard {
+			continue
+		}
+		return PaymentAnswer{Method: pm, CardHint: strings.Join(words[i:], " ")}
+	}
+	return PaymentAnswer{}
+}
+
+func recognizePaymentMethod(text string) string {
+	answer := DecidePaymentAnswer(text)
+	if answer.CardHint != "" {
+		return ""
+	}
+	return answer.Method
 }
 
 func parseWeekday(text string, now time.Time) (string, bool) {
@@ -300,11 +321,51 @@ func formatPaymentLabel(method string) string {
 }
 
 func buildCandidatesPrompt(candidates []PendingCategoryCandidate) string {
-	var parts []string
-	for i, c := range candidates {
-		parts = append(parts, fmt.Sprintf("%d. %s", i+1, c.Path))
+	if len(candidates) == 0 {
+		return messages.ClarificationQuestion(messages.MissingFieldCategory)
 	}
-	return "Qual se encaixa melhor? " + strings.Join(parts, " ")
+	if candidates[0].SubcategoryID == uuid.Nil {
+		return messages.CategoryRootOptions(candidatePathOptions(candidates))
+	}
+	rootName, sameRoot := candidatesShareRoot(candidates)
+	if sameRoot {
+		return messages.CategorySubcategoryOptions(rootName, candidateLeafOptions(candidates))
+	}
+	return messages.CategoryLeafOptions(candidatePathOptions(candidates))
+}
+
+func candidatePathOptions(candidates []PendingCategoryCandidate) []string {
+	options := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		options = append(options, c.Path)
+	}
+	return options
+}
+
+func candidateLeafOptions(candidates []PendingCategoryCandidate) []string {
+	options := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		if leaf := candidateLeafName(c); leaf != "" {
+			options = append(options, leaf)
+			continue
+		}
+		options = append(options, c.Path)
+	}
+	return options
+}
+
+func candidatesShareRoot(candidates []PendingCategoryCandidate) (string, bool) {
+	root, _, ok := splitCandidatePath(candidates[0].Path)
+	if !ok {
+		return "", false
+	}
+	for _, c := range candidates[1:] {
+		other, _, otherOK := splitCandidatePath(c.Path)
+		if !otherOK || other != root {
+			return "", false
+		}
+	}
+	return root, true
 }
 
 func normalizeText(s string) string {

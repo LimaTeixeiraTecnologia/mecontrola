@@ -68,16 +68,21 @@ func TestBuildCreateRecurrenceTool_OpensPendingNoSyncWrite_CA16(t *testing.T) {
 	assert.Equal(t, "Confirma a criação desta recorrência?", verbatimText)
 }
 
-func TestBuildCreateRecurrenceTool_MissingSubcategory_Errors(t *testing.T) {
-	registrar := &fakeRecurrenceRegistrar{result: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify}}
+func TestBuildCreateRecurrenceTool_MissingSubcategory_DelegatesResolution(t *testing.T) {
+	registrar := &fakeRecurrenceRegistrar{result: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify, Message: "Em qual categoria isso se encaixa? 📂"}}
 
 	handle := BuildCreateRecurrenceTool(registrar, imocks.NewCardManager(t))
 	in := recurrenceInput()
+	in.CategoryID = ""
 	in.SubcategoryID = ""
+	in.CategoryText = "custos fixos"
 	argsJSON, _ := json.Marshal(in)
 	_, _, err := handle.Invoke(identityCtx("wamid-recur", 1), argsJSON)
-	require.Error(t, err)
-	assert.False(t, registrar.called)
+	require.NoError(t, err)
+	assert.True(t, registrar.called)
+	assert.Equal(t, uuid.Nil, registrar.lastAt.CategoryID)
+	assert.Equal(t, uuid.Nil, registrar.lastAt.SubcategoryID)
+	assert.Equal(t, "custos fixos", registrar.lastAt.CategoryText)
 }
 
 func TestBuildCreateRecurrenceTool_InvalidUserID(t *testing.T) {

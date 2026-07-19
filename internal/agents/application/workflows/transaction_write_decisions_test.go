@@ -327,3 +327,141 @@ func TestDecideTransactionConfirmation_ReplayComWamidDoResume(t *testing.T) {
 		t.Fatalf("expected accept for new wamid, got %v", action)
 	}
 }
+
+func TestDecidePaymentMethodFromCard(t *testing.T) {
+	if got := DecidePaymentMethodFromCard("", true); got != PaymentMethodCreditCard {
+		t.Fatalf("cartão presente sem pagamento deve virar credit_card, got %q", got)
+	}
+	if got := DecidePaymentMethodFromCard("pix", true); got != "pix" {
+		t.Fatalf("pagamento explícito deve prevalecer, got %q", got)
+	}
+	if got := DecidePaymentMethodFromCard("", false); got != "" {
+		t.Fatalf("sem cartão e sem pagamento deve permanecer vazio, got %q", got)
+	}
+}
+
+func TestDecidePaymentAnswer_CartaoComApelido(t *testing.T) {
+	scenarios := []struct {
+		text     string
+		method   string
+		cardHint string
+	}{
+		{text: "Cartão de crédito XP", method: "credit_card", cardHint: "xp"},
+		{text: "cartão xp", method: "credit_card", cardHint: "xp"},
+		{text: "no cartão de crédito nubank", method: "credit_card", cardHint: "nubank"},
+		{text: "crédito roxinho", method: "credit_card", cardHint: "roxinho"},
+		{text: "crédito", method: "credit_card", cardHint: ""},
+		{text: "paguei no pix", method: "pix", cardHint: ""},
+		{text: "qualquer coisa", method: "", cardHint: ""},
+	}
+	for _, scenario := range scenarios {
+		t.Run(scenario.text, func(t *testing.T) {
+			answer := DecidePaymentAnswer(scenario.text)
+			if answer.Method != scenario.method || answer.CardHint != scenario.cardHint {
+				t.Fatalf("DecidePaymentAnswer(%q) = %+v, expected method=%q hint=%q", scenario.text, answer, scenario.method, scenario.cardHint)
+			}
+		})
+	}
+}
+
+func TestDecideTransactionSlotResume_FillPaymentWithCardHint(t *testing.T) {
+	state := TransactionWriteState{SuspendedAt: time.Now().UTC(), Awaiting: TransactionAwaitingPaymentMethod}
+	decision := DecideTransactionSlotResume(state, "Cartão de crédito XP", time.Now().UTC())
+	if decision.Action != TransactionSlotActionFillPaymentWithCard {
+		t.Fatalf("expected fill payment with card, got %v", decision.Action)
+	}
+	if decision.FilledValue != PaymentMethodCreditCard || decision.CardHint != "xp" {
+		t.Fatalf("unexpected decision %+v", decision)
+	}
+}
+
+func TestIsNewCompleteOperation_SemPrefixoMonetario(t *testing.T) {
+	scenarios := []struct {
+		text string
+		want bool
+	}{
+		{text: "Paguei 100 reais no abastecimento do veículo no cartão xp", want: true},
+		{text: "Gastei 21,57 no supermercado", want: true},
+		{text: "gastei R$ 30 no uber", want: true},
+		{text: "comprei 2 contos de bala", want: true},
+		{text: "1", want: false},
+		{text: "sim", want: false},
+		{text: "Custo fixo > combustível", want: false},
+		{text: "paguei no crédito em 12x", want: false},
+		{text: "crédito", want: false},
+	}
+	for _, scenario := range scenarios {
+		t.Run(scenario.text, func(t *testing.T) {
+			if got := isNewCompleteOperation(scenario.text); got != scenario.want {
+				t.Fatalf("isNewCompleteOperation(%q) = %v, expected %v", scenario.text, got, scenario.want)
+			}
+		})
+	}
+}
+
+func TestDecideTransactionCategoryChoice_NomeDeFolhaEPlural(t *testing.T) {
+	leafCandidates := []PendingCategoryCandidate{
+		{RootCategoryID: testRootCustoFixoID, RootSlug: "custo-fixo", SubcategoryID: testLeafCombustivel, SubcategorySlug: "combustivel", Path: "Custo Fixo > Combustível"},
+		{RootCategoryID: testRootCustoFixoID, RootSlug: "custo-fixo", SubcategoryID: testLeafSupermercado, SubcategorySlug: "supermercado", Path: "Custo Fixo > Supermercado"},
+	}
+
+	scenarios := []struct {
+		text   string
+		action CategoryChoiceAction
+		leafID uuid.UUID
+	}{
+		{text: "Combustível", action: CategoryChoiceActionSelected, leafID: testLeafCombustivel},
+		{text: "combustivel", action: CategoryChoiceActionSelected, leafID: testLeafCombustivel},
+		{text: "Custo fixo > combustível", action: CategoryChoiceActionSelected, leafID: testLeafCombustivel},
+		{text: "custo fixo e combustivel", action: CategoryChoiceActionSelected, leafID: testLeafCombustivel},
+		{text: "supermercados", action: CategoryChoiceActionSelected, leafID: testLeafSupermercado},
+		{text: "custos fixos", action: CategoryChoiceActionAmbiguous},
+		{text: "nada a ver", action: CategoryChoiceActionReprompt},
+	}
+	for _, scenario := range scenarios {
+		t.Run(scenario.text, func(t *testing.T) {
+			decision, err := DecideTransactionCategoryChoice(leafCandidates, scenario.text)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if decision.Action != scenario.action {
+				t.Fatalf("expected %v, got %v", scenario.action, decision.Action)
+			}
+			if scenario.leafID != uuid.Nil && decision.Candidate.SubcategoryID != scenario.leafID {
+				t.Fatalf("expected leaf %s, got %s", scenario.leafID, decision.Candidate.SubcategoryID)
+			}
+		})
+	}
+}
+
+func TestDecideTransactionCategoryChoice_ListaDeRaizes(t *testing.T) {
+	rootCandidates := []PendingCategoryCandidate{
+		{RootCategoryID: testRootCustoFixoID, RootSlug: "custo-fixo", Path: "Custo Fixo"},
+		{RootCategoryID: testRootPrazeresID, RootSlug: "prazeres", Path: "Prazeres"},
+	}
+
+	scenarios := []struct {
+		text   string
+		action CategoryChoiceAction
+		rootID uuid.UUID
+	}{
+		{text: "1", action: CategoryChoiceActionRootOnly, rootID: testRootCustoFixoID},
+		{text: "custos fixos", action: CategoryChoiceActionRootOnly, rootID: testRootCustoFixoID},
+		{text: "Prazeres", action: CategoryChoiceActionRootOnly, rootID: testRootPrazeresID},
+		{text: "nada a ver", action: CategoryChoiceActionReprompt},
+	}
+	for _, scenario := range scenarios {
+		t.Run(scenario.text, func(t *testing.T) {
+			decision, err := DecideTransactionCategoryChoice(rootCandidates, scenario.text)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if decision.Action != scenario.action {
+				t.Fatalf("expected %v, got %v", scenario.action, decision.Action)
+			}
+			if scenario.rootID != uuid.Nil && decision.Candidate.RootCategoryID != scenario.rootID {
+				t.Fatalf("expected root %s, got %s", scenario.rootID, decision.Candidate.RootCategoryID)
+			}
+		})
+	}
+}

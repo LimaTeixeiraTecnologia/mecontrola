@@ -29,7 +29,7 @@ func SearchAndEnrichCandidates(ctx context.Context, reader categorySearcher, tex
 }
 
 func RootCategoryLeafCandidates(ctx context.Context, cats categoryValidator, userID uuid.UUID, text string, kind interfaces.CategoryKind) ([]PendingCategoryCandidate, error) {
-	normalized := normalizeText(text)
+	normalized := normalizeCategoryTerm(text)
 	if normalized == "" {
 		return nil, nil
 	}
@@ -44,33 +44,54 @@ func RootCategoryLeafCandidates(ctx context.Context, cats categoryValidator, use
 		if root.Kind != "" && root.Kind != kind.String() {
 			continue
 		}
-		if normalizeText(root.Name) != normalized && normalizeText(root.Slug) != normalized {
+		if normalizeCategoryTerm(root.Name) != normalized && normalizeCategoryTerm(root.Slug) != normalized {
 			continue
 		}
-		candidates := make([]PendingCategoryCandidate, 0, len(root.Subcategories))
-		for _, leaf := range root.Subcategories {
-			if leaf.ID == uuid.Nil || leaf.ID == root.ID {
-				continue
-			}
-			candidates = append(candidates, PendingCategoryCandidate{
-				RootCategoryID:  root.ID,
-				RootSlug:        root.Slug,
-				SubcategoryID:   leaf.ID,
-				SubcategorySlug: leaf.Slug,
-				Path:            root.Name + " > " + leaf.Name,
-				Score:           1.0,
-				Confidence:      "manual_confirmed",
-				MatchQuality:    "manual_canonical",
-				SignalType:      "manual_canonical",
-				MatchedTerm:     leaf.Slug,
-				MatchReason:     "manual canonical id validated",
-			})
-		}
-		if len(candidates) > 0 {
+		if candidates := rootLeafCandidates(root); len(candidates) > 0 {
 			return candidates, nil
 		}
 	}
 	return nil, nil
+}
+
+func RootLeafCandidatesByRootID(ctx context.Context, cats categoryValidator, userID uuid.UUID, rootID uuid.UUID, kind interfaces.CategoryKind) ([]PendingCategoryCandidate, error) {
+	roots, err := cats.ListCategories(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("category_resolution: list categories: %w", err)
+	}
+	for _, root := range roots {
+		if root.ParentID != nil || root.ID != rootID {
+			continue
+		}
+		if root.Kind != "" && root.Kind != kind.String() {
+			continue
+		}
+		return rootLeafCandidates(root), nil
+	}
+	return nil, nil
+}
+
+func rootLeafCandidates(root interfaces.Category) []PendingCategoryCandidate {
+	candidates := make([]PendingCategoryCandidate, 0, len(root.Subcategories))
+	for _, leaf := range root.Subcategories {
+		if leaf.ID == uuid.Nil || leaf.ID == root.ID {
+			continue
+		}
+		candidates = append(candidates, PendingCategoryCandidate{
+			RootCategoryID:  root.ID,
+			RootSlug:        root.Slug,
+			SubcategoryID:   leaf.ID,
+			SubcategorySlug: leaf.Slug,
+			Path:            root.Name + " > " + leaf.Name,
+			Score:           1.0,
+			Confidence:      "manual_confirmed",
+			MatchQuality:    "manual_canonical",
+			SignalType:      "manual_canonical",
+			MatchedTerm:     leaf.Slug,
+			MatchReason:     "manual canonical id validated",
+		})
+	}
+	return candidates
 }
 
 func EnrichCandidatesFromSearch(ctx context.Context, reader categorySearcher, result interfaces.CategorySearchResult, kind interfaces.CategoryKind, expectedVersion int64) ([]PendingCategoryCandidate, error) {

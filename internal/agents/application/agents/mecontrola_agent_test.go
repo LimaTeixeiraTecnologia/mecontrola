@@ -156,11 +156,12 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 			},
 		},
 		{
-			name:         "deve orientar multiplos candidatos com lista numerada",
+			name:         "deve delegar lista de candidatos de categoria ao sistema",
 			dependencies: dependencies{},
 			expect: func(instructions string) {
-				s.Contains(instructions, "lista numerada com NOMES de categoria")
-				s.Contains(instructions, "Qual se encaixa melhor?")
+				s.Contains(instructions, "a lista numerada de opções já vem pronta no campo message")
+				s.Contains(instructions, "PROIBIDO chamar classify_category ou list_categories para resolver, listar ou perguntar categoria durante um registro")
+				s.Contains(instructions, "copie o trecho LITERAL citado pelo usuário no campo categoryText")
 			},
 		},
 		{

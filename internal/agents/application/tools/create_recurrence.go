@@ -19,8 +19,9 @@ type CreateRecurrenceInput struct {
 	PaymentMethod string `json:"paymentMethod"`
 	AmountCents   int64  `json:"amountCents"`
 	Description   string `json:"description"`
-	CategoryID    string `json:"categoryId"`
-	SubcategoryID string `json:"subcategoryId"`
+	CategoryID    string `json:"categoryId,omitempty"`
+	SubcategoryID string `json:"subcategoryId,omitempty"`
+	CategoryText  string `json:"categoryText,omitempty"`
 	CardID        string `json:"cardId,omitempty"`
 	Frequency     string `json:"frequency"`
 	DayOfMonth    int    `json:"dayOfMonth"`
@@ -48,12 +49,13 @@ func BuildCreateRecurrenceTool(registrar recurrenceRegistrar, cards interfaces.C
 				"description":   map[string]any{"type": "string"},
 				"categoryId":    map[string]any{"type": "string"},
 				"subcategoryId": map[string]any{"type": "string"},
+				"categoryText":  map[string]any{"type": "string"},
 				"cardId":        map[string]any{"type": "string"},
 				"frequency":     map[string]any{"type": "string"},
 				"dayOfMonth":    map[string]any{"type": "integer"},
 				"startedAt":     map[string]any{"type": "string"},
 			},
-			"required":             []string{"direction", "paymentMethod", "amountCents", "description", "categoryId", "subcategoryId", "frequency", "dayOfMonth"},
+			"required":             []string{"direction", "paymentMethod", "amountCents", "description", "frequency", "dayOfMonth"},
 			"additionalProperties": false,
 		},
 	}
@@ -90,13 +92,10 @@ func buildCreateRecurrenceExec(registrar recurrenceRegistrar, cards interfaces.C
 		if err != nil {
 			return CreateRecurrenceOutput{}, fmt.Errorf("create_recurrence: userId inválido: %w", err)
 		}
-		catID, err := uuid.Parse(in.CategoryID)
-		if err != nil {
-			return CreateRecurrenceOutput{}, fmt.Errorf("create_recurrence: categoryId inválido: %w", err)
-		}
-		subCatID, err := uuid.Parse(in.SubcategoryID)
-		if err != nil {
-			return CreateRecurrenceOutput{}, fmt.Errorf("create_recurrence: subcategoryId inválido: %w", err)
+		catID := parseOptionalUUID(in.CategoryID)
+		subCatID := parseOptionalUUID(in.SubcategoryID)
+		if catID == uuid.Nil {
+			subCatID = uuid.Nil
 		}
 		var cardID *uuid.UUID
 		if in.CardID != "" {
@@ -127,6 +126,7 @@ func buildCreateRecurrenceExec(registrar recurrenceRegistrar, cards interfaces.C
 			Description:   in.Description,
 			CategoryID:    catID,
 			SubcategoryID: subCatID,
+			CategoryText:  in.CategoryText,
 			Frequency:     in.Frequency,
 			DayOfMonth:    in.DayOfMonth,
 			StartedAt:     in.StartedAt,

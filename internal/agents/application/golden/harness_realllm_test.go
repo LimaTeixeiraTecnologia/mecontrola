@@ -284,7 +284,7 @@ func goldenEditTreatmentNameTool(sink ToolCaptureSink) tool.ToolHandle {
 }
 
 func goldenRegisterExpensePaymentClarifyTool(sink ToolCaptureSink) tool.ToolHandle {
-	in := llm.Schema{Name: "register_expense_payment_clarify_input", Strict: false, Schema: goldenSchemaWithPaymentEnum("description", "amountCents", "paymentMethod", "occurredAt")}
+	in := llm.Schema{Name: "register_expense_payment_clarify_input", Strict: false, Schema: goldenSchemaWithPaymentEnum("description", "amountCents", "paymentMethod", "occurredAt", "categoryText")}
 	out := llm.Schema{
 		Name:   "register_expense_payment_clarify_output",
 		Strict: true,
@@ -310,13 +310,13 @@ func goldenRegisterExpensePaymentClarifyTool(sink ToolCaptureSink) tool.ToolHand
 var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
 	"register_expense_payment_clarify": goldenRegisterExpensePaymentClarifyTool,
 	"register_expense": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("register_expense", "Registra uma despesa", goldenSchemaWithPaymentEnum("description", "amountCents", "paymentMethod", "occurredAt", "categoryId", "cardId"), sink)
+		return goldenCaptureTool("register_expense", "Registra uma despesa; se o usuário citar a categoria desejada, copie o trecho literal no campo categoryText", goldenSchemaWithPaymentEnum("description", "amountCents", "paymentMethod", "occurredAt", "categoryText", "cardId"), sink)
 	},
 	"register_income": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("register_income", "Registra uma receita", goldenBaseSchema("description", "amountCents", "occurredAt"), sink)
+		return goldenCaptureTool("register_income", "Registra uma receita; se o usuário citar a categoria desejada, copie o trecho literal no campo categoryText", goldenBaseSchema("description", "amountCents", "occurredAt", "categoryText"), sink)
 	},
 	"create_recurrence": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("create_recurrence", "Cria template recorrente", goldenBaseSchema("description", "amountCents", "frequency", "dayOfMonth", "direction"), sink)
+		return goldenCaptureTool("create_recurrence", "Cria template recorrente; se o usuário citar a categoria desejada, copie o trecho literal no campo categoryText", goldenBaseSchema("description", "amountCents", "frequency", "dayOfMonth", "direction", "categoryText"), sink)
 	},
 	"query_month": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("query_month", "Consulta o resumo e os lançamentos do mês financeiro do usuário; use para 'quanto gastei?', 'como foi meu mês?', 'última transação' e 'últimas N transações'.", goldenMonthRefSchema("refMonth"), sink)

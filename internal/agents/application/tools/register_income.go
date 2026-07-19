@@ -19,6 +19,7 @@ type RegisterIncomeInput struct {
 	CategoryID      string `json:"categoryId,omitempty"`
 	SubcategoryID   string `json:"subcategoryId,omitempty"`
 	CategoryVersion int64  `json:"categoryVersion,omitempty"`
+	CategoryText    string `json:"categoryText,omitempty"`
 }
 
 type RegisterIncomeOutput struct {
@@ -42,6 +43,7 @@ func BuildRegisterIncomeTool(registrar entryRegistrar) tool.ToolHandle {
 				"categoryId":      map[string]any{"type": "string"},
 				"subcategoryId":   map[string]any{"type": "string"},
 				"categoryVersion": map[string]any{"type": "integer"},
+				"categoryText":    map[string]any{"type": "string"},
 			},
 			"required":             []string{"amountCents", "description"},
 			"additionalProperties": false,
@@ -119,6 +121,7 @@ func buildRegisterIncomeExec(registrar entryRegistrar) func(context.Context, Reg
 			CategoryID:      categoryID,
 			SubcategoryID:   subcategoryID,
 			CategoryVersion: in.CategoryVersion,
+			CategoryText:    in.CategoryText,
 		})
 		if err != nil {
 			return RegisterIncomeOutput{}, fmt.Errorf("register_income: %w", err)

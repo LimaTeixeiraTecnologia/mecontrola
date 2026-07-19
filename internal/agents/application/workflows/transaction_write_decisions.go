@@ -82,6 +82,13 @@ func DecideTransactionInitialAwaiting(kind TransactionOperationKind, args initia
 	return fn(args)
 }
 
+func DecidePaymentMethodFromCard(paymentMethod string, hasCard bool) string {
+	if hasCard && paymentMethod == "" {
+		return PaymentMethodCreditCard
+	}
+	return paymentMethod
+}
+
 type TransactionSlotAction int
 
 const (
@@ -90,6 +97,7 @@ const (
 	TransactionSlotActionCancel
 	TransactionSlotActionReplace
 	TransactionSlotActionFill
+	TransactionSlotActionFillPaymentWithCard
 	TransactionSlotActionReprompt
 )
 
@@ -97,6 +105,7 @@ type TransactionSlotDecision struct {
 	Action      TransactionSlotAction
 	Slot        TransactionAwaitingSlot
 	FilledValue string
+	CardHint    string
 }
 
 func DecideTransactionSlotResume(state TransactionWriteState, text string, now time.Time) TransactionSlotDecision {
@@ -116,8 +125,16 @@ func DecideTransactionSlotResume(state TransactionWriteState, text string, now t
 
 	switch state.Awaiting {
 	case TransactionAwaitingPaymentMethod:
-		if pm := recognizePaymentMethod(trimmed); pm != "" {
-			return TransactionSlotDecision{Action: TransactionSlotActionFill, Slot: TransactionAwaitingPaymentMethod, FilledValue: pm}
+		if answer := DecidePaymentAnswer(trimmed); answer.Method != "" {
+			if answer.Method == PaymentMethodCreditCard && answer.CardHint != "" {
+				return TransactionSlotDecision{
+					Action:      TransactionSlotActionFillPaymentWithCard,
+					Slot:        TransactionAwaitingPaymentMethod,
+					FilledValue: answer.Method,
+					CardHint:    answer.CardHint,
+				}
+			}
+			return TransactionSlotDecision{Action: TransactionSlotActionFill, Slot: TransactionAwaitingPaymentMethod, FilledValue: answer.Method}
 		}
 	case TransactionAwaitingDate:
 		if d := parseInputDate(trimmed, now); d != "" {
@@ -189,35 +206,91 @@ func DecideTransactionCategoryChoice(candidates []PendingCategoryCandidate, text
 	trimmed := strings.TrimSpace(text)
 
 	if idx, err := strconv.Atoi(trimmed); err == nil {
-		if idx >= 1 && idx <= len(candidates) {
-			c := candidates[idx-1]
-			if c.SubcategoryID == (uuid.UUID{}) || c.SubcategoryID == c.RootCategoryID {
-				return CategoryChoiceDecision{Action: CategoryChoiceActionRootOnly, Candidate: c}, nil
-			}
-			return CategoryChoiceDecision{Action: CategoryChoiceActionSelected, Candidate: c}, nil
-		}
-		return CategoryChoiceDecision{Action: CategoryChoiceActionReprompt}, nil
+		return decideCategoryChoiceByIndex(candidates, idx), nil
 	}
 
-	normalized := normalizeText(trimmed)
+	normalized := normalizeCategoryTerm(trimmed)
 	var matches []PendingCategoryCandidate
 	for _, c := range candidates {
-		if normalizeText(c.SubcategorySlug) == normalized || normalizeText(c.Path) == normalized {
+		if candidateChoiceMatches(c, normalized) {
 			matches = append(matches, c)
 		}
 	}
 
-	if len(matches) == 1 {
-		c := matches[0]
-		if c.SubcategoryID == (uuid.UUID{}) || c.SubcategoryID == c.RootCategoryID || c.SubcategorySlug == "" {
-			return CategoryChoiceDecision{Action: CategoryChoiceActionRootOnly, Candidate: c}, nil
+	if len(matches) == 0 {
+		for _, c := range candidates {
+			if candidateRootMatches(c, normalized) {
+				matches = append(matches, c)
+			}
 		}
-		return CategoryChoiceDecision{Action: CategoryChoiceActionSelected, Candidate: c}, nil
 	}
 
-	if len(matches) > 1 {
-		return CategoryChoiceDecision{Action: CategoryChoiceActionAmbiguous}, nil
-	}
+	return decideCategoryChoiceFromMatches(matches), nil
+}
 
-	return CategoryChoiceDecision{Action: CategoryChoiceActionReprompt}, nil
+func decideCategoryChoiceByIndex(candidates []PendingCategoryCandidate, idx int) CategoryChoiceDecision {
+	if idx < 1 || idx > len(candidates) {
+		return CategoryChoiceDecision{Action: CategoryChoiceActionReprompt}
+	}
+	return categoryChoiceFor(candidates[idx-1], false)
+}
+
+func decideCategoryChoiceFromMatches(matches []PendingCategoryCandidate) CategoryChoiceDecision {
+	switch len(matches) {
+	case 0:
+		return CategoryChoiceDecision{Action: CategoryChoiceActionReprompt}
+	case 1:
+		return categoryChoiceFor(matches[0], true)
+	default:
+		return CategoryChoiceDecision{Action: CategoryChoiceActionAmbiguous}
+	}
+}
+
+func categoryChoiceFor(c PendingCategoryCandidate, requireSlug bool) CategoryChoiceDecision {
+	rootOnly := c.SubcategoryID == (uuid.UUID{}) || c.SubcategoryID == c.RootCategoryID
+	if requireSlug && c.SubcategorySlug == "" {
+		rootOnly = true
+	}
+	if rootOnly {
+		return CategoryChoiceDecision{Action: CategoryChoiceActionRootOnly, Candidate: c}
+	}
+	return CategoryChoiceDecision{Action: CategoryChoiceActionSelected, Candidate: c}
+}
+
+func candidateChoiceMatches(c PendingCategoryCandidate, normalized string) bool {
+	terms := []string{c.SubcategorySlug, c.Path, candidateLeafName(c)}
+	if root, leaf, ok := splitCandidatePath(c.Path); ok {
+		terms = append(terms, root+" e "+leaf)
+	}
+	for _, term := range terms {
+		if term != "" && normalizeCategoryTerm(term) == normalized {
+			return true
+		}
+	}
+	return false
+}
+
+func candidateRootMatches(c PendingCategoryCandidate, normalized string) bool {
+	if c.RootSlug != "" && normalizeCategoryTerm(c.RootSlug) == normalized {
+		return true
+	}
+	if root, _, ok := splitCandidatePath(c.Path); ok {
+		return normalizeCategoryTerm(root) == normalized
+	}
+	return !candidateHasLeafSubcategory(c) && c.Path != "" && normalizeCategoryTerm(c.Path) == normalized
+}
+
+func candidateLeafName(c PendingCategoryCandidate) string {
+	if _, leaf, ok := splitCandidatePath(c.Path); ok {
+		return leaf
+	}
+	return ""
+}
+
+func splitCandidatePath(path string) (string, string, bool) {
+	idx := strings.Index(path, " > ")
+	if idx <= 0 {
+		return "", "", false
+	}
+	return path[:idx], path[idx+3:], true
 }

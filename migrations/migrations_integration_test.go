@@ -2208,6 +2208,49 @@ func splitTableName(qualified string) [2]string {
 	return [2]string{"public", qualified}
 }
 
+func (s *MigrationSuite) TestDictionaryFuelVehicleTerms() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	const combustivelLeafID = "cb13d50d-43cb-553c-99cd-8851889d7f6e"
+	const veiculoLeafID = "ef1a26ec-e12d-5b3c-b7ba-3634bb89647c"
+
+	s.assertDictionaryTermResolvesTo("abastecimento", "expense", combustivelLeafID)
+	s.assertDictionaryTermResolvesTo("abasteci", "expense", combustivelLeafID)
+	s.assertDictionaryTermResolvesTo("posto de gasolina", "expense", combustivelLeafID)
+	s.assertDictionaryTermResolvesTo("abastecer", "expense", combustivelLeafID)
+
+	var veiculoTermDeprecated bool
+	s.Require().NoError(s.db.QueryRowContext(s.ctx, `
+		SELECT deprecated_at IS NOT NULL FROM mecontrola.category_dictionary
+		WHERE id = $1::uuid
+	`, veiculoLeafID).Scan(&veiculoTermDeprecated))
+	s.True(veiculoTermDeprecated,
+		"termo 'veiculo' do dicionario deve estar deprecado para nao sequestrar despesas veiculares (categoria Metas > Veiculo permanece)")
+
+	var veiculoCategoryActive bool
+	s.Require().NoError(s.db.QueryRowContext(s.ctx, `
+		SELECT deprecated_at IS NULL FROM mecontrola.categories
+		WHERE id = $1::uuid
+	`, veiculoLeafID).Scan(&veiculoCategoryActive))
+	s.True(veiculoCategoryActive, "categoria Metas > Veiculo deve permanecer ativa")
+
+	upErrRerun := migrator.Up()
+	s.Require().True(
+		upErrRerun == nil || errors.Is(upErrRerun, migrate.ErrNoChange),
+		"reexecucao da migracao 000010 deve ser idempotente: %v",
+		upErrRerun,
+	)
+
+	var aliasCount int64
+	s.Require().NoError(s.db.QueryRowContext(s.ctx, `
+		SELECT COUNT(*) FROM mecontrola.category_dictionary
+		WHERE category_id = $1::uuid AND deprecated_at IS NULL
+		  AND term_normalized IN ('abastecimento', 'abasteci', 'posto de gasolina')
+	`, combustivelLeafID).Scan(&aliasCount))
+	s.Equal(int64(3), aliasCount)
+}
+
 func execSQL(db database.DBTX, ctx context.Context, query string, args ...any) error {
 	_, err := db.ExecContext(ctx, query, args...)
 	return err

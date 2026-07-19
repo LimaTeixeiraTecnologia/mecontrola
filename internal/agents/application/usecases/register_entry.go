@@ -37,6 +37,7 @@ type RegisterExpenseCommand struct {
 	CategoryID      uuid.UUID
 	SubcategoryID   uuid.UUID
 	CategoryVersion int64
+	CategoryText    string
 }
 
 type RegisterIncomeCommand struct {
@@ -50,6 +51,7 @@ type RegisterIncomeCommand struct {
 	CategoryID      uuid.UUID
 	SubcategoryID   uuid.UUID
 	CategoryVersion int64
+	CategoryText    string
 }
 
 type CreateRecurrenceCommand struct {
@@ -65,6 +67,7 @@ type CreateRecurrenceCommand struct {
 	CategoryID      uuid.UUID
 	SubcategoryID   uuid.UUID
 	CategoryVersion int64
+	CategoryText    string
 	Frequency       string
 	DayOfMonth      int
 	StartedAt       string

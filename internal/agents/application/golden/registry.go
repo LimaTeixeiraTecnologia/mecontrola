@@ -23,6 +23,7 @@ func AllCases() []Case {
 	cases = append(cases, journeyCases()...)
 	cases = append(cases, dailyOperationsCases()...)
 	cases = append(cases, treatmentNameCases()...)
+	cases = append(cases, categoryConversationCases()...)
 	return cases
 }
 
