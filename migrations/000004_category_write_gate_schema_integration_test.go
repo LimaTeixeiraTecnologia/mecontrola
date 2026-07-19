@@ -58,7 +58,7 @@ func (s *CategoryWriteGate000004Suite) TestCategoryWriteGateUpThenDownThenUp() {
 	migrator := s.newMigrator()
 	s.applyUp(migrator)
 
-	s.assertVersion(migrator, 9)
+	s.assertVersion(migrator, 10)
 
 	s.assertColumnPresent("transactions", "category_kind")
 	s.assertColumnPresent("transactions", "category_path")
@@ -133,7 +133,7 @@ func (s *CategoryWriteGate000004Suite) TestCategoryWriteGateUpThenDownThenUp() {
 
 	s.assertFunctionPresent("mecontrola", "validate_category_write_gate")
 
-	s.Require().NoError(migrator.Steps(-6))
+	s.Require().NoError(migrator.Steps(-7))
 	s.assertVersion(migrator, 3)
 
 	s.assertColumnMissing("transactions", "category_kind")
@@ -208,7 +208,7 @@ func (s *CategoryWriteGate000004Suite) TestCategoryWriteGateUpThenDownThenUp() {
 	s.assertTriggerMissing("mecontrola", "transactions_recurring_templates", "transactions_recurring_templates_category_write_gate_trg")
 
 	s.applyUp(migrator)
-	s.assertVersion(migrator, 9)
+	s.assertVersion(migrator, 10)
 	s.assertColumnPresent("transactions", "category_kind")
 	s.assertConstraintPresent("transactions_category_fk")
 	s.assertTriggerPresent("mecontrola", "transactions", "transactions_category_write_gate_trg")
