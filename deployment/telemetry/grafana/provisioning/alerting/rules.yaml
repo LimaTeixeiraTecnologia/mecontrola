@@ -320,8 +320,8 @@ groups:
         execErrState: Error
         labels: { severity: warning }
         annotations:
-          summary: "Mais de 25% dos tokens pagos seguem sem ativacao por 15 minutos."
-          description: "Ha clientes que pagaram, mas ainda nao ativaram ou nao consumiram o onboarding como esperado. Verifique fluxo de ativacao, entrega de email e consumo de tokens."
+          summary: "Tres ou mais tokens pagos seguem sem ativacao por mais de 15 minutos."
+          description: "Ha acumulacao sustentada de clientes pagos sem ativacao. Verifique fluxo de ativacao, entrega de email, WhatsApp, eventos outbox e consumo de tokens. Casos isolados ficam no dashboard sem notificar."
         data:
           - refId: A
             relativeTimeRange: { from: 900, to: 0 }
@@ -330,7 +330,7 @@ groups:
               refId: A
               editorMode: code
               instant: true
-              expr: 'max(onboarding_tokens_paid_unconsumed_ratio)'
+              expr: 'max(onboarding_tokens_paid_unconsumed_overdue)'
           - refId: C
             datasourceUid: __expr__
             model:
@@ -342,7 +342,7 @@ groups:
                   reducer: { type: last }
                   operator: { type: and }
                   query: { params: [C] }
-                  evaluator: { type: gt, params: [0.25] }
+                  evaluator: { type: gt, params: [2] }
 
   - orgId: 1
     name: plataforma
@@ -621,15 +621,15 @@ groups:
     interval: 5m
     rules:
       - uid: mc-backup-full-stale
-        title: Backup full pgBackRest desatualizado
+        title: Backup full pgBackRest atrasado ou desatualizado
         condition: C
         for: 1h
         noDataState: OK
         execErrState: Error
         labels: { severity: critical }
         annotations:
-          summary: "Ultimo backup full do pgBackRest com mais de 8 dias."
-          description: "O full semanal (RF-01) nao ocorre ha mais de 8 dias, ou nenhum full existe (age sentinela 999999). PITR comprometido. Verifique cron de backup full, conectividade S3 e logs do pgBackRest. Runbook: deployment/runbooks/restore-pitr.md."
+          summary: "Backup full semanal esperado atrasado ou ultimo full com mais de 8 dias."
+          description: "O full semanal nao foi concluido apos a janela de tolerancia, ou o ultimo full esta desatualizado. PITR comprometido. Verifique cron de backup full, conectividade S3 e logs do pgBackRest. Runbook: deployment/runbooks/restore-pitr.md."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -638,7 +638,7 @@ groups:
               refId: A
               editorMode: code
               instant: true
-              expr: 'max(pgbackrest_backup_age_seconds{type="full"})'
+              expr: '(max(pgbackrest_backup_expected_late{type="full"}) + max(pgbackrest_backup_age_seconds{type="full"} > bool 691200)) * on() (max(pgbackrest_info_failed) == bool 0)'
           - refId: C
             datasourceUid: __expr__
             model:
@@ -650,18 +650,18 @@ groups:
                   reducer: { type: last }
                   operator: { type: and }
                   query: { params: [C] }
-                  evaluator: { type: gt, params: [691200] }
+                  evaluator: { type: gt, params: [0] }
 
       - uid: mc-backup-diff-stale
-        title: Backup diff pgBackRest desatualizado
+        title: Backup diff pgBackRest esperado atrasado
         condition: C
-        for: 1h
+        for: 30m
         noDataState: OK
         execErrState: Error
         labels: { severity: warning }
         annotations:
-          summary: "Ultimo backup diff do pgBackRest com mais de 26 horas."
-          description: "O diff diario nao ocorre ha mais de 26h, ou nenhum diff existe (age sentinela 999999). Janela de PITR degradada. Verifique cron de backup diff e logs do pgBackRest."
+          summary: "Backup diff esperado do pgBackRest esta atrasado."
+          description: "O diff esperado pelo calendario nao foi concluido apos a janela de tolerancia. Domingo executa full e nao deve gerar falso positivo de diff. Verifique timer/cron de backup diff e logs do pgBackRest."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -670,7 +670,7 @@ groups:
               refId: A
               editorMode: code
               instant: true
-              expr: 'max(pgbackrest_backup_age_seconds{type="diff"}) > 93600 and max(pgbackrest_backup_last_success_timestamp_seconds{type="diff"}) > 0'
+              expr: 'max(pgbackrest_backup_expected_late{type="diff"})'
           - refId: C
             datasourceUid: __expr__
             model:
@@ -682,7 +682,7 @@ groups:
                   reducer: { type: last }
                   operator: { type: and }
                   query: { params: [C] }
-                  evaluator: { type: gt, params: [93600] }
+                  evaluator: { type: gt, params: [0] }
 
       - uid: mc-backup-archive-push-failed
         title: Archive-push do pgBackRest falhando
@@ -715,6 +715,70 @@ groups:
                   operator: { type: and }
                   query: { params: [C] }
                   evaluator: { type: gt, params: [0] }
+
+      - uid: mc-backup-info-failed
+        title: Coleta pgBackRest info falhando
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Exporter nao conseguiu executar pgbackrest info."
+          description: "A idade dos backups pode estar indisponivel ou com sentinela. Verifique container postgres, stanza, credenciais e logs do pgBackRest."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'max(pgbackrest_info_failed)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0] }
+
+      - uid: mc-backup-metrics-stale
+        title: Metricas pgBackRest desatualizadas
+        condition: C
+        for: 15m
+        noDataState: Alerting
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Textfile collector sem metricas pgBackRest recentes."
+          description: "A ultima coleta pgBackRest tem mais de 1 hora ou a serie esta ausente. Verifique pgbackrest-metrics.timer/cron, node_exporter e permissao do textfile collector."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 7200, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'max(time() - pgbackrest_metrics_collected_timestamp_seconds)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [3600] }
 
   - orgId: 1
     name: versao

@@ -91,6 +91,10 @@ func (s *stubMagicTokenRepository) CountPaidUnconsumed(_ context.Context) (int64
 	return 0, nil
 }
 
+func (s *stubMagicTokenRepository) CountPaidUnconsumedStats(_ context.Context, _ time.Time, _ time.Time) (appinterfaces.PaidUnconsumedStats, error) {
+	return appinterfaces.PaidUnconsumedStats{}, nil
+}
+
 func (s *stubMagicTokenRepository) UpdateSetEmailSentAt(_ context.Context, _ string, _ time.Time) error {
 	return nil
 }

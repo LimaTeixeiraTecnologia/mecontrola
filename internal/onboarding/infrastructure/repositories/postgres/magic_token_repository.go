@@ -340,6 +340,25 @@ func (r *magicTokenRepository) CountPaidUnconsumed(ctx context.Context) (int64, 
 	return count, nil
 }
 
+func (r *magicTokenRepository) CountPaidUnconsumedStats(ctx context.Context, overdueBefore time.Time, now time.Time) (appinterfaces.PaidUnconsumedStats, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "onboarding.repository.magic_token.count_paid_unconsumed_stats")
+	defer span.End()
+
+	const query = `
+		SELECT COUNT(*),
+		       COUNT(*) FILTER (WHERE paid_at IS NOT NULL AND paid_at < $1),
+		       COALESCE(EXTRACT(EPOCH FROM ($2::timestamptz - MIN(paid_at)))::BIGINT, 0)
+		  FROM mecontrola.onboarding_tokens
+		 WHERE status = 'PAID'
+	`
+
+	var stats appinterfaces.PaidUnconsumedStats
+	if err := r.db.QueryRowContext(ctx, query, overdueBefore, now).Scan(&stats.Total, &stats.Overdue, &stats.OldestAgeSeconds); err != nil {
+		return appinterfaces.PaidUnconsumedStats{}, fmt.Errorf("onboarding: magic_token_repository.count_paid_unconsumed_stats: %w", err)
+	}
+	return stats, nil
+}
+
 func (r *magicTokenRepository) UpdateSetEmailSentAt(ctx context.Context, tokenID string, now time.Time) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "onboarding.repository.magic_token.update_set_email_sent_at")
 	defer span.End()

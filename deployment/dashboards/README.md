@@ -48,7 +48,8 @@ em segundos**, **client/DB em milissegundos**.
 **Negócio:**
 - Outbox: `outbox_events_inserted_total`.
 - Onboarding: `onboarding_tokens_paid_total` (worker), `onboarding_tokens_consumed_total` (api),
-  `onboarding_tokens_paid_unconsumed_ratio` (gauge — fila de pagos sem consumir),
+  `onboarding_tokens_paid_unconsumed`, `onboarding_tokens_paid_unconsumed_overdue`,
+  `onboarding_tokens_paid_unconsumed_oldest_age_seconds` (gauges — fila de pagos sem consumir),
   `onboarding_checkout_sessions_created_total`, `onboarding_email_sent_total`,
   `onboarding_activation_email_dispatched_total`, `onboarding_paid_to_consumed_seconds_*`.
 - Billing/canais: `billing_webhooks_received_total`, `meta_inbound_messages_total`, `whatsapp_dispatcher_route_total`.
@@ -80,7 +81,7 @@ Regras provisionadas via arquivo (`provisioning/alerting/rules.yaml`):
 | tecnico | Erro 5xx alto na API | 5xx > 5% por 5min |
 | tecnico | Latência p99 alta na API | p99 > 1s por 10min |
 | tecnico | Espera por conexão no pool do Postgres | >1 wait/s por 5min |
-| negocio | Tokens pagos sem consumo no onboarding | `onboarding_tokens_paid_unconsumed_ratio` > 25% por 15min |
+| negocio | Tokens pagos sem consumo no onboarding | `onboarding_tokens_paid_unconsumed_overdue` >= 3 por 15min |
 | plataforma | Falha na exportação de métricas do collector | `otelcol_exporter_send_failed_metric_points` > 0 por 5min |
 
 > Alertas de **queda de volume** (ex.: "webhooks pararam") foram omitidos de propósito —

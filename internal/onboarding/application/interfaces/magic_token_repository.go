@@ -25,8 +25,15 @@ type MagicTokenRepository interface {
 	UpdateMarkActivationStartedAt(ctx context.Context, tokenID string, now time.Time) error
 	BulkExpire(ctx context.Context, now time.Time, limit int) ([]entities.MagicToken, error)
 	CountPaidUnconsumed(ctx context.Context) (int64, error)
+	CountPaidUnconsumedStats(ctx context.Context, overdueBefore time.Time, now time.Time) (PaidUnconsumedStats, error)
 	MarkPageOpened(ctx context.Context, tokenID string, now time.Time) error
 	MarkWhatsAppOpened(ctx context.Context, tokenID string, now time.Time) error
+}
+
+type PaidUnconsumedStats struct {
+	Total            int64
+	Overdue          int64
+	OldestAgeSeconds int64
 }
 
 type MagicTokenRepositoryFactory interface {

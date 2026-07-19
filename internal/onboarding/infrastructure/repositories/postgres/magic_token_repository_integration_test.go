@@ -317,3 +317,44 @@ func (s *MagicTokenRepositorySuite) TestCountPaidUnconsumed() {
 	s.Require().NoError(err)
 	s.Equal(int64(2), count2)
 }
+
+func (s *MagicTokenRepositorySuite) TestCountPaidUnconsumedStats() {
+	ctx := context.Background()
+
+	planID := "plan-count-stats-" + uuid.NewString()
+	repo := postgres.NewMagicTokenRepository(noop.NewProvider(), s.db)
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+
+	stats0, err := repo.CountPaidUnconsumedStats(ctx, now.Add(-15*time.Minute), now)
+	s.Require().NoError(err)
+	s.Equal(int64(0), stats0.Total)
+	s.Equal(int64(0), stats0.Overdue)
+	s.Equal(int64(0), stats0.OldestAgeSeconds)
+
+	oldPaid := s.newToken("plan-stats-old-"+uuid.NewString(), now.Add(24*time.Hour))
+	s.insertToken(ctx, repo, oldPaid)
+	oldPaid, err = oldPaid.MarkPaid(uuid.NewString(), "+5511999993011", "old@example.com", "sale-stats-old", now.Add(-time.Hour))
+	s.Require().NoError(err)
+	s.Require().NoError(repo.UpdateMarkPaid(ctx, oldPaid))
+
+	recentPaid := s.newToken(planID, now.Add(24*time.Hour))
+	s.insertToken(ctx, repo, recentPaid)
+	recentPaid, err = recentPaid.MarkPaid(uuid.NewString(), "+5511999993012", "recent@example.com", "sale-stats-recent", now.Add(-5*time.Minute))
+	s.Require().NoError(err)
+	s.Require().NoError(repo.UpdateMarkPaid(ctx, recentPaid))
+
+	consumedPaid := s.newToken(planID, now.Add(24*time.Hour))
+	s.insertToken(ctx, repo, consumedPaid)
+	consumedPaid, err = consumedPaid.MarkPaid(uuid.NewString(), "+5511999993013", "consumed@example.com", "sale-stats-consumed", now.Add(-2*time.Hour))
+	s.Require().NoError(err)
+	s.Require().NoError(repo.UpdateMarkPaid(ctx, consumedPaid))
+	consumed, err := consumedPaid.MarkConsumed(uuid.NewString(), "+5511999993013", valueobjects.ActivationPathDirect, now.Add(-90*time.Minute))
+	s.Require().NoError(err)
+	s.Require().NoError(repo.UpdateMarkConsumed(ctx, consumed))
+
+	stats, err := repo.CountPaidUnconsumedStats(ctx, now.Add(-15*time.Minute), now)
+	s.Require().NoError(err)
+	s.Equal(int64(2), stats.Total)
+	s.Equal(int64(1), stats.Overdue)
+	s.Equal(int64(3600), stats.OldestAgeSeconds)
+}

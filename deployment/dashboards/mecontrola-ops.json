@@ -131,19 +131,23 @@
     {
       "id": 8,
       "type": "stat",
-      "title": "Tokens pagos NÃO consumidos (ratio)",
+      "title": "Tokens pagos NÃO consumidos",
       "gridPos": { "h": 7, "w": 8, "x": 16, "y": 17 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit", "decimals": 2,
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.1 }, { "color": "red", "value": 0.25 } ] }
+          "unit": "short", "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 3 } ] }
         },
-        "overrides": []
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "oldest age" }, "properties": [ { "id": "unit", "value": "s" } ] }
+        ]
       },
       "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
-        { "refId": "A", "expr": "max(onboarding_tokens_paid_unconsumed_ratio)" }
+        { "refId": "A", "legendFormat": "total", "expr": "max(onboarding_tokens_paid_unconsumed)" },
+        { "refId": "B", "legendFormat": "overdue", "expr": "max(onboarding_tokens_paid_unconsumed_overdue)" },
+        { "refId": "C", "legendFormat": "oldest age", "expr": "max(onboarding_tokens_paid_unconsumed_oldest_age_seconds)" }
       ]
     },
     { "id": 300, "type": "row", "title": "Throughput de negócio & Logs", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 } },

@@ -359,17 +359,46 @@ func registerMetrics(
 	factory appinterfaces.RepositoryFactory,
 	o11y observability.Observability,
 ) {
+	stats := func(ctx context.Context) (appinterfaces.PaidUnconsumedStats, error) {
+		now := time.Now().UTC()
+		repo := factory.MagicTokenRepository(db)
+		return repo.CountPaidUnconsumedStats(ctx, now.Add(-15*time.Minute), now)
+	}
+
 	_ = o11y.Metrics().Gauge(
 		"onboarding_tokens_paid_unconsumed",
 		"Total de tokens no estado PAID ainda nao consumidos",
 		"1",
 		func(ctx context.Context) float64 {
-			repo := factory.MagicTokenRepository(db)
-			count, err := repo.CountPaidUnconsumed(ctx)
+			current, err := stats(ctx)
 			if err != nil {
 				return -1
 			}
-			return float64(count)
+			return float64(current.Total)
+		},
+	)
+	_ = o11y.Metrics().Gauge(
+		"onboarding_tokens_paid_unconsumed_overdue",
+		"Total de tokens PAID ainda nao consumidos apos a janela operacional",
+		"1",
+		func(ctx context.Context) float64 {
+			current, err := stats(ctx)
+			if err != nil {
+				return -1
+			}
+			return float64(current.Overdue)
+		},
+	)
+	_ = o11y.Metrics().Gauge(
+		"onboarding_tokens_paid_unconsumed_oldest_age_seconds",
+		"Idade em segundos do token PAID nao consumido mais antigo",
+		"s",
+		func(ctx context.Context) float64 {
+			current, err := stats(ctx)
+			if err != nil {
+				return -1
+			}
+			return float64(current.OldestAgeSeconds)
 		},
 	)
 }

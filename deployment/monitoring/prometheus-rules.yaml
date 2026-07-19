@@ -88,22 +88,22 @@ groups:
     interval: 1h
     rules:
       - alert: BackupTooOld
-        expr: max(pgbackrest_backup_age_seconds{type="diff"}) > 26 * 3600
+        expr: max(pgbackrest_backup_expected_late{type="diff"}) > 0
         for: 30m
         labels:
-          severity: critical
+          severity: warning
         annotations:
-          summary: "Último backup diff bem-sucedido há mais de 26 horas"
-          description: "Idade do último diff: {{ $value | humanizeDuration }}. Verifique cron de backup e logs do pgBackRest."
+          summary: "Backup diff esperado do pgBackRest está atrasado"
+          description: "O diff esperado pelo calendário não foi concluído após a janela de tolerância. Verifique timer/cron de backup diff e logs do pgBackRest."
 
       - alert: BackupFullTooOld
-        expr: max(pgbackrest_backup_age_seconds{type="full"}) > 8 * 24 * 3600
+        expr: (max(pgbackrest_backup_expected_late{type="full"}) > 0 or max(pgbackrest_backup_age_seconds{type="full"}) > 8 * 24 * 3600) and on() max(pgbackrest_info_failed) == 0
         for: 30m
         labels:
           severity: critical
         annotations:
-          summary: "Último backup full bem-sucedido há mais de 8 dias"
-          description: "Idade do último full: {{ $value | humanizeDuration }}. Verifique cron de backup full e logs do pgBackRest."
+          summary: "Backup full pgBackRest atrasado ou desatualizado"
+          description: "O full semanal esperado não foi concluído após a janela de tolerância, ou o último full tem mais de 8 dias. Verifique timer/cron de backup full e logs do pgBackRest."
 
       - alert: BackupArchivePushFailed
         expr: max(pgbackrest_archive_push_failed) > 0
@@ -113,3 +113,21 @@ groups:
         annotations:
           summary: "archive-push do pgBackRest falhando"
           description: "pgBackRest check detectou falha de archive-push. WAL não está chegando ao repositório; PITR comprometido. Verifique conectividade S3 e archive_command."
+
+      - alert: BackupInfoFailed
+        expr: max(pgbackrest_info_failed) > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Coleta pgBackRest info falhando"
+          description: "O exporter não conseguiu executar pgbackrest info. Verifique container postgres, stanza, credenciais e logs do pgBackRest antes de interpretar idade dos backups."
+
+      - alert: BackupMetricsStale
+        expr: (time() - max(pgbackrest_metrics_collected_timestamp_seconds)) > 3600 or absent(pgbackrest_metrics_collected_timestamp_seconds)
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Métricas pgBackRest desatualizadas"
+          description: "O textfile collector não recebe métricas pgBackRest há mais de 1 hora, ou a série está ausente. Verifique pgbackrest-metrics.timer/cron e node_exporter."

@@ -67,21 +67,26 @@ O script `deployment/scripts/pgbackrest-backup-metrics.sh` exporta textfile para
 Métricas exportadas:
 - `pgbackrest_backup_age_seconds{type="full|diff|incr"}` — segundos desde o último backup
 - `pgbackrest_backup_last_success_timestamp_seconds{type="..."}` — epoch do último backup
+- `pgbackrest_backup_expected_late{type="full|diff"}` — 1 quando o backup esperado pelo calendário está atrasado após grace
 - `pgbackrest_archive_push_failed` — 1 se `pgbackrest check` falhou
+- `pgbackrest_info_failed` — 1 se `pgbackrest info` falhou durante a coleta
+- `pgbackrest_metrics_collected_timestamp_seconds` — epoch da última coleta de métricas
 
 **Alertas ativos:**
-- `BackupFullStale` (critical): backup full > 7 dias
-- `BackupDiffStale` (critical): backup diff > 25h
-- `ArchivePushFailed` (critical): archive-push com falha
-- `mc-backup-full-stale`, `mc-backup-diff-stale`, `mc-backup-archive-push-failed` (Grafana)
+- `BackupFullTooOld` (critical): full semanal esperado atrasado ou último full > 8 dias
+- `BackupTooOld` (warning): diff esperado pelo calendário atrasado após grace
+- `BackupArchivePushFailed` (critical): archive-push com falha
+- `BackupInfoFailed` (critical): `pgbackrest info` falhando
+- `BackupMetricsStale` (critical): métricas pgBackRest ausentes ou sem atualização há mais de 1h
+- `mc-backup-full-stale`, `mc-backup-diff-stale`, `mc-backup-archive-push-failed`, `mc-backup-info-failed`, `mc-backup-metrics-stale` (Grafana)
 
 ### Teste forçado de alerta de staleness
 
 Para validar que o alerta dispara:
 
 ```bash
-# Zerar o textfile simulando backup inexistente (valores 0 = age=999999s)
-echo 'pgbackrest_backup_age_seconds{stanza="mecontrola",type="full"} 999999' \
+# Simular atraso de diff esperado
+echo 'pgbackrest_backup_expected_late{stanza="mecontrola",type="diff"} 1' \
   > /var/lib/node_exporter/textfile_collector/pgbackrest.prom
 
 # Aguardar scrape (30s) e verificar alerta no Grafana
@@ -122,6 +127,7 @@ docker build -t mecontrola-postgres:${IMAGE_TAG} deployment/postgres/
 |---------|---------------|------|
 | Timer inativo (`systemctl list-timers` vazio) | `pgbackrest-schedule.sh` não rodado | Rodar o script como root |
 | `pgbackrest check` falha | Conectividade S3 perdida ou `archive_mode=off` | Verificar `PGBACKREST_S3_KEY`, reconectar S3 |
-| `pgbackrest_backup_age_seconds` = 999999 | Script selecionou o container `postgres-exporter` em vez do `postgres`, ou `pgbackrest info` falhou | Verificar filtro do container (`mecontrola_postgres\\.`) e rodar `pgbackrest info` manualmente no container correto |
+| `pgbackrest_info_failed` = 1 | `pgbackrest info` falhou | Verificar filtro do container (`mecontrola_postgres\\.`), stanza, credenciais e rodar `pgbackrest info` manualmente no container correto |
+| `pgbackrest_backup_age_seconds` = 999999 com `pgbackrest_info_failed` = 0 | Nenhum backup daquele tipo existe no repositório | Rodar backup inicial e confirmar `pgbackrest info` |
 | Deploy falha com "POSTGRES_IMAGE" | `prod.env` com imagem default | Atualizar `POSTGRES_IMAGE` no `prod.env` com tag atual da imagem custom |
 | Textfile vazio após 30 min | Container postgres parado | Verificar `docker ps`, reiniciar serviço se necessário |

@@ -8,6 +8,7 @@ import (
 	"context"
 	"time"
 
+	appinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/domain/entities"
 	mock "github.com/stretchr/testify/mock"
 )
@@ -169,6 +170,78 @@ func (_c *MagicTokenRepository_CountPaidUnconsumed_Call) Return(n int64, err err
 }
 
 func (_c *MagicTokenRepository_CountPaidUnconsumed_Call) RunAndReturn(run func(ctx context.Context) (int64, error)) *MagicTokenRepository_CountPaidUnconsumed_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// CountPaidUnconsumedStats provides a mock function for the type MagicTokenRepository
+func (_mock *MagicTokenRepository) CountPaidUnconsumedStats(ctx context.Context, overdueBefore time.Time, now time.Time) (appinterfaces.PaidUnconsumedStats, error) {
+	ret := _mock.Called(ctx, overdueBefore, now)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountPaidUnconsumedStats")
+	}
+
+	var r0 appinterfaces.PaidUnconsumedStats
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, time.Time, time.Time) (appinterfaces.PaidUnconsumedStats, error)); ok {
+		return returnFunc(ctx, overdueBefore, now)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, time.Time, time.Time) appinterfaces.PaidUnconsumedStats); ok {
+		r0 = returnFunc(ctx, overdueBefore, now)
+	} else {
+		r0 = ret.Get(0).(appinterfaces.PaidUnconsumedStats)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, time.Time, time.Time) error); ok {
+		r1 = returnFunc(ctx, overdueBefore, now)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MagicTokenRepository_CountPaidUnconsumedStats_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CountPaidUnconsumedStats'
+type MagicTokenRepository_CountPaidUnconsumedStats_Call struct {
+	*mock.Call
+}
+
+// CountPaidUnconsumedStats is a helper method to define mock.On call
+//   - ctx context.Context
+//   - overdueBefore time.Time
+//   - now time.Time
+func (_e *MagicTokenRepository_Expecter) CountPaidUnconsumedStats(ctx any, overdueBefore any, now any) *MagicTokenRepository_CountPaidUnconsumedStats_Call {
+	return &MagicTokenRepository_CountPaidUnconsumedStats_Call{Call: _e.mock.On("CountPaidUnconsumedStats", ctx, overdueBefore, now)}
+}
+
+func (_c *MagicTokenRepository_CountPaidUnconsumedStats_Call) Run(run func(ctx context.Context, overdueBefore time.Time, now time.Time)) *MagicTokenRepository_CountPaidUnconsumedStats_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 time.Time
+		if args[1] != nil {
+			arg1 = args[1].(time.Time)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MagicTokenRepository_CountPaidUnconsumedStats_Call) Return(paidUnconsumedStats appinterfaces.PaidUnconsumedStats, err error) *MagicTokenRepository_CountPaidUnconsumedStats_Call {
+	_c.Call.Return(paidUnconsumedStats, err)
+	return _c
+}
+
+func (_c *MagicTokenRepository_CountPaidUnconsumedStats_Call) RunAndReturn(run func(ctx context.Context, overdueBefore time.Time, now time.Time) (appinterfaces.PaidUnconsumedStats, error)) *MagicTokenRepository_CountPaidUnconsumedStats_Call {
 	_c.Call.Return(run)
 	return _c
 }
