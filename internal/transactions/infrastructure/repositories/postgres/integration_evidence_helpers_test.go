@@ -17,7 +17,7 @@ var (
 	seedIncomeLeafID  = uuid.MustParse("98455e74-b1f3-5b9c-a8d8-05db0cdb465d")
 )
 
-const seedEditorialVersion = int64(9)
+const seedEditorialVersion = int64(10)
 
 func expenseEvidence() valueobjects.CategoryWriteEvidence {
 	return valueobjects.ReconstituteEvidence(
