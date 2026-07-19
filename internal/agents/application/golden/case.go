@@ -84,6 +84,7 @@ type Case struct {
 	Origin             string
 	PriorTurns         []Turn
 	Input              string
+	WorkingMemory      string
 	ToolSubset         []string
 	ExpectedTool       string
 	ExpectedTools      []string

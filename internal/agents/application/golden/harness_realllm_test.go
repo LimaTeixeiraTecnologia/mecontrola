@@ -398,10 +398,46 @@ var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
 	"support_info": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("support_info", "Retorna as informações verbatim de contato do suporte (e-mail e prazo de resposta).", goldenBaseSchema(), sink)
 	},
+	goldenCategoryDetailWithDataKey: goldenCategoryDetailWithDataTool,
 	"category_detail": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("category_detail", "Detalha os lançamentos, planejado, gasto e disponível/excedente de uma categoria do orçamento no mês.", goldenMonthRefSchema("rootSlug"), sink)
 	},
 	"edit_treatment_name": goldenEditTreatmentNameTool,
+}
+
+const goldenCategoryDetailWithDataKey = "category_detail_com_dados"
+
+func goldenCategoryDetailWithDataTool(sink ToolCaptureSink) tool.ToolHandle {
+	in := llm.Schema{Name: "category_detail_input", Strict: false, Schema: goldenMonthRefSchema("rootSlug")}
+	out := llm.Schema{
+		Name:   "category_detail_output",
+		Strict: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"outcome":        map[string]any{"type": "string"},
+				"category":       map[string]any{"type": "string"},
+				"plannedCents":   map[string]any{"type": "integer"},
+				"spentCents":     map[string]any{"type": "integer"},
+				"availableCents": map[string]any{"type": "integer"},
+			},
+			"required":             []string{"outcome", "category", "plannedCents", "spentCents", "availableCents"},
+			"additionalProperties": false,
+		},
+	}
+	type output struct {
+		Outcome        string `json:"outcome"`
+		Category       string `json:"category"`
+		PlannedCents   int64  `json:"plannedCents"`
+		SpentCents     int64  `json:"spentCents"`
+		AvailableCents int64  `json:"availableCents"`
+	}
+	return tool.NewTool[map[string]any, output]("category_detail", "Detalha os lançamentos, planejado, gasto e disponível/excedente de uma categoria do orçamento no mês.", in, out,
+		func(_ context.Context, in map[string]any) (output, error) {
+			sink("category_detail", in)
+			return output{Outcome: "ok", Category: "geral", PlannedCents: 1387440, SpentCents: 25000, AvailableCents: 1362440}, nil
+		},
+	)
 }
 
 func goldenToolsFor(c Case, sink ToolCaptureSink) []tool.ToolHandle {
@@ -409,6 +445,9 @@ func goldenToolsFor(c Case, sink ToolCaptureSink) []tool.ToolHandle {
 	if len(names) == 0 {
 		names = make([]string, 0, len(goldenToolCatalog))
 		for name := range goldenToolCatalog {
+			if name == goldenCategoryDetailWithDataKey {
+				continue
+			}
 			names = append(names, name)
 		}
 	}
@@ -441,6 +480,9 @@ func (s *GoldenRealLLMSuite) executorFor(tools []tool.ToolHandle) AgentExecutor 
 	return func(ctx context.Context, messages []llm.Message) (agent.Result, error) {
 		obs := fake.NewProvider()
 		a := agentsapp.BuildMeControlaAgent(provider, tools, nil, obs, 0)
+		if len(messages) > 0 && messages[0].Role == "system" {
+			messages[0].Content = a.Instructions() + "\n\n" + messages[0].Content
+		}
 		ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		defer cancel()
 		return a.Execute(ctx, agent.Request{

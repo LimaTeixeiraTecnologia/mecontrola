@@ -22,8 +22,62 @@ func toneAdherentConfirmation(response string) bool {
 	return false
 }
 
+const treatmentNameWorkingMemory = "## Nome de Tratamento\n\nJJ\n\n## Objetivo Financeiro\n\nR$ 13.874,40"
+
+const treatmentNameAbsentWorkingMemory = "## Objetivo Financeiro\n\nR$ 13.874,40"
+
+func usesTreatmentNameOnce(name string) ResponsePropertyFunc {
+	return func(response string) bool {
+		return strings.Count(response, name) == 1
+	}
+}
+
+func neutralWithoutNameQuestion(response string) bool {
+	if strings.TrimSpace(response) == "" {
+		return false
+	}
+	lowered := strings.ToLower(response)
+	if strings.Contains(lowered, "te chamasse") || strings.Contains(lowered, "te chamar") {
+		return false
+	}
+	return !strings.Contains(response, "JJ")
+}
+
 func treatmentNameCases() []Case {
 	return []Case{
+		{
+			Name:             "usa nome vigente em saudacao livre",
+			Category:         CategoryTreatmentName,
+			Origin:           "synthetic",
+			WorkingMemory:    treatmentNameWorkingMemory,
+			Input:            "bom dia!",
+			ToolSubset:       []string{"category_detail"},
+			NoToolExpected:   true,
+			ResponseProperty: usesTreatmentNameOnce("JJ"),
+			ResponseDescribe: "resposta livre contém o nome de tratamento vigente exatamente uma vez",
+		},
+		{
+			Name:             "usa nome vigente em resposta de consulta",
+			Category:         CategoryTreatmentName,
+			Origin:           "synthetic",
+			WorkingMemory:    treatmentNameWorkingMemory,
+			Input:            "quanto já gastei esse mês?",
+			ToolSubset:       []string{"category_detail_com_dados"},
+			ExpectedTool:     "category_detail",
+			ResponseProperty: usesTreatmentNameOnce("JJ"),
+			ResponseDescribe: "resposta de consulta usa o nome de tratamento vigente exatamente uma vez",
+		},
+		{
+			Name:             "sem nome vigente nao inventa nem pergunta nome",
+			Category:         CategoryTreatmentName,
+			Origin:           "synthetic",
+			WorkingMemory:    treatmentNameAbsentWorkingMemory,
+			Input:            "bom dia!",
+			ToolSubset:       []string{"category_detail"},
+			NoToolExpected:   true,
+			ResponseProperty: neutralWithoutNameQuestion,
+			ResponseDescribe: "sem seção de nome na working memory, responde neutro sem perguntar como chamar e sem inventar nome",
+		},
 		{
 			Name:             "alterar nome de tratamento com nome informado",
 			Category:         CategoryTreatmentName,

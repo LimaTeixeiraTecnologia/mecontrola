@@ -25,6 +25,9 @@ func EvaluateCase(ctx context.Context, executor AgentExecutor, c Case) CaseOutco
 
 func EvaluateCaseWithCapture(ctx context.Context, executor AgentExecutor, c Case, capturedFn func() []CapturedToolCall) CaseOutcome {
 	var messages []llm.Message
+	if c.WorkingMemory != "" {
+		messages = append(messages, llm.Message{Role: "system", Content: "## Working Memory\n" + c.WorkingMemory})
+	}
 	for _, turn := range c.PriorTurns {
 		messages = append(messages, llm.Message{Role: "user", Content: turn.UserMessage})
 	}
