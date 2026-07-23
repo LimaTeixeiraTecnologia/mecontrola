@@ -11,7 +11,7 @@ ARG BUILD_MODE=build
 ARG VERSION=dev
 
 # ---- builder ----
-FROM golang:1.26.5-alpine@sha256:99e12cfb19b753915f9b9fdc5a99f1869a24a69d3a0955832d5702e7fa68f1be AS builder
+FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
 
 ARG VERSION
 ENV CGO_ENABLED=0 \
@@ -33,7 +33,7 @@ RUN go build \
 
 # ---- artifact provider ----
 # Usa binario pre-compilado fornecido pelo CI (bin/mecontrola).
-FROM alpine:3.20@sha256:c64c687cbea9300178b30c95835354e34c4e4febc4badfe27102879de0483b5e AS artifact-provider
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS artifact-provider
 WORKDIR /out
 COPY bin/mecontrola /out/mecontrola
 
@@ -45,11 +45,11 @@ FROM builder AS build-provider
 FROM ${BUILD_MODE}-provider AS selected
 
 # ---- tools ----
-FROM alpine:3.20@sha256:c64c687cbea9300178b30c95835354e34c4e4febc4badfe27102879de0483b5e AS tools
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS tools
 RUN apk add --no-cache busybox-static
 
 # ---- runtime ----
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:b669b9df05a88a085fefed6520c6d2268aabacf3008b149ddf877e752ae89400 AS runtime
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:aef9602f8710ec12bde19d593fed1f76c708531bb7aba205110f1029786ead7b AS runtime
 
 # UID 65532 = nonroot (vem embutido na imagem distroless:nonroot)
 USER nonroot
