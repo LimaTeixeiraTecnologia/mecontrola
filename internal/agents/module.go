@@ -248,6 +248,11 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 
 	onboardingDef := workflows.BuildOnboardingWorkflow(onboardingAgent, cardManager, budgetPlanner, workingMem, threadGateway, messageStore, deps.O11y)
 
+	brazilLoc, locErr := time.LoadLocation("America/Sao_Paulo")
+	if locErr != nil {
+		brazilLoc = time.UTC
+	}
+
 	runStore := agentpostgres.NewRunStore(deps.DB)
 	runtime := agent.NewAgentRuntime(registry, threadGateway, messageStore, workingMem, runStore, deps.O11y,
 		agent.WithWriteToolSet(
@@ -257,6 +262,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 			"edit_goal", "edit_treatment_name",
 			"delete_entry", "delete_recurrence", "update_recurrence",
 		),
+		agent.WithClockLocation(brazilLoc),
 	)
 	handleInbound := usecases.NewHandleInbound(runtime, deps.O11y)
 

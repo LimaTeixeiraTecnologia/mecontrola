@@ -131,3 +131,48 @@ func (s *RuntimeTestSuite) TestExecute_InjectsWorkingMemoryIntoSystemPrompt() {
 	s.Contains(system, "User prefers BRL and weekly summaries.")
 	s.True(strings.Contains(system, "Be helpful"))
 }
+
+func (s *RuntimeTestSuite) TestExecute_InjectsCurrentDateTimeIntoSystemPrompt() {
+	var captured llm.Request
+	provider := llmmocks.NewProvider(s.T())
+	provider.EXPECT().
+		Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+		Run(func(_ context.Context, req llm.Request) { captured = req }).
+		Return(llm.Response{Content: "world"}, nil).
+		Once()
+
+	registry := NewAgentRegistry()
+	registry.Register(NewAgent("agent-1", "Be helpful", provider, s.obs))
+
+	loc, locErr := time.LoadLocation("America/Sao_Paulo")
+	s.Require().NoError(locErr)
+
+	rt := NewAgentRuntime(
+		registry,
+		&fakeThreadGateway{thread: memory.Thread{ID: uuid.New(), ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		&fakeMessageStore{},
+		&fakeWorkingMemory{},
+		&fakeRunStore{},
+		s.obs,
+		WithClockLocation(loc),
+	)
+
+	_, err := rt.Execute(s.ctx, InboundRequest{
+		AgentID:    "agent-1",
+		ResourceID: "res-1",
+		ThreadID:   "thr-1",
+		Message:    "hello",
+		MessageID:  "msg-1",
+	})
+	s.NoError(err)
+
+	var system string
+	for _, m := range captured.Messages {
+		if m.Role == "system" {
+			system = m.Content
+		}
+	}
+	expected := formatCurrentDateTime(time.Now().In(loc))
+	s.Contains(system, "## Data e Hora Atuais")
+	s.Contains(system, expected)
+}

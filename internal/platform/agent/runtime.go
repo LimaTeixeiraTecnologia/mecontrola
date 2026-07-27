@@ -32,6 +32,7 @@ type agentRuntime struct {
 	o11y         observability.Observability
 	metrics      runtimeMetrics
 	writeToolSet map[string]struct{}
+	clockLoc     *time.Location
 }
 
 type RuntimeOption func(*agentRuntime)
@@ -53,6 +54,14 @@ func WithWriteToolSet(names ...string) RuntimeOption {
 	}
 }
 
+func WithClockLocation(loc *time.Location) RuntimeOption {
+	return func(r *agentRuntime) {
+		if loc != nil {
+			r.clockLoc = loc
+		}
+	}
+}
+
 func NewAgentRuntime(
 	agents AgentRegistry,
 	threads memory.ThreadGateway,
@@ -70,6 +79,7 @@ func NewAgentRuntime(
 		runs:       runs,
 		hooks:      NoopHooks{},
 		o11y:       o11y,
+		clockLoc:   time.UTC,
 		metrics: runtimeMetrics{
 			runsTotal:          o11y.Metrics().Counter("agent_runs_total", "Total agent runs", "1"),
 			runDuration:        o11y.Metrics().Histogram("agent_run_duration_seconds", "Agent run duration", "s"),
@@ -301,14 +311,28 @@ func (r *agentRuntime) writeToolGuardFailed(calls []ToolCallRecord) bool {
 	return wroteAtLeastOne
 }
 
+var weekdayNamesPtBR = map[time.Weekday]string{
+	time.Sunday:    "domingo",
+	time.Monday:    "segunda-feira",
+	time.Tuesday:   "terça-feira",
+	time.Wednesday: "quarta-feira",
+	time.Thursday:  "quinta-feira",
+	time.Friday:    "sexta-feira",
+	time.Saturday:  "sábado",
+}
+
+func formatCurrentDateTime(now time.Time) string {
+	return fmt.Sprintf("Agora são %s, %s.", now.Format("15:04 de 02/01/2006"), weekdayNamesPtBR[now.Weekday()])
+}
+
 func (r *agentRuntime) buildMessages(ctx context.Context, a Agent, threadPK uuid.UUID, in InboundRequest) ([]llm.Message, error) {
 	var msgs []llm.Message
 
 	instructions := a.Instructions()
+	systemContent := instructions + "\n\n## Data e Hora Atuais\n" + formatCurrentDateTime(time.Now().In(r.clockLoc))
 	wm, _ := r.workingMem.Get(ctx, in.ResourceID)
-	systemContent := instructions
 	if wm != "" {
-		systemContent = instructions + "\n\n## Working Memory\n" + wm
+		systemContent += "\n\n## Working Memory\n" + wm
 	}
 	if systemContent != "" {
 		msgs = append(msgs, llm.Message{Role: "system", Content: systemContent})
