@@ -97,7 +97,7 @@ func (uc *CreateRecurringTemplate) Execute(ctx context.Context, raw input.RawCre
 		cmd.Description,
 		cmd.CategoryID,
 		cmd.SubcategoryID,
-		catSnap.Name, snapSubName(catSubID, catSnap),
+		snapCategoryName(catSubID, catSnap), snapSubcategoryName(catSubID, catSnap),
 		evidence,
 		cmd.Frequency,
 		cmd.DayOfMonth,

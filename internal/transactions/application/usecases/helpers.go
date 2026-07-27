@@ -78,12 +78,16 @@ func optSubcategoryUUID(subID option.Option[valueobjects.SubcategoryID]) *uuid.U
 	return nil
 }
 
-func snapSubName(subID *uuid.UUID, snap interfaces.CategorySnapshot) string {
+func snapCategoryName(subID *uuid.UUID, snap interfaces.CategorySnapshot) string {
+	if subID != nil && snap.ParentName != "" {
+		return snap.ParentName
+	}
+	return snap.Name
+}
+
+func snapSubcategoryName(subID *uuid.UUID, snap interfaces.CategorySnapshot) string {
 	if subID == nil {
 		return ""
-	}
-	if snap.ParentName != "" {
-		return snap.ParentName
 	}
 	return snap.Name
 }

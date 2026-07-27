@@ -138,7 +138,7 @@ func (uc *UpdateTransaction) persist(
 		observability.Int("installments_total", len(decision.Items)),
 		observability.Int("ref_months_affected_count", refMonthsAffectedCount(decision.Event)),
 	)
-	decision.Transaction.SetCategorySnapshots(catSnap.Name, snapSubName(catSubID, catSnap))
+	decision.Transaction.SetCategorySnapshots(snapCategoryName(catSubID, catSnap), snapSubcategoryName(catSubID, catSnap))
 
 	if updateErr := repo.UpdateWithVersion(ctx, &decision.Transaction, cmd.Version); updateErr != nil {
 		return entities.Transaction{}, fmt.Errorf("transactions/update_transaction: atualizar: %w", updateErr)

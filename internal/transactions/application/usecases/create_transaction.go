@@ -138,7 +138,7 @@ func (uc *CreateTransaction) prepareDecision(
 
 	itemIDs := newInvoiceItemIDs(cmd.PaymentMethod, cmd.Installments)
 	decision := uc.workflow.DecideCreate(cmd, snap, evidence, txID, eventID, itemIDs, now)
-	decision.Transaction.SetCategorySnapshots(catSnap.Name, snapSubName(catSubID, catSnap))
+	decision.Transaction.SetCategorySnapshots(snapCategoryName(catSubID, catSnap), snapSubcategoryName(catSubID, catSnap))
 	if raw.OriginWamid != "" {
 		decision.Transaction.SetOrigin(raw.OriginWamid, raw.OriginItemSeq, raw.OriginOperation)
 	}

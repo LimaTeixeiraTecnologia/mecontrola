@@ -106,7 +106,7 @@ func WriteFailure() string {
 }
 
 func CardPrompt() string {
-	return "Qual 💳 foi utilizado?"
+	return "Qual cartão foi utilizado?"
 }
 
 func DatePrompt() string {

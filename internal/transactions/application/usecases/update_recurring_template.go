@@ -96,7 +96,7 @@ func (uc *UpdateRecurringTemplate) Execute(ctx context.Context, templateID strin
 		current.Update(
 			cmd.Direction, cmd.PaymentMethod, cmd.CardID,
 			cmd.Amount, cmd.Description, cmd.CategoryID, cmd.SubcategoryID,
-			catSnap.Name, snapSubName(catSubID, catSnap),
+			snapCategoryName(catSubID, catSnap), snapSubcategoryName(catSubID, catSnap),
 			evidence,
 			cmd.Frequency, cmd.DayOfMonth, cmd.InstallmentsTotal,
 			cmd.StartedAt, cmd.EndedAt, now,
