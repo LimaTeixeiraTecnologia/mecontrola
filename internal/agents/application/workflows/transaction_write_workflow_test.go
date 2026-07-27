@@ -654,3 +654,32 @@ func (s *TransactionWriteWorkflowSuite) TestJourney_RootListing_LeafChoice_Payme
 	s.Equal(txID, final.State.ResourceID)
 	s.Equal(int64(9), final.State.CategoryVersion)
 }
+
+func TestBuildRawUpdateForWrite_PreservesCardAndInstallmentsForCreditCard(t *testing.T) {
+	targetID := uuid.New()
+	cardID := uuid.New()
+	state := TransactionWriteState{
+		Kind:                ifaces.CategoryKindExpense,
+		AmountCents:         55000,
+		TargetTransactionID: &targetID,
+		TargetVersion:       1,
+		TargetPaymentMethod: "credit_card",
+		TargetCardID:        &cardID,
+		TargetInstallments:  1,
+		Candidates: []PendingCategoryCandidate{
+			{RootCategoryID: uuid.New(), SubcategoryID: uuid.New()},
+		},
+	}
+
+	raw := buildRawUpdateForWrite(state)
+
+	if raw.PaymentMethod != "credit_card" {
+		t.Fatalf("PaymentMethod = %q; want credit_card", raw.PaymentMethod)
+	}
+	if raw.CardID == nil || *raw.CardID != cardID {
+		t.Fatalf("CardID = %v; want %v", raw.CardID, cardID)
+	}
+	if raw.Installments != 1 {
+		t.Fatalf("Installments = %d; want 1", raw.Installments)
+	}
+}

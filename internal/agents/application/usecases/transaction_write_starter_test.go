@@ -236,6 +236,38 @@ func (s *TransactionWriteStarterSuite) TestEditEntry_WithTargetID_KeepsPreviousV
 	s.False(s.engine.lastState.EditPaymentMethodChanged)
 }
 
+func (s *TransactionWriteStarterSuite) TestEditEntry_WithTargetID_PreservesCardAndInstallmentsForCreditCard() {
+	targetID := uuid.New()
+	cardID := uuid.New()
+	s.ledger.EXPECT().
+		GetTransaction(mock.Anything, targetID.String()).
+		Return(interfaces.Entry{
+			ID:                targetID.String(),
+			Direction:         "outcome",
+			CategoryID:        s.catRootID.String(),
+			PaymentMethod:     "credit_card",
+			AmountCents:       50000,
+			Description:       "mercado",
+			CardID:            &cardID,
+			InstallmentsTotal: 1,
+			Version:           1,
+		}, nil).Once()
+
+	result, err := s.uc.EditEntry(s.ctx, EditEntryCommand{
+		UserID:              s.userID,
+		ThreadID:            "thr-008",
+		WAMID:               "wamid-008",
+		TargetTransactionID: targetID,
+		AmountCents:         55000,
+	})
+
+	s.Require().NoError(err)
+	s.Equal(agent.ToolOutcomeClarify, result.Outcome)
+	s.Require().NotNil(s.engine.lastState.TargetCardID)
+	s.Equal(cardID, *s.engine.lastState.TargetCardID)
+	s.Equal(1, s.engine.lastState.TargetInstallments)
+}
+
 func (s *TransactionWriteStarterSuite) TestEditEntry_WithoutTargetID_UsesSearchCriteria() {
 	result, err := s.uc.EditEntry(s.ctx, EditEntryCommand{
 		UserID:            s.userID,

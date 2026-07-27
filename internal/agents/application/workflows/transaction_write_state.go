@@ -171,6 +171,8 @@ type TransactionEditCandidate struct {
 	PaymentMethod           string     `json:"paymentMethod"`
 	OccurredAt              string     `json:"occurredAt"`
 	Version                 int64      `json:"version"`
+	CardID                  *uuid.UUID `json:"cardId"`
+	InstallmentsTotal       int        `json:"installmentsTotal"`
 }
 
 type TransactionWriteState struct {
@@ -206,6 +208,8 @@ type TransactionWriteState struct {
 	TargetPaymentMethod   string                     `json:"targetPaymentMethod"`
 	TargetDescription     string                     `json:"targetDescription"`
 	TargetOccurredAt      string                     `json:"targetOccurredAt"`
+	TargetCardID          *uuid.UUID                 `json:"targetCardId"`
+	TargetInstallments    int                        `json:"targetInstallments"`
 	EditSearchAmountCents int64                      `json:"editSearchAmountCents"`
 	EditSearchTerm        string                     `json:"editSearchTerm"`
 	EditCandidates        []TransactionEditCandidate `json:"editCandidates"`

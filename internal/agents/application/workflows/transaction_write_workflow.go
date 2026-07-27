@@ -187,6 +187,8 @@ func transactionEditCandidateFromEntry(e interfaces.Entry) TransactionEditCandid
 		PaymentMethod:           e.PaymentMethod,
 		OccurredAt:              e.OccurredAt.Format("2006-01-02"),
 		Version:                 e.Version,
+		CardID:                  e.CardID,
+		InstallmentsTotal:       e.InstallmentsTotal,
 	}
 }
 
@@ -234,6 +236,8 @@ func promoteEditCandidateToConfirmation(state TransactionWriteState, candidate T
 	state.TargetPaymentMethod = candidate.PaymentMethod
 	state.TargetDescription = candidate.Description
 	state.TargetOccurredAt = candidate.OccurredAt
+	state.TargetCardID = candidate.CardID
+	state.TargetInstallments = candidate.InstallmentsTotal
 
 	state.EditPreviousAmountCents = candidate.AmountCents
 	label := candidate.SubcategoryNameSnapshot
@@ -841,6 +845,8 @@ func buildRawUpdateForWrite(state TransactionWriteState) interfaces.RawUpdateTra
 		Description:         state.Description,
 		CategoryID:          catID,
 		SubcategoryID:       sub,
+		CardID:              state.TargetCardID,
+		Installments:        state.TargetInstallments,
 		OccurredAt:          state.OccurredAt,
 		Version:             state.TargetVersion,
 		CategorySource:      transactionCategorySrcUser,

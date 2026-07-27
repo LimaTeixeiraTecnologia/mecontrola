@@ -129,6 +129,8 @@ func (a *transactionsLedgerAdapter) UpdateTransaction(ctx context.Context, in ag
 		Description:         in.Description,
 		CategoryID:          in.CategoryID,
 		SubcategoryID:       in.SubcategoryID,
+		CardID:              in.CardID,
+		Installments:        in.Installments,
 		OccurredAt:          in.OccurredAt,
 		Version:             in.Version,
 		CategorySource:      in.CategorySource,
@@ -226,29 +228,7 @@ func (a *transactionsLedgerAdapter) GetTransaction(ctx context.Context, txID str
 		span.RecordError(err)
 		return agentsifaces.Entry{}, fmt.Errorf("agents/binding/transactions_ledger: obter transação: %w", err)
 	}
-	var sub *string
-	if out.SubcategoryID != nil {
-		s := out.SubcategoryID.String()
-		sub = &s
-	}
-	return agentsifaces.Entry{
-		Kind:                    agentsifaces.EntryKindTransaction,
-		ID:                      out.ID.String(),
-		UserID:                  out.UserID.String(),
-		Direction:               out.Direction,
-		PaymentMethod:           out.PaymentMethod,
-		AmountCents:             out.AmountCents,
-		Description:             out.Description,
-		CategoryID:              out.CategoryID.String(),
-		SubcategoryID:           sub,
-		CategoryNameSnapshot:    out.CategoryNameSnapshot,
-		SubcategoryNameSnapshot: out.SubcategoryNameSnapshot,
-		RefMonth:                out.RefMonth,
-		OccurredAt:              out.OccurredAt,
-		Version:                 out.Version,
-		CreatedAt:               out.CreatedAt,
-		UpdatedAt:               out.UpdatedAt,
-	}, nil
+	return entryFromTransactionOutput(out), nil
 }
 
 func (a *transactionsLedgerAdapter) GetCardInvoice(ctx context.Context, cardID uuid.UUID, refMonth string) (agentsifaces.CardInvoice, error) {
@@ -359,6 +339,8 @@ func entryFromTransactionOutput(tx txoutput.Transaction) agentsifaces.Entry {
 		RefMonth:                tx.RefMonth,
 		OccurredAt:              tx.OccurredAt,
 		Version:                 tx.Version,
+		CardID:                  tx.CardID,
+		InstallmentsTotal:       tx.InstallmentsTotal,
 		CreatedAt:               tx.CreatedAt,
 		UpdatedAt:               tx.UpdatedAt,
 	}

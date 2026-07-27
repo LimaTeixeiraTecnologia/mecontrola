@@ -44,6 +44,8 @@ type RawUpdateTransaction struct {
 	Description         string
 	CategoryID          uuid.UUID
 	SubcategoryID       *uuid.UUID
+	CardID              *uuid.UUID
+	Installments        int
 	OccurredAt          string
 	Version             int64
 	CategorySource      string
@@ -199,6 +201,8 @@ type Entry struct {
 	RefMonth                string
 	OccurredAt              time.Time
 	Version                 int64
+	CardID                  *uuid.UUID
+	InstallmentsTotal       int
 	CreatedAt               time.Time
 	UpdatedAt               time.Time
 }

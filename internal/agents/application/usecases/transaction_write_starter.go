@@ -258,6 +258,8 @@ func populateEditTargetSnapshot(state *workflows.TransactionWriteState, targetID
 	state.TargetPaymentMethod = current.PaymentMethod
 	state.TargetDescription = current.Description
 	state.TargetOccurredAt = current.OccurredAt.Format("2006-01-02")
+	state.TargetCardID = current.CardID
+	state.TargetInstallments = current.InstallmentsTotal
 	return nil
 }
 
