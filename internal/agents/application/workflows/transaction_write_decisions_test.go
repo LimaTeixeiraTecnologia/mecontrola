@@ -421,6 +421,8 @@ func TestDecideTransactionCategoryChoice_NomeDeFolhaEPlural(t *testing.T) {
 		{text: "supermercados", action: CategoryChoiceActionSelected, leafID: testLeafSupermercado},
 		{text: "custos fixos", action: CategoryChoiceActionAmbiguous},
 		{text: "nada a ver", action: CategoryChoiceActionReprompt},
+		{text: "*Custo Fixo > Combustível*", action: CategoryChoiceActionSelected, leafID: testLeafCombustivel},
+		{text: "*combustível*", action: CategoryChoiceActionSelected, leafID: testLeafCombustivel},
 	}
 	for _, scenario := range scenarios {
 		t.Run(scenario.text, func(t *testing.T) {

@@ -362,6 +362,7 @@ func candidatesShareRoot(candidates []PendingCategoryCandidate) (string, bool) {
 
 func normalizeText(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.NewReplacer("*", "", "_", "", "`", "").Replace(s)
 	result := norm.NFD.String(s)
 	var b strings.Builder
 	for _, r := range result {
@@ -370,5 +371,5 @@ func normalizeText(s string) string {
 		}
 		b.WriteRune(r)
 	}
-	return b.String()
+	return strings.TrimSpace(b.String())
 }
