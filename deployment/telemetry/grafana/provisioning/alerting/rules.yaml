@@ -781,43 +781,6 @@ groups:
                   evaluator: { type: gt, params: [3600] }
 
   - orgId: 1
-    name: versao
-    folder: MeControla Alerts
-    interval: 1h
-    rules:
-      - uid: mc-version-skew
-        title: Drift de versao em producao
-        condition: C
-        for: 0m
-        noDataState: NoData
-        execErrState: Error
-        labels: { severity: warning }
-        annotations:
-          summary: "Uma unica versao de mecontrola-server observada nas ultimas 25 horas."
-          description: "Nenhuma nova service_version apareceu em target_info nas ultimas 25h: producao parada na mesma versao (sem redeploy). Verifique drift entre main e a imagem em execucao. Runbook: deployment/runbooks/deploy.md"
-        data:
-          - refId: A
-            relativeTimeRange: { from: 93600, to: 0 }
-            datasourceUid: prometheus
-            model:
-              refId: A
-              editorMode: code
-              instant: true
-              expr: 'count(count by (service_version) (last_over_time(target_info{job="mecontrola-api"}[25h])))'
-          - refId: C
-            datasourceUid: __expr__
-            model:
-              refId: C
-              type: threshold
-              expression: A
-              conditions:
-                - type: query
-                  reducer: { type: last }
-                  operator: { type: and }
-                  query: { params: [C] }
-                  evaluator: { type: lt, params: [2] }
-
-  - orgId: 1
     name: disco
     folder: MeControla Alerts
     interval: 1m
