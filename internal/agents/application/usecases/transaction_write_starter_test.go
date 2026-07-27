@@ -173,13 +173,15 @@ func (s *TransactionWriteStarterSuite) TestEditEntry_WithTargetID_FetchesCurrent
 	s.ledger.EXPECT().
 		GetTransaction(mock.Anything, targetID.String()).
 		Return(interfaces.Entry{
-			ID:            targetID.String(),
-			Direction:     "outcome",
-			CategoryID:    s.catRootID.String(),
-			PaymentMethod: "pix",
-			AmountCents:   9000,
-			Description:   "mercado",
-			Version:       3,
+			ID:                      targetID.String(),
+			Direction:               "outcome",
+			CategoryID:              s.catRootID.String(),
+			PaymentMethod:           "pix",
+			AmountCents:             9000,
+			Description:             "mercado",
+			CategoryNameSnapshot:    "Custo Fixo",
+			SubcategoryNameSnapshot: "Supermercado",
+			Version:                 3,
 		}, nil).Once()
 
 	result, err := s.uc.EditEntry(s.ctx, EditEntryCommand{
@@ -196,6 +198,42 @@ func (s *TransactionWriteStarterSuite) TestEditEntry_WithTargetID_FetchesCurrent
 	s.Require().NotNil(s.engine.lastState.TargetTransactionID)
 	s.Equal(targetID, *s.engine.lastState.TargetTransactionID)
 	s.Equal(int64(3), s.engine.lastState.TargetVersion)
+	s.Equal(int64(9500), s.engine.lastState.AmountCents)
+	s.Equal(int64(9000), s.engine.lastState.EditPreviousAmountCents)
+	s.Equal("Supermercado", s.engine.lastState.EditPreviousCategory)
+	s.Equal("pix", s.engine.lastState.EditPreviousPayment)
+}
+
+func (s *TransactionWriteStarterSuite) TestEditEntry_WithTargetID_KeepsPreviousValuesWhenOnlyCategoryChanges() {
+	targetID := uuid.New()
+	s.ledger.EXPECT().
+		GetTransaction(mock.Anything, targetID.String()).
+		Return(interfaces.Entry{
+			ID:                   targetID.String(),
+			Direction:            "outcome",
+			CategoryID:           s.catRootID.String(),
+			PaymentMethod:        "debit_card",
+			AmountCents:          3000,
+			Description:          "cinema",
+			CategoryNameSnapshot: "Prazeres",
+			Version:              1,
+		}, nil).Once()
+
+	result, err := s.uc.EditEntry(s.ctx, EditEntryCommand{
+		UserID:              s.userID,
+		ThreadID:            "thr-006",
+		WAMID:               "wamid-006",
+		TargetTransactionID: targetID,
+	})
+
+	s.Require().NoError(err)
+	s.Equal(agent.ToolOutcomeClarify, result.Outcome)
+	s.Equal(int64(3000), s.engine.lastState.AmountCents)
+	s.Equal("cinema", s.engine.lastState.Description)
+	s.Equal(int64(3000), s.engine.lastState.EditPreviousAmountCents)
+	s.Equal("Prazeres", s.engine.lastState.EditPreviousCategory)
+	s.Equal("débito", s.engine.lastState.EditPreviousPayment)
+	s.False(s.engine.lastState.EditPaymentMethodChanged)
 }
 
 func (s *TransactionWriteStarterSuite) TestEditEntry_WithoutTargetID_UsesSearchCriteria() {

@@ -305,7 +305,7 @@ var paymentMethodLabels = map[string]string{
 	"cheque":           "cheque",
 }
 
-func formatPaymentLabel(method string) string {
+func FormatPaymentLabel(method string) string {
 	if label, ok := paymentMethodLabels[method]; ok {
 		return label
 	}

@@ -241,7 +241,7 @@ func promoteEditCandidateToConfirmation(state TransactionWriteState, candidate T
 		label = candidate.CategoryNameSnapshot
 	}
 	state.EditPreviousCategory = label
-	state.EditPreviousPayment = formatPaymentLabel(candidate.PaymentMethod)
+	state.EditPreviousPayment = FormatPaymentLabel(candidate.PaymentMethod)
 
 	if state.AmountCents == 0 {
 		state.AmountCents = candidate.AmountCents
@@ -944,7 +944,7 @@ func confirmSummaryRecurrence(state TransactionWriteState) string {
 }
 
 func confirmSummaryEdit(state TransactionWriteState) string {
-	newPayment := formatPaymentLabel(state.PaymentMethod)
+	newPayment := FormatPaymentLabel(state.PaymentMethod)
 	if newPayment == "" {
 		newPayment = state.EditPreviousPayment
 	}
@@ -966,7 +966,7 @@ func confirmSummaryExpense(state TransactionWriteState) string {
 	return messages.ExpenseConfirmationBlock(messages.ConfirmationView{
 		AmountFormatted: money.FromCents(state.AmountCents).BRL(),
 		DateFormatted:   formatConfirmDate(state.OccurredAt, time.Now().UTC()),
-		PaymentMethod:   formatPaymentLabel(state.PaymentMethod),
+		PaymentMethod:   FormatPaymentLabel(state.PaymentMethod),
 		Category:        categoryPathFor(state),
 	})
 }

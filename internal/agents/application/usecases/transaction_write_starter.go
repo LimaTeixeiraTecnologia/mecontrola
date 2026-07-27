@@ -220,27 +220,11 @@ func (uc *TransactionWriteStarter) populateEditTarget(ctx context.Context, state
 	}
 	state.Kind = kind
 
-	txID := cmd.TargetTransactionID
-	state.TargetTransactionID = &txID
-	state.TargetVersion = current.Version
-
-	rootID, subID, idErr := currentCategoryIDs(current)
-	if idErr != nil {
-		return idErr
+	if err := populateEditTargetSnapshot(state, cmd.TargetTransactionID, current); err != nil {
+		return err
 	}
-	state.TargetCategoryID = rootID
-	if current.SubcategoryID != nil {
-		sub := subID
-		state.TargetSubcategoryID = &sub
-	}
-	state.TargetPaymentMethod = current.PaymentMethod
-	state.TargetDescription = current.Description
-	state.TargetOccurredAt = current.OccurredAt.Format("2006-01-02")
-
-	state.AmountCents = cmd.AmountCents
-	state.Description = cmd.Description
-	state.OccurredAt = cmd.OccurredAt
-	state.PaymentMethod = cmd.PaymentMethod
+	populateEditPreviousValues(state, current)
+	populateEditNewValues(state, cmd, current)
 
 	if cmd.SubcategoryID != uuid.Nil {
 		candidates, catVersion, classifyErr := uc.resolveExplicit(ctx, kind, cmd.CategoryID, cmd.SubcategoryID, cmd.CategoryVersion)
@@ -252,6 +236,54 @@ func (uc *TransactionWriteStarter) populateEditTarget(ctx context.Context, state
 	}
 
 	return nil
+}
+
+func populateEditTargetSnapshot(state *workflows.TransactionWriteState, targetID uuid.UUID, current interfaces.Entry) error {
+	rootID, subID, idErr := currentCategoryIDs(current)
+	if idErr != nil {
+		return idErr
+	}
+
+	state.TargetTransactionID = &targetID
+	state.TargetVersion = current.Version
+	state.TargetCategoryID = rootID
+	if current.SubcategoryID != nil {
+		sub := subID
+		state.TargetSubcategoryID = &sub
+	}
+	state.TargetPaymentMethod = current.PaymentMethod
+	state.TargetDescription = current.Description
+	state.TargetOccurredAt = current.OccurredAt.Format("2006-01-02")
+	return nil
+}
+
+func populateEditPreviousValues(state *workflows.TransactionWriteState, current interfaces.Entry) {
+	state.EditPreviousAmountCents = current.AmountCents
+	previousCategory := current.SubcategoryNameSnapshot
+	if previousCategory == "" {
+		previousCategory = current.CategoryNameSnapshot
+	}
+	state.EditPreviousCategory = previousCategory
+	state.EditPreviousPayment = workflows.FormatPaymentLabel(current.PaymentMethod)
+}
+
+func populateEditNewValues(state *workflows.TransactionWriteState, cmd EditEntryCommand, current interfaces.Entry) {
+	state.AmountCents = cmd.AmountCents
+	if state.AmountCents == 0 {
+		state.AmountCents = current.AmountCents
+	}
+	state.Description = cmd.Description
+	if state.Description == "" {
+		state.Description = current.Description
+	}
+	state.OccurredAt = cmd.OccurredAt
+	if state.OccurredAt == "" {
+		state.OccurredAt = state.TargetOccurredAt
+	}
+	state.PaymentMethod = cmd.PaymentMethod
+	if cmd.PaymentMethod != "" && cmd.PaymentMethod != current.PaymentMethod {
+		state.EditPaymentMethodChanged = true
+	}
 }
 
 func (uc *TransactionWriteStarter) start(
