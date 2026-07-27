@@ -203,6 +203,10 @@ func (uc *TransactionWriteStarter) EditEntry(ctx context.Context, cmd EditEntryC
 	} else {
 		state.EditSearchAmountCents = cmd.SearchAmountCents
 		state.EditSearchTerm = cmd.SearchTerm
+		state.AmountCents = cmd.AmountCents
+		state.Description = cmd.Description
+		state.OccurredAt = cmd.OccurredAt
+		state.PaymentMethod = cmd.PaymentMethod
 	}
 
 	return uc.start(ctx, span, cmd.UserID, cmd.ThreadID, state)

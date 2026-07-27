@@ -698,7 +698,7 @@ func TestBuildEditEntryTool_MalformedEntryID_FallsBackToSearch(t *testing.T) {
 	editor := &fakeEntryEditor{result: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify}}
 	handle := BuildEditEntryTool(editor)
 
-	argsJSON, _ := json.Marshal(EditEntryInput{EntryID: "1", AmountCents: 3000, Description: "cinema"})
+	argsJSON, _ := json.Marshal(EditEntryInput{EntryID: "1", SearchAmountCents: 3000, SearchTerm: "cinema", AmountCents: 3500})
 	out, _, err := handle.Invoke(identityCtx("wamid-edit-002", 0), argsJSON)
 	require.NoError(t, err)
 
@@ -708,6 +708,7 @@ func TestBuildEditEntryTool_MalformedEntryID_FallsBackToSearch(t *testing.T) {
 	assert.Equal(t, uuid.Nil, editor.lastCmd.TargetTransactionID)
 	assert.Equal(t, int64(3000), editor.lastCmd.SearchAmountCents)
 	assert.Equal(t, "cinema", editor.lastCmd.SearchTerm)
+	assert.Equal(t, int64(3500), editor.lastCmd.AmountCents)
 }
 
 func TestBuildDeleteEntryTool(t *testing.T) {

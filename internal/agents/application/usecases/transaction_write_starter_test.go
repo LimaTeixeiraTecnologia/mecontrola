@@ -252,6 +252,24 @@ func (s *TransactionWriteStarterSuite) TestEditEntry_WithoutTargetID_UsesSearchC
 	s.Equal("mercado", s.engine.lastState.EditSearchTerm)
 }
 
+func (s *TransactionWriteStarterSuite) TestEditEntry_WithoutTargetID_CarriesNewValueAlongsideSearchCriteria() {
+	result, err := s.uc.EditEntry(s.ctx, EditEntryCommand{
+		UserID:        s.userID,
+		ThreadID:      "thr-007",
+		WAMID:         "wamid-007",
+		SearchTerm:    "cinema",
+		AmountCents:   3000,
+		PaymentMethod: "pix",
+	})
+
+	s.Require().NoError(err)
+	s.Equal(agent.ToolOutcomeClarify, result.Outcome)
+	s.Nil(s.engine.lastState.TargetTransactionID)
+	s.Equal("cinema", s.engine.lastState.EditSearchTerm)
+	s.Equal(int64(3000), s.engine.lastState.AmountCents)
+	s.Equal("pix", s.engine.lastState.PaymentMethod)
+}
+
 func (s *TransactionWriteStarterSuite) TestRegisterExpense_ExplicitCategory_CarriesManualEvidenceContract() {
 	s.categories.EXPECT().
 		ResolveForWrite(mock.Anything, mock.Anything).

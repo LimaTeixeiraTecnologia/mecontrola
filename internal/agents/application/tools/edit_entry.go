@@ -13,14 +13,16 @@ import (
 )
 
 type EditEntryInput struct {
-	EntryID         string `json:"entryId,omitempty"`
-	AmountCents     int64  `json:"amountCents,omitempty"`
-	Description     string `json:"description,omitempty"`
-	OccurredAt      string `json:"occurredAt,omitempty"`
-	CategoryID      string `json:"categoryId,omitempty"`
-	SubcategoryID   string `json:"subcategoryId,omitempty"`
-	CategoryVersion int64  `json:"categoryVersion,omitempty"`
-	PaymentMethod   string `json:"paymentMethod,omitempty"`
+	EntryID           string `json:"entryId,omitempty"`
+	AmountCents       int64  `json:"amountCents,omitempty"`
+	Description       string `json:"description,omitempty"`
+	OccurredAt        string `json:"occurredAt,omitempty"`
+	CategoryID        string `json:"categoryId,omitempty"`
+	SubcategoryID     string `json:"subcategoryId,omitempty"`
+	CategoryVersion   int64  `json:"categoryVersion,omitempty"`
+	PaymentMethod     string `json:"paymentMethod,omitempty"`
+	SearchAmountCents int64  `json:"searchAmountCents,omitempty"`
+	SearchTerm        string `json:"searchTerm,omitempty"`
 }
 
 type EditEntryOutput struct {
@@ -37,14 +39,16 @@ func BuildEditEntryTool(editor entryEditor) tool.ToolHandle {
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"entryId":         map[string]any{"type": "string", "description": "Id do lançamento a editar, quando já conhecido (ex.: retornado por search_transactions). Se ausente, amountCents/description são usados para localizar o lançamento."},
-				"amountCents":     map[string]any{"type": "integer", "description": "Novo valor (com entryId) ou valor de busca (sem entryId)."},
-				"description":     map[string]any{"type": "string", "description": "Nova descrição (com entryId) ou termo de busca (sem entryId)."},
-				"occurredAt":      map[string]any{"type": "string"},
-				"categoryId":      map[string]any{"type": "string"},
-				"subcategoryId":   map[string]any{"type": "string"},
-				"categoryVersion": map[string]any{"type": "integer"},
-				"paymentMethod":   map[string]any{"type": "string", "enum": []string{"pix", "debit_card", "debit_in_account", "cash", "boleto", "ted", "credit_card", "doc", "vale_refeicao", "vale_alimentacao", "transferencia", "apple_pay", "google_pay", "picpay", "mercado_pago", "cheque"}},
+				"entryId":           map[string]any{"type": "string", "description": "Id do lançamento a editar, quando já conhecido (ex.: retornado por search_transactions). Se ausente, searchAmountCents/searchTerm localizam o lançamento."},
+				"amountCents":       map[string]any{"type": "integer", "description": "Valor NOVO que o lançamento deve passar a ter. Preencha apenas se o usuário quiser mudar o valor; omita para manter o valor atual."},
+				"description":       map[string]any{"type": "string", "description": "Descrição NOVA que o lançamento deve passar a ter. Preencha apenas se o usuário quiser mudar a descrição; omita para manter a atual."},
+				"occurredAt":        map[string]any{"type": "string"},
+				"categoryId":        map[string]any{"type": "string"},
+				"subcategoryId":     map[string]any{"type": "string"},
+				"categoryVersion":   map[string]any{"type": "integer"},
+				"paymentMethod":     map[string]any{"type": "string", "enum": []string{"pix", "debit_card", "debit_in_account", "cash", "boleto", "ted", "credit_card", "doc", "vale_refeicao", "vale_alimentacao", "transferencia", "apple_pay", "google_pay", "picpay", "mercado_pago", "cheque"}},
+				"searchAmountCents": map[string]any{"type": "integer", "description": "Valor ATUAL do lançamento, usado só como critério de busca quando entryId é desconhecido. NUNCA o valor novo pretendido."},
+				"searchTerm":        map[string]any{"type": "string", "description": "Termo (descrição atual ou apelido do item, ex.: 'cinema', 'TV') usado só como critério de busca quando entryId é desconhecido."},
 			},
 			"required":             []string{},
 			"additionalProperties": false,
@@ -98,12 +102,13 @@ func buildEditEntryExec(editor entryEditor) func(context.Context, EditEntryInput
 			}
 		}
 
+		cmd.AmountCents = in.AmountCents
+		cmd.Description = in.Description
+		cmd.OccurredAt = in.OccurredAt
+		cmd.PaymentMethod = in.PaymentMethod
+
 		if hasTarget {
 			cmd.TargetTransactionID = targetID
-			cmd.AmountCents = in.AmountCents
-			cmd.Description = in.Description
-			cmd.OccurredAt = in.OccurredAt
-			cmd.PaymentMethod = in.PaymentMethod
 			if in.CategoryID != "" {
 				catID, catErr := uuid.Parse(in.CategoryID)
 				if catErr != nil {
@@ -120,8 +125,8 @@ func buildEditEntryExec(editor entryEditor) func(context.Context, EditEntryInput
 			}
 			cmd.CategoryVersion = in.CategoryVersion
 		} else {
-			cmd.SearchAmountCents = in.AmountCents
-			cmd.SearchTerm = in.Description
+			cmd.SearchAmountCents = in.SearchAmountCents
+			cmd.SearchTerm = in.SearchTerm
 		}
 
 		result, err := editor.EditEntry(ctx, cmd)
