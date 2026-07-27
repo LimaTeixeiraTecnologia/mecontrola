@@ -658,7 +658,7 @@ Use quando quiser zerar o banco na VPS e reaplicar as migrations manualmente, in
 
 #### Pré-requisitos
 
-- Acesso SSH à VPS (`root@187.77.45.48` ou via `VPS_HOST`/`VPS_USER`).
+- Acesso SSH à VPS (`root@187.77.45.48`, alias `mecontrola-vps` ou via `VPS_HOST`/`VPS_USER`).
 - Secrets descriptografados em `SECRETS_ENV_FILE` (padrão `/tmp/mecontrola-secrets.env`) para usar `task swarm:prod:migrate`.
 - DBeaver ou outro cliente PostgreSQL configurado com o túnel SSH para a VPS.
 
@@ -896,6 +896,8 @@ Isso significa:
 ssh root@187.77.45.48
 cd /opt/mecontrola
 ```
+
+Os fluxos automatizados deste repositório usam chave SSH. A variável `VPS_PASS` pode ser mantida apenas para acesso manual ou contingência; `task`, `deploy-local.sh`, `deploy.sh` e os fluxos de CI/CD não consomem senha e continuam exigindo autenticação por chave.
 
 ### Banco de dados
 

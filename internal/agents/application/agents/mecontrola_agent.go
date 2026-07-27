@@ -318,6 +318,7 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 		guards.NewSuccessWithoutToolGuard(),
 		guards.NewConfirmationWithoutToolGuard(),
 		guards.NewMultiItemFalseBlockGuard(),
+		guards.NewExpiredWithoutToolGuard(),
 		guards.NewCardProvenanceGuard(),
 	}
 	return WithGuardChain(built, o11y, pre, post)
