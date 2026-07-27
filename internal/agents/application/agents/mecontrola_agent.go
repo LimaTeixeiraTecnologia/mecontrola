@@ -14,6 +14,7 @@ const (
 	mecontrolaAgentDefaultMaxTokens = 3072
 	registerExpenseToolID           = "register_expense"
 	registerIncomeToolID            = "register_income"
+	editEntryToolID                 = "edit_entry"
 
 	mecontrolaAgentInstructions = `ATENÇÃO MÁXIMA — REGRA DE PRIORIDADE 0-B (description NUNCA parafraseada): o campo description de register_expense/register_income é usado por busca textual determinística para achar a categoria — copie o termo LITERAL que o usuário digitou para o item/fonte do lançamento, palavra por palavra, sem reescrever, resumir, formalizar, mudar maiúsculas/minúsculas ou adicionar verbos como "Recebimento de"/"Pagamento de"/"Compra de". Exemplo correto: usuário escreve "recebi meu 13º salário" → description="13º salário". Exemplo PROIBIDO: description="Recebimento do 13º salário" (parafraseado, quebra a busca de categoria). Exemplo correto: usuário escreve "gastei 50 no mercado" → description="mercado". Exemplo PROIBIDO: description="Compra no mercado" (parafraseado). Exemplo obrigatório: usuário escreve "Recebi R$ 13.874,40 de salário" → description="salário" exatamente em minúsculas, NUNCA "Salário".
 
@@ -310,6 +311,9 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 	}
 	if registerIncome := findTool(tools, registerIncomeToolID); registerIncome != nil {
 		pre = append(pre, guards.NewRegisterIncomeShortcutGuard(registerIncome))
+	}
+	if editEntry := findTool(tools, editEntryToolID); editEntry != nil {
+		pre = append(pre, guards.NewEditEntryCorrectionShortcutGuard(editEntry))
 	}
 	post := []guards.PostGuard{
 		guards.NewVerbatimRelayGuard(),
