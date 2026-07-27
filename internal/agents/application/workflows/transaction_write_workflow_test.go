@@ -323,6 +323,13 @@ func (s *TransactionWriteWorkflowSuite) TestEditEntry_SingleCreditCardCandidate_
 			CardID:                  &cardID,
 			InstallmentsTotal:       1,
 			Version:                 1,
+			CategoryOutcome:         "matched",
+			CategoryScore:           0.91,
+			CategoryConfidence:      "high",
+			CategoryQuality:         "exact",
+			CategorySignalType:      "alias",
+			CategoryMatchedTerm:     "mercado",
+			CategoryMatchReason:     "alias inequívoco",
 		}}, nil).
 		Once()
 
@@ -336,7 +343,13 @@ func (s *TransactionWriteWorkflowSuite) TestEditEntry_SingleCreditCardCandidate_
 			return in.ID == target &&
 				in.CardID != nil && *in.CardID == cardID &&
 				in.Installments == 1 &&
-				in.CategoryVersion == 10
+				in.CategoryVersion == 10 &&
+				in.CategoryOutcome == "matched" &&
+				in.CategoryConfidence == "high" &&
+				in.CategoryQuality == "exact" &&
+				in.CategorySignalType == "alias" &&
+				in.CategoryMatchedTerm == "mercado" &&
+				in.CategoryMatchReason == "alias inequívoco"
 		})).
 		Return(ifaces.EntryRef{ID: updated, Kind: ifaces.EntryKindTransaction}, nil).
 		Once()

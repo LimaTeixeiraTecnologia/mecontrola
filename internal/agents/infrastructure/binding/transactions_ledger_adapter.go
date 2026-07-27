@@ -341,6 +341,13 @@ func entryFromTransactionOutput(tx txoutput.Transaction) agentsifaces.Entry {
 		Version:                 tx.Version,
 		CardID:                  tx.CardID,
 		InstallmentsTotal:       tx.InstallmentsTotal,
+		CategoryOutcome:         tx.CategoryOutcome,
+		CategoryScore:           tx.CategoryScore,
+		CategoryConfidence:      tx.CategoryConfidence,
+		CategoryQuality:         tx.CategoryQuality,
+		CategorySignalType:      tx.CategorySignalType,
+		CategoryMatchedTerm:     tx.CategoryMatchedTerm,
+		CategoryMatchReason:     tx.CategoryMatchReason,
 		CreatedAt:               tx.CreatedAt,
 		UpdatedAt:               tx.UpdatedAt,
 	}

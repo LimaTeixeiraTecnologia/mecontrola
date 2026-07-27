@@ -173,6 +173,13 @@ type TransactionEditCandidate struct {
 	Version                 int64      `json:"version"`
 	CardID                  *uuid.UUID `json:"cardId"`
 	InstallmentsTotal       int        `json:"installmentsTotal"`
+	CategoryOutcome         string     `json:"categoryOutcome"`
+	CategoryScore           float64    `json:"categoryScore"`
+	CategoryConfidence      string     `json:"categoryConfidence"`
+	CategoryQuality         string     `json:"categoryQuality"`
+	CategorySignalType      string     `json:"categorySignalType"`
+	CategoryMatchedTerm     string     `json:"categoryMatchedTerm"`
+	CategoryMatchReason     string     `json:"categoryMatchReason"`
 }
 
 type TransactionWriteState struct {
@@ -201,18 +208,25 @@ type TransactionWriteState struct {
 	Candidates      []PendingCategoryCandidate `json:"candidates"`
 	CategoryVersion int64                      `json:"categoryVersion"`
 
-	TargetTransactionID   *uuid.UUID                 `json:"targetTransactionId"`
-	TargetVersion         int64                      `json:"targetVersion"`
-	TargetCategoryID      uuid.UUID                  `json:"targetCategoryId"`
-	TargetSubcategoryID   *uuid.UUID                 `json:"targetSubcategoryId"`
-	TargetPaymentMethod   string                     `json:"targetPaymentMethod"`
-	TargetDescription     string                     `json:"targetDescription"`
-	TargetOccurredAt      string                     `json:"targetOccurredAt"`
-	TargetCardID          *uuid.UUID                 `json:"targetCardId"`
-	TargetInstallments    int                        `json:"targetInstallments"`
-	EditSearchAmountCents int64                      `json:"editSearchAmountCents"`
-	EditSearchTerm        string                     `json:"editSearchTerm"`
-	EditCandidates        []TransactionEditCandidate `json:"editCandidates"`
+	TargetTransactionID       *uuid.UUID                 `json:"targetTransactionId"`
+	TargetVersion             int64                      `json:"targetVersion"`
+	TargetCategoryID          uuid.UUID                  `json:"targetCategoryId"`
+	TargetSubcategoryID       *uuid.UUID                 `json:"targetSubcategoryId"`
+	TargetPaymentMethod       string                     `json:"targetPaymentMethod"`
+	TargetDescription         string                     `json:"targetDescription"`
+	TargetOccurredAt          string                     `json:"targetOccurredAt"`
+	TargetCardID              *uuid.UUID                 `json:"targetCardId"`
+	TargetInstallments        int                        `json:"targetInstallments"`
+	TargetCategoryOutcome     string                     `json:"targetCategoryOutcome"`
+	TargetCategoryScore       float64                    `json:"targetCategoryScore"`
+	TargetCategoryConfidence  string                     `json:"targetCategoryConfidence"`
+	TargetCategoryQuality     string                     `json:"targetCategoryQuality"`
+	TargetCategorySignalType  string                     `json:"targetCategorySignalType"`
+	TargetCategoryMatchedTerm string                     `json:"targetCategoryMatchedTerm"`
+	TargetCategoryMatchReason string                     `json:"targetCategoryMatchReason"`
+	EditSearchAmountCents     int64                      `json:"editSearchAmountCents"`
+	EditSearchTerm            string                     `json:"editSearchTerm"`
+	EditCandidates            []TransactionEditCandidate `json:"editCandidates"`
 
 	EditPreviousAmountCents  int64  `json:"editPreviousAmountCents"`
 	EditPreviousCategory     string `json:"editPreviousCategory"`

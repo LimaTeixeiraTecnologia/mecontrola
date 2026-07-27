@@ -28,6 +28,14 @@ type Transaction struct {
 
 	CardID            *uuid.UUID `json:"card_id,omitempty"`
 	InstallmentsTotal int        `json:"installments_total,omitempty"`
+
+	CategoryOutcome     string  `json:"category_outcome,omitempty"`
+	CategoryScore       float64 `json:"category_score,omitempty"`
+	CategoryConfidence  string  `json:"category_confidence,omitempty"`
+	CategoryQuality     string  `json:"category_quality,omitempty"`
+	CategorySignalType  string  `json:"category_signal_type,omitempty"`
+	CategoryMatchedTerm string  `json:"category_matched_term,omitempty"`
+	CategoryMatchReason string  `json:"category_match_reason,omitempty"`
 }
 
 func TransactionFrom(t *entities.Transaction) Transaction {
@@ -46,6 +54,14 @@ func TransactionFrom(t *entities.Transaction) Transaction {
 		Version:                 t.Version(),
 		CreatedAt:               t.CreatedAt(),
 		UpdatedAt:               t.UpdatedAt(),
+
+		CategoryOutcome:     t.Evidence().Outcome(),
+		CategoryScore:       t.Evidence().Score(),
+		CategoryConfidence:  t.Evidence().Confidence(),
+		CategoryQuality:     t.Evidence().Quality(),
+		CategorySignalType:  t.Evidence().SignalType(),
+		CategoryMatchedTerm: t.Evidence().MatchedTerm(),
+		CategoryMatchReason: t.Evidence().MatchReason(),
 	}
 	if sub, ok := t.SubcategoryID().Get(); ok {
 		v := sub.UUID()

@@ -189,6 +189,13 @@ func transactionEditCandidateFromEntry(e interfaces.Entry) TransactionEditCandid
 		Version:                 e.Version,
 		CardID:                  e.CardID,
 		InstallmentsTotal:       e.InstallmentsTotal,
+		CategoryOutcome:         e.CategoryOutcome,
+		CategoryScore:           e.CategoryScore,
+		CategoryConfidence:      e.CategoryConfidence,
+		CategoryQuality:         e.CategoryQuality,
+		CategorySignalType:      e.CategorySignalType,
+		CategoryMatchedTerm:     e.CategoryMatchedTerm,
+		CategoryMatchReason:     e.CategoryMatchReason,
 	}
 }
 
@@ -238,6 +245,13 @@ func promoteEditCandidateToConfirmation(state TransactionWriteState, candidate T
 	state.TargetOccurredAt = candidate.OccurredAt
 	state.TargetCardID = candidate.CardID
 	state.TargetInstallments = candidate.InstallmentsTotal
+	state.TargetCategoryOutcome = candidate.CategoryOutcome
+	state.TargetCategoryScore = candidate.CategoryScore
+	state.TargetCategoryConfidence = candidate.CategoryConfidence
+	state.TargetCategoryQuality = candidate.CategoryQuality
+	state.TargetCategorySignalType = candidate.CategorySignalType
+	state.TargetCategoryMatchedTerm = candidate.CategoryMatchedTerm
+	state.TargetCategoryMatchReason = candidate.CategoryMatchReason
 
 	state.EditPreviousAmountCents = candidate.AmountCents
 	label := candidate.SubcategoryNameSnapshot
@@ -788,7 +802,15 @@ const transactionCategoryOutcomeMatched = "matched"
 
 func chosenTransactionEvidenceFor(state TransactionWriteState) chosenTransactionEvidence {
 	if len(state.Candidates) == 0 {
-		return chosenTransactionEvidence{}
+		return chosenTransactionEvidence{
+			outcome:     state.TargetCategoryOutcome,
+			score:       state.TargetCategoryScore,
+			confidence:  state.TargetCategoryConfidence,
+			quality:     state.TargetCategoryQuality,
+			signalType:  state.TargetCategorySignalType,
+			matchedTerm: state.TargetCategoryMatchedTerm,
+			matchReason: state.TargetCategoryMatchReason,
+		}
 	}
 	c := state.Candidates[0]
 	return chosenTransactionEvidence{

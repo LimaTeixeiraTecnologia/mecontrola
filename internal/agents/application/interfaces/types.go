@@ -203,6 +203,13 @@ type Entry struct {
 	Version                 int64
 	CardID                  *uuid.UUID
 	InstallmentsTotal       int
+	CategoryOutcome         string
+	CategoryScore           float64
+	CategoryConfidence      string
+	CategoryQuality         string
+	CategorySignalType      string
+	CategoryMatchedTerm     string
+	CategoryMatchReason     string
 	CreatedAt               time.Time
 	UpdatedAt               time.Time
 }

@@ -260,6 +260,13 @@ func populateEditTargetSnapshot(state *workflows.TransactionWriteState, targetID
 	state.TargetOccurredAt = current.OccurredAt.Format("2006-01-02")
 	state.TargetCardID = current.CardID
 	state.TargetInstallments = current.InstallmentsTotal
+	state.TargetCategoryOutcome = current.CategoryOutcome
+	state.TargetCategoryScore = current.CategoryScore
+	state.TargetCategoryConfidence = current.CategoryConfidence
+	state.TargetCategoryQuality = current.CategoryQuality
+	state.TargetCategorySignalType = current.CategorySignalType
+	state.TargetCategoryMatchedTerm = current.CategoryMatchedTerm
+	state.TargetCategoryMatchReason = current.CategoryMatchReason
 	return nil
 }
 
