@@ -557,6 +557,10 @@ func executeTransactionWrite(ctx context.Context, state TransactionWriteState, l
 			return workflow.StepOutput[TransactionWriteState]{State: newState, Status: workflow.StepStatusCompleted}, nil
 		}
 		state = newState
+	} else if state.CategoryVersion <= 0 && cats != nil {
+		if version, versionErr := cats.CatalogVersion(ctx); versionErr == nil && version > 0 {
+			state.CategoryVersion = version
+		}
 	}
 
 	state.ResumeText = ""

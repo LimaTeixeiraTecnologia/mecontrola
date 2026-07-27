@@ -301,6 +301,70 @@ func (s *TransactionWriteWorkflowSuite) TestEditEntry_NoCandidates_Cancels() {
 	s.Equal(TransactionWriteStatusCancelled, result.State.Status)
 }
 
+func (s *TransactionWriteWorkflowSuite) TestEditEntry_SingleCreditCardCandidate_PreservesCardInstallmentsAndCategoryVersion() {
+	target := uuid.New()
+	catID := uuid.New()
+	subID := uuid.New()
+	subIDStr := subID.String()
+	cardID := uuid.New()
+
+	s.ledger.EXPECT().
+		SearchEditCandidates(mock.Anything, s.userID, mock.Anything).
+		Return([]ifaces.Entry{{
+			Kind:                    ifaces.EntryKindTransaction,
+			ID:                      target.String(),
+			AmountCents:             50000,
+			Description:             "mercado",
+			CategoryID:              catID.String(),
+			SubcategoryID:           &subIDStr,
+			CategoryNameSnapshot:    "Custo Fixo",
+			SubcategoryNameSnapshot: "Supermercado",
+			PaymentMethod:           "credit_card",
+			CardID:                  &cardID,
+			InstallmentsTotal:       1,
+			Version:                 1,
+		}}, nil).
+		Once()
+
+	cats := imocks.NewCategoriesReader(s.T())
+	cats.EXPECT().CatalogVersion(mock.Anything).Return(int64(10), nil).Once()
+	def := BuildTransactionWriteWorkflowWithObservability(s.ledger, nil, cats, nil, nil)
+
+	updated := uuid.New()
+	s.ledger.EXPECT().
+		UpdateTransaction(mock.Anything, mock.MatchedBy(func(in ifaces.RawUpdateTransaction) bool {
+			return in.ID == target &&
+				in.CardID != nil && *in.CardID == cardID &&
+				in.Installments == 1 &&
+				in.CategoryVersion == 10
+		})).
+		Return(ifaces.EntryRef{ID: updated, Kind: ifaces.EntryKindTransaction}, nil).
+		Once()
+
+	state := TransactionWriteState{
+		Status:         TransactionWriteStatusActive,
+		OperationKind:  TransactionOpEditEntry,
+		UserID:         s.userID,
+		ResourceID:     s.userID,
+		ThreadID:       "thr-edit-credit",
+		MessageID:      "wamid-edit-credit",
+		Kind:           ifaces.CategoryKindExpense,
+		EditSearchTerm: "mercado",
+		AmountCents:    55000,
+	}
+	k := s.key("thr-edit-credit")
+
+	result, err := s.engine.Start(s.ctx, def, k, state)
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSuspended, result.Status)
+	s.Equal(TransactionAwaitingConfirmation, result.State.Awaiting)
+
+	result, err = s.engine.Resume(s.ctx, def, k, s.resumePayload("sim"))
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSucceeded, result.Status)
+	s.Equal(TransactionWriteStatusCompleted, result.State.Status)
+}
+
 func (s *TransactionWriteWorkflowSuite) TestEditEntry_MultipleCandidates_ThenChooseAndConfirm() {
 	target1 := uuid.New()
 	target2 := uuid.New()
