@@ -661,15 +661,17 @@ func TestBuildClassifyCategoryToolAmbiguous(t *testing.T) {
 }
 
 type fakeEntryEditor struct {
-	result usecases.RegisterResult
-	err    error
-	called bool
-	lastID uuid.UUID
+	result  usecases.RegisterResult
+	err     error
+	called  bool
+	lastID  uuid.UUID
+	lastCmd usecases.EditEntryCommand
 }
 
 func (f *fakeEntryEditor) EditEntry(_ context.Context, cmd usecases.EditEntryCommand) (usecases.RegisterResult, error) {
 	f.called = true
 	f.lastID = cmd.TargetTransactionID
+	f.lastCmd = cmd
 	return f.result, f.err
 }
 
@@ -690,6 +692,22 @@ func TestBuildEditEntryTool(t *testing.T) {
 	assert.Equal(t, testResourceID, editor.lastID)
 	assert.NotEmpty(t, verbatimText)
 	assert.Equal(t, result.ImpactNote, verbatimText)
+}
+
+func TestBuildEditEntryTool_MalformedEntryID_FallsBackToSearch(t *testing.T) {
+	editor := &fakeEntryEditor{result: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify}}
+	handle := BuildEditEntryTool(editor)
+
+	argsJSON, _ := json.Marshal(EditEntryInput{EntryID: "1", AmountCents: 3000, Description: "cinema"})
+	out, _, err := handle.Invoke(identityCtx("wamid-edit-002", 0), argsJSON)
+	require.NoError(t, err)
+
+	var result EditEntryOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.True(t, editor.called)
+	assert.Equal(t, uuid.Nil, editor.lastCmd.TargetTransactionID)
+	assert.Equal(t, int64(3000), editor.lastCmd.SearchAmountCents)
+	assert.Equal(t, "cinema", editor.lastCmd.SearchTerm)
 }
 
 func TestBuildDeleteEntryTool(t *testing.T) {

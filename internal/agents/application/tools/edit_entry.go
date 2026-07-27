@@ -91,11 +91,14 @@ func buildEditEntryExec(editor entryEditor) func(context.Context, EditEntryInput
 			ItemSeq:  itemSeq,
 		}
 
+		targetID, hasTarget := uuid.UUID{}, false
 		if in.EntryID != "" {
-			targetID, parseErr := uuid.Parse(in.EntryID)
-			if parseErr != nil {
-				return EditEntryOutput{}, fmt.Errorf("agents.tool.edit_entry: parse entry uuid: %w", parseErr)
+			if parsed, parseErr := uuid.Parse(in.EntryID); parseErr == nil {
+				targetID, hasTarget = parsed, true
 			}
+		}
+
+		if hasTarget {
 			cmd.TargetTransactionID = targetID
 			cmd.AmountCents = in.AmountCents
 			cmd.Description = in.Description
