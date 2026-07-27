@@ -15,11 +15,12 @@ import (
 )
 
 type runtimeMetrics struct {
-	runsTotal          observability.Counter
-	runDuration        observability.Histogram
-	runTruncatedTotal  observability.Counter
-	runUpdateErrors    observability.Counter
-	messageAppendError observability.Counter
+	runsTotal              observability.Counter
+	runDuration            observability.Histogram
+	runTruncatedTotal      observability.Counter
+	runUpdateErrors        observability.Counter
+	messageAppendError     observability.Counter
+	emptyCompletionRetries observability.Counter
 }
 
 type agentRuntime struct {
@@ -81,11 +82,12 @@ func NewAgentRuntime(
 		o11y:       o11y,
 		clockLoc:   time.UTC,
 		metrics: runtimeMetrics{
-			runsTotal:          o11y.Metrics().Counter("agent_runs_total", "Total agent runs", "1"),
-			runDuration:        o11y.Metrics().Histogram("agent_run_duration_seconds", "Agent run duration", "s"),
-			runTruncatedTotal:  o11y.Metrics().Counter("agent_run_truncated_total", "Total agent runs truncated by length", "1"),
-			runUpdateErrors:    o11y.Metrics().Counter("agent_run_update_errors_total", "Total RunStore.Update failures", "1"),
-			messageAppendError: o11y.Metrics().Counter("agent_message_append_errors_total", "Total MessageStore.Append failures", "1"),
+			runsTotal:              o11y.Metrics().Counter("agent_runs_total", "Total agent runs", "1"),
+			runDuration:            o11y.Metrics().Histogram("agent_run_duration_seconds", "Agent run duration", "s"),
+			runTruncatedTotal:      o11y.Metrics().Counter("agent_run_truncated_total", "Total agent runs truncated by length", "1"),
+			runUpdateErrors:        o11y.Metrics().Counter("agent_run_update_errors_total", "Total RunStore.Update failures", "1"),
+			messageAppendError:     o11y.Metrics().Counter("agent_message_append_errors_total", "Total MessageStore.Append failures", "1"),
+			emptyCompletionRetries: o11y.Metrics().Counter("agent_empty_completion_retries_total", "Total retries after the LLM returned an empty completion with no tool call", "1"),
 		},
 	}
 	for _, opt := range opts {
@@ -156,7 +158,7 @@ func (r *agentRuntime) Execute(ctx context.Context, in InboundRequest) (Outcome,
 
 	ctx = r.hooks.BeforeExecute(ctx, in.AgentID, req)
 
-	result, execErr := a.Execute(ctx, req)
+	result, execErr := r.executeWithEmptyCompletionRetry(ctx, a, req)
 
 	r.hooks.AfterExecute(ctx, in.AgentID, result, execErr)
 
@@ -166,6 +168,31 @@ func (r *agentRuntime) Execute(ctx context.Context, in InboundRequest) (Outcome,
 	}
 
 	return r.finishRun(ctx, run, thread.ID, in, result, start), nil
+}
+
+const maxEmptyCompletionAttempts = 2
+
+func isEmptyCompletion(result Result) bool {
+	return strings.TrimSpace(result.Content) == "" && len(result.ToolCalls) == 0
+}
+
+func (r *agentRuntime) executeWithEmptyCompletionRetry(ctx context.Context, a Agent, req Request) (Result, error) {
+	var (
+		result Result
+		err    error
+	)
+	for attempt := 1; attempt <= maxEmptyCompletionAttempts; attempt++ {
+		result, err = a.Execute(ctx, req)
+		if err != nil || !isEmptyCompletion(result) {
+			return result, err
+		}
+		r.metrics.emptyCompletionRetries.Add(ctx, 1, observability.String("agent_id", req.AgentID))
+		r.o11y.Logger().Warn(ctx, "agent.runtime.execute: conclusão vazia do LLM, tentando novamente",
+			observability.String("agent_id", req.AgentID),
+			observability.Int("attempt", attempt),
+		)
+	}
+	return result, err
 }
 
 func (r *agentRuntime) failRun(ctx context.Context, span observability.Span, run Run, outcome ToolOutcome, stage string, err error, start time.Time) {

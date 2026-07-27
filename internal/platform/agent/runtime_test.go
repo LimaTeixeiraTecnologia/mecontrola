@@ -429,6 +429,106 @@ func (s *RuntimeTestSuite) TestExecute_OutcomeOutcomeField_UsecaseErrorOnEmptyCo
 	s.Equal(ToolOutcomeUsecaseError, runs.updated[0].Outcome)
 }
 
+func (s *RuntimeTestSuite) TestExecute_EmptyCompletion_RetriesOnceThenSucceeds() {
+	threadID := uuid.New()
+
+	reg := NewAgentRegistry()
+	reg.Register(&sequencedAgent{
+		id:           "agent-1",
+		instructions: "instr",
+		results: []Result{
+			{Content: "", Mode: ExecutionModeSync},
+			{Content: "ok", Mode: ExecutionModeSync, ToolOutcome: ToolOutcomeRouted},
+		},
+	})
+
+	runs := &fakeRunStore{}
+	rt := NewAgentRuntime(
+		reg,
+		&fakeThreadGateway{thread: memory.Thread{ID: threadID, ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		&fakeMessageStore{},
+		&fakeWorkingMemory{},
+		runs,
+		s.obs,
+	)
+
+	outcome, err := rt.Execute(s.ctx, InboundRequest{
+		AgentID:    "agent-1",
+		ResourceID: "res-1",
+		ThreadID:   "thr-1",
+		Message:    "hello",
+		MessageID:  "msg-1",
+	})
+
+	s.NoError(err)
+	s.Equal(RunStatusSucceeded, outcome.Status)
+	s.Equal("ok", outcome.Content)
+
+	metrics := s.obs.Metrics().(*fake.FakeMetrics)
+	s.Len(metrics.GetCounter("agent_empty_completion_retries_total").GetValues(), 1)
+}
+
+func (s *RuntimeTestSuite) TestExecute_NonEmptyCompletion_DoesNotRetry() {
+	threadID := uuid.New()
+
+	reg := NewAgentRegistry()
+	agent := &sequencedAgent{
+		id:           "agent-1",
+		instructions: "instr",
+		results: []Result{
+			{Content: "ok", Mode: ExecutionModeSync, ToolOutcome: ToolOutcomeRouted},
+			{Content: "", Mode: ExecutionModeSync},
+		},
+	}
+	reg.Register(agent)
+
+	rt := NewAgentRuntime(
+		reg,
+		&fakeThreadGateway{thread: memory.Thread{ID: threadID, ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		&fakeMessageStore{},
+		&fakeWorkingMemory{},
+		&fakeRunStore{},
+		s.obs,
+	)
+
+	outcome, err := rt.Execute(s.ctx, InboundRequest{
+		AgentID:    "agent-1",
+		ResourceID: "res-1",
+		ThreadID:   "thr-1",
+		Message:    "hello",
+		MessageID:  "msg-1",
+	})
+
+	s.NoError(err)
+	s.Equal(RunStatusSucceeded, outcome.Status)
+	s.Equal("ok", outcome.Content)
+	s.Equal(1, agent.calls)
+}
+
+type sequencedAgent struct {
+	id           string
+	instructions string
+	results      []Result
+	calls        int
+}
+
+func (f *sequencedAgent) ID() string { return f.id }
+
+func (f *sequencedAgent) Instructions() string { return f.instructions }
+
+func (f *sequencedAgent) Execute(_ context.Context, _ Request) (Result, error) {
+	idx := f.calls
+	if idx >= len(f.results) {
+		idx = len(f.results) - 1
+	}
+	f.calls++
+	return f.results[idx], nil
+}
+
+func (f *sequencedAgent) Stream(_ context.Context, _ Request) (ResultStream, error) {
+	return nil, nil
+}
+
 func (s *RuntimeTestSuite) TestExecute_RF23_TruncatedByLength_FailsSafeWithToolOutcomeTruncated() {
 	threadID := uuid.New()
 
