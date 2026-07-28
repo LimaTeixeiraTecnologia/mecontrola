@@ -15,7 +15,11 @@ var (
 	expenseShortcutRe = regexp.MustCompile(`(?i)^\s*(?:hoje\s+|ontem\s+)?(?:gastei|paguei|torrei)\s+(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real|conto|contos|pila|mango)?\s+(?:no|na|nos|nas|em|com|de|do|da|pra|para)\s+([a-zà-ú][a-zà-ú' ]*?)\s*$`)
 
 	expenseShortcutBlockers = []string{
-		"cartão", "cartao", "crédito", "credito", "parcel", "fatura", "vale",
+		"cartão", "cartao", "crédito", "credito", "parcel", "vale",
+	}
+
+	expenseShortcutCardContextBlockers = []string{
+		"cartão", "cartao", "crédito", "credito", "parcel",
 	}
 
 	expenseShortcutPayments = []struct {
@@ -101,10 +105,15 @@ func parseRegisterExpenseShortcut(message string, handle tool.ToolHandle) (map[s
 	if normalized == "" {
 		return nil, false
 	}
+	faturaPayment := strings.Contains(normalized, "fatura")
 	for _, blocker := range expenseShortcutBlockers {
-		if strings.Contains(normalized, blocker) {
-			return nil, false
+		if !strings.Contains(normalized, blocker) {
+			continue
 		}
+		if faturaPayment && isExpenseCardContextBlocker(blocker) {
+			continue
+		}
+		return nil, false
 	}
 	body, paymentMethod := splitExpensePaymentSuffix(trimmed)
 	match := expenseShortcutRe.FindStringSubmatch(body)
@@ -131,6 +140,15 @@ func parseRegisterExpenseShortcut(message string, handle tool.ToolHandle) (map[s
 		args["paymentMethod"] = paymentMethod
 	}
 	return args, true
+}
+
+func isExpenseCardContextBlocker(blocker string) bool {
+	for _, cardBlocker := range expenseShortcutCardContextBlockers {
+		if blocker == cardBlocker {
+			return true
+		}
+	}
+	return false
 }
 
 func splitExpensePaymentSuffix(message string) (string, string) {

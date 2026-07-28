@@ -1305,3 +1305,47 @@ PENDENTE (não validado por mim):
     perguntar categoria via verbatim da tool e persistir com payment_method=7
     (credit_card) + card_id do Nubank; "comprei 50 no crédito" deve perguntar
     "Qual cartão foi utilizado?" e resolver o apelido no resume.
+
+================================================================================
+RODADA 6 — Validação produção do CardExpenseShortcutGuard (acd2de9) + fix fatura
+Data: 2026-07-28 (deploy acd2de9 validado ~19:20-19:22 UTC)
+================================================================================
+
+VALIDADO EM PRODUÇÃO (evidência db, sem chute):
+  - Binário em produção contém card_expense_shortcut (grep no binário do worker).
+  - "gastei 45 no cartão nubank" → categoria (verbatim da tool) → subcategoria →
+    confirmação → persistiu: payment_method=7, card_id presente, installments=1.
+  - "comprei 50 no crédito" → categoria → "Qual cartão foi utilizado?" →
+    "nubank" (resume ResolveCardByNickname do workflow) → persistiu: pm=7, card, 1x.
+  - "comprei 600 de eletrônico em 3x no crédito" → persistiu: pm=7, card, 3x.
+  - "gastei 45 na farmácia no pix" → OK (shortcut pix, sem regressão).
+  - "recebi 200 de venda" → OK (sem regressão).
+  - workflow_runs transaction-write CRIADOS nas tentativas de cartão (a ausência
+    deles era a prova do bug F-08 — agora presentes). F-08 MORTO.
+
+NOVO BUG ENCONTRADO E CORRIGIDO — pagamento de fatura:
+  - "paguei 300 da fatura do cartão nubank" → run f06163b8 (19:22:08) falhou:
+    LLM fabricou pergunta de subcategoria com categorias INEXISTENTES no banco
+    ("Pagamentos de Fatura", "Outros Pagamentos" — verificado: tabela categories
+    não tem nenhuma das duas) → category guard bloqueou corretamente → fallback.
+  - Causa: "fatura" estava nos blockers do expense shortcut desde sua criação
+    (461d554, bloco conservador sem justificativa específica) e a mensagem caía
+    no LLM (que fabrica perguntas de categoria — mesmo padrão do F-08).
+  - Fix: register_expense_shortcut.go — "fatura" removida dos blockers; pagamento
+    de fatura ganha precedência sobre os blockers de contexto de cartão
+    (cartão/cartao/crédito/credito/parcel) → "paguei 300 da fatura do cartão
+    nubank" vira despesa normal: sistema pergunta forma de pagamento e categoria.
+    CardExpenseShortcutGuard mantém blocker "fatura" (fatura NÃO é compra no
+    crédito) e roda antes — sem conflito. Consultas de fatura sem valor/verbo
+    continuam fora do shortcut (0 FP).
+  - Testes: +4 cenários (fatura dispara como despesa; fatura com pagamento no
+    fim; 2 consultas de fatura não disparam). Suíte: 13 pacotes ok, 0 falhas,
+    race limpo, golangci-lint pinado 0 issues, gate3 OK.
+
+BUG ABERTO (reportado, SEM fix nesta rodada — precisa decisão de produto):
+  - "quanto gastei hoje" (run 9063f27c, 19:22:40, succeeded): resposta errada —
+    total R$ 46,10 (real: 14 despesas hoje, bem maior), "R$ 7,70 em teste
+    recusa" (real: R$ 77,00) e omissão das compras no cartão. Violação da regra
+    anti-alucinação de consultas (RF-10/11). Causa provável: não existe consulta
+    por DIA — query_month traz o mês com limit e o LLM improvisou. Precisa de
+    capacidade de consulta por período/dia (decisão de produto + desenho).
