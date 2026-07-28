@@ -784,3 +784,126 @@ C9/C10, F-07, C8, F-08, R6 acima.
 RECOMENDACAO: corrigir B-01, B-02, B-10, B-12, B-11 (nesta ordem de impacto),
 deploy, e re-executar SOMENTE os cenarios afetados (C2-classe pix, C8, C12,
 R3, R6) + gates F1–F6. O restante do roteiro esta verde e nao precisa re-rodar.
+
+================================================================================
+IMPLEMENTACAO POS-VALIDACAO (rodada 1 de correcoes) — 2026-07-28
+Escopo aprovado pelo usuario: APENAS B-01, B-10 e B-12 (mitigacao).
+B-02 (frases de correcao), B-11 (divergencia platform_messages x WhatsApp) e
+B-03..B-09/B-13 NAO foram tocados nesta rodada.
+Skills carregadas: go-implementation (etapas 1-5, R0-R7), design-patterns-mandatory
+(veredito: NAO APLICAR PADRAO nos tres itens — ajustes locais sem abstracao GoF nova),
+domain-modeling-production (sem diff em **/domain/** — apenas principios DMMF),
+mastra (checklist de gates ao final).
+================================================================================
+
+--------------------------------------------------------------------------------
+B-01 — shortcut deterministico de despesa agora aceita pagamento no FIM da mensagem
+--------------------------------------------------------------------------------
+Causa raiz (confirmada na validacao): expenseShortcutBlockers incluia "pix",
+"debito", "dinheiro" etc., derrubando 100% das mensagens com pagamento explicito
+para o LLM (estocastico; gerou os FAILs F-03: pergunta de cartao em gasto pix).
+
+Arquivo: internal/agents/application/agents/guards/register_expense_shortcut.go
+- Blockers passam a ser SOMENTE termos que exigem cartao: "cartao", "credito",
+  "parcel", "fatura" e "vale" (pelado e ambiguo: vale-refeicao vs vale-alimentacao
+  -> cai no LLM; 0 falso positivo).
+- Novo parse: detecta sufixo de pagamento NO FIM da mensagem (trimFoldWordSuffix
+  com strings.EqualFold + fronteira de espaco), remove o sufixo e um conector
+  final (no/na/em/com/de/...), roda o regex existente no restante e injeta
+  "paymentMethod" nos args da tool register_expense.
+- Mapa conservador (valores identicos ao enum do schema da tool): pix, debito ->
+  debit_card, debito em conta -> debit_in_account (checado antes de "debito"),
+  dinheiro/especie -> cash, boleto, ted, doc, transferencia, apple pay, google pay,
+  picpay, mercado pago, cheque.
+- 0-FP garantido por construcao: pagamento fora do fim, nao reconhecido, ou termo
+  de cartao presente -> guard nao dispara (comportamento anterior preservado).
+
+Testes: register_expense_shortcut_test.go (tabela estendida, campo wantPay):
+- Disparam com paymentMethod: "gastei 500 no mercado no pix" (caso que antes
+  tinha wantOK=false — mudanca intencional de comportamento, e o proprio B-01),
+  "gastei 45 na farmácia no pix" (F-03 real), "gastei 30 no uber no pix",
+  debito, debito em conta, dinheiro, pix sem conector, mercado pago, apple pay.
+- NAO disparam (0-FP): cartao nubank, "no cartão", vale pelado, vale-refeicao,
+  parcelado, pergunta, multiplos itens, receita.
+- Fronteira de palavra: "gastei 50 no pixel art" NAO vira pix; "gastei 50 no
+  united" NAO vira ted (ambos disparam SEM paymentMethod, descricao intacta).
+
+--------------------------------------------------------------------------------
+B-10 — isNewCompleteOperation aceita valor monetario pelado (sem R$/reais)
+--------------------------------------------------------------------------------
+Causa raiz (confirmada): reMoney so reconhecia "R$ X", "X reais/contos/..." e
+"1.234,56". "recebi 500 de freelance" (500 pelado) nao casava -> mensagem era
+engolida pelo rascunho suspenso (FAIL F-07).
+
+Arquivo: internal/agents/application/workflows/write_shared.go
+- Novo reBareAmount (\b\d+(?:[.,]\d{1,2})?\b) avaliado SOMENTE quando
+  reLaunchVerbs (gastei|paguei|comprei|recebi|ganhei) casa e reMoney nao casa.
+- Exclusao de ano feita em CODIGO (RE2 nao tem lookahead): isYearToken rejeita
+  inteiros de 4 digitos entre 1900 e 2099 ("comprei em 2024" -> false).
+- "12x" de parcelas nao casa (sem boundary entre digito e "x") — comportamento
+  existente "paguei no crédito em 12x" -> false preservado.
+
+Testes: transaction_write_decisions_test.go (tabela TestIsNewCompleteOperation):
+- true: "recebi 500 de freelance" (alvo F-07), "gastei 20", "gastei 1.500 no
+  mercado", "recebi 5000 de freelance" (5k nao e ano 19xx/20xx — decisao
+  documentada).
+- false: "2", "não", "nubank", "comprei em 2024", "ganhei na loteria" +
+  todos os casos pre-existentes mantidos ("paguei no crédito em 12x" etc.).
+
+--------------------------------------------------------------------------------
+B-12 (mitigacao) — novo PostGuard category_without_tool
+--------------------------------------------------------------------------------
+Causa raiz (confirmada 2x na VPS): no R3 ("gastei 77 em teste recusa no pix"),
+ZERO workflow_runs criado -> o LLM FABRICOU a pergunta de categoria copiando o
+formato do historico do thread, sem tool call nem run.
+
+Arquivos:
+- internal/agents/application/agents/guards/category_without_tool.go (NOVO):
+  espelha confirmation_without_tool.go. Marcadores = strings exatas do catalogo
+  messages/catalog.go ("em qual categoria isso se encaixa?", "qual subcategoria?",
+  "qual se encaixa melhor?"). Se ExpectedVerbatimText(toolCalls)=="" E contem
+  marcador E len(toolCalls)==0 -> força successWithoutToolFallbackMessage +
+  agent.ToolOutcomeUsecaseError (falha honesta em vez de pergunta fabricada).
+  Pergunta legitima SEMPRE vem com tool call ou verbatim -> 0 falso positivo.
+- internal/agents/application/agents/mecontrola_agent.go: wiring na cadeia de
+  post-guards, logo apos NewConfirmationWithoutToolGuard.
+
+Testes: category_without_tool_test.go (suite testify):
+- 3 cenarios fabricados (raiz/subcategoria/folha) -> fallback + UsecaseError.
+- Com tool call -> passa. Com verbatim legitimo (clarifyPrompt) -> passa.
+- Sem marcador -> passa.
+Observacao: o resultado UsecaseError agora gera run auditavel (run aberto/fechado
+pelo runtime), cobrindo tambem a lacuna de observabilidade do F-02 nesse caminho.
+
+--------------------------------------------------------------------------------
+GATES EXECUTADOS (evidencia local)
+--------------------------------------------------------------------------------
+- go build ./... ............................................. OK
+- go vet ./internal/agents/... e ./internal/platform/... ....... OK
+- go test -race -count=1 (guards, agents, workflows) ........... OK
+- gofmt -l nos pacotes alterados ............................... OK (vazio)
+- Gate R5.26 (sem identificador prefixado "_") nos arquivos .... OK
+- Checklist mastra: gate1 (kernel puro) OK; gate2 (SQL so no
+  adapter) OK; gate3 (zero comentarios) OK; gate4 (tool fina) OK;
+  gate5 (DTO Validate) OK; gate6 WARN PRE-EXISTENTE em
+  internal/platform/memory e internal/platform/idempotency
+  (observability.String com resource_id/user_id em LOG estruturado,
+  nao em label de metrica; arquivos fora do escopo desta mudanca).
+- Checklist manual mastra: comportamento novo entrou como guard no
+  consumidor (nao no kernel); kernel intocado; sem LLM em guard;
+  estados fechados (ToolOutcomeUsecaseError); sem migration nova;
+  testes no padrao dos arquivos (suite testify / tabela).
+- golangci-lint: INDISPONIVEL localmente (binario v1 vs config v2 do
+  repo) — ausencia registrada; rodar em CI.
+
+--------------------------------------------------------------------------------
+PENDENCIAS (inegociaveis para production-ready)
+--------------------------------------------------------------------------------
+1. Commit/push/deploy sao do usuario. Working tree contem: este arquivo,
+   F-06 (card_provenance 💳, ja testado) e as 3 correcoes acima.
+2. Apos deploy, RE-VALIDAR E2E: classe pix do C2 ("gastei 45 na farmacia no
+   pix" deve registrar em 1 turno deterministico), R3 (pergunta de categoria
+   fabricada deve virar falha honesta + run auditavel), C12 ("recebi 500 de
+   freelance" durante rascunho deve iniciar novo fluxo, nao ser engolido).
+3. Backlog restante: B-02 (frases de correcao "o valor certo e X"),
+   B-11 (divergencia platform_messages x WhatsApp entregue), B-03..B-09, B-13.
