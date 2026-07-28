@@ -1226,3 +1226,82 @@ PENDENTE (não validado por mim):
     registrar de verdade (workflow_run criado; pergunta de categoria legítima
     com verbatim vindo da tool; transação persistida com payment_method
     credit_card + card_id do Nubank).
+
+================================================================================
+RODADA 5 — F-08 cura raiz DEFINITIVA: CardExpenseShortcutGuard determinístico
+Data: 2026-07-28 (após deploy 8d68018, que NÃO resolveu)
+================================================================================
+
+EVIDÊNCIA DE QUE A RODADA 4 (prompt) FALHOU EM PRODUÇÃO:
+  - Binário em produção CONTÉM a nova regra (grep em /app/mecontrola do
+    container mecontrola_server-1: "REGRA ABSOLUTA DE SEQUÊNCIA PÓS-RESOLVE_CARD"
+    presente) — deploy correto, imagem c43bc61d0fca.
+  - Mesmo assim: runs 96d4d664 (18:23:39), bb4399c3 (18:24:13), cdce07da
+    (18:27:05) falharam com outcome=usecaseError e error = pergunta de categoria
+    FABRICADA pelo LLM ("Qual é a categoria para esse gasto? 📂 1. *Conhecimento*...").
+  - CAUSA RAIZ CONFIRMADA (sem chute): tabela workflow_runs NÃO tem nenhuma
+    execução transaction-write nas tentativas com cartão (18:23–18:27) — só nas
+    que funcionaram (freelance 18:25:52, farmácia pix 18:26:08). Ou seja,
+    register_expense NUNCA foi chamada pelo LLM nas tentativas com cartão:
+    ele compôs a pergunta de categoria direto em texto, ignorando o prompt.
+    Sem workflow suspenso "envenenando" a thread (verificado).
+  - Golden Gate (real-LLM) passa porque usa histórico limpo; produção tem
+    histórico longo cheio de perguntas de categoria legítimas que viram padrão
+    in-context. Enforcement por prompt é insuficiente — fix precisa ser
+    determinístico em código, seguindo o precedente B-01 (shortcut pix).
+
+FIX (determinístico, sem LLM no caminho do gasto com cartão):
+  Novo: internal/agents/application/agents/guards/card_expense_shortcut.go
+  - Pre-guard CardExpenseShortcutGuard(registerExpense, resolveCard),
+    registrado em BuildMeControlaAgent ANTES do RegisterExpenseShortcutGuard.
+  - Parse conservador (0 falso positivo): verbo (gastei|paguei|torrei|comprei|
+    parcelei) + valor + marcador de cartão ("cartão"/"cartão de crédito"/
+    "crédito") NO FIM da mensagem; parcelas "em Nx" (1..24; >24 não dispara);
+    apelido opcional após o marcador (>3 palavras não dispara);
+    blocker "fatura" (pagar fatura NÃO é compra no cartão).
+  - Com apelido: invoke resolve_card → found=true: register_expense com
+    cardId+paymentMethod=credit_card(+installments); found=false:
+    register_expense SEM cardId.
+  - Sem apelido: register_expense SEM cardId — o workflow transaction-write
+    JÁ suporta credit_card sem cardId: suspende com messages.CardPrompt()
+    ("Qual cartão foi utilizado?") e resolve o apelido no resume via
+    handleTransactionCardResume → ResolveCardByNickname (código existente,
+    verificado em transaction_write_workflow.go:428-467).
+  - Descrição vazia (ex.: "gastei 45 no cartão nubank") → fallback "crédito"
+    (precedente real: transação das 16:53 persistida com description="crédito").
+  - Verbatim repassado da register_expense; ToolCallRecords de resolve_card e
+    register_expense registrados (post-guards não rodam sobre Handled de
+    pre-guard — guard_chain.go:51-53 — então CardProvenanceGuard não interfere).
+
+TESTES (novos, card_expense_shortcut_test.go — 26 cenários, todos PASS):
+  - Parse: 11 positivos (inclui os 3 casos reais que falharam: "gastei 45 no
+    cartão nubank", "comprei 50 no crédito", "comprei 600 de eletrônico em 3x
+    no crédito") + 9 negativos anti-FP (fatura, pergunta, pix, receita,
+    múltiplo, 25x, apelido longo, sem valor, consulta de fatura).
+  - Guard: com apelido (resolve→register com cardId), sem apelido (sem
+    resolve_card, sem cardId), found=false (sem cardId), installments=3
+    repassado, não-cartão ignorado.
+
+VALIDAÇÃO LOCAL:
+  - gofmt -l internal/agents/ → limpo
+  - go build ./... + go vet ./... → OK
+  - go test -race -count=1 ./internal/agents/... → OK (todos os pacotes)
+  - ./.tools/bin/golangci-lint run ./internal/agents/... → 0 issues
+  - Gates mastra 1/3/4 → OK (kernel não tocado)
+
+GATES DE SKILLS:
+  - design-patterns-mandatory: NÃO APLICAR PADRÃO — guard segue o padrão
+    estrutural JÁ existente de shortcut (RegisterExpenseShortcutGuard); nenhuma
+    abstração nova introduzida (composição por interface PreGuard já existente).
+  - domain-modeling-production: sem diff em **/domain/** → só princípios DMMF.
+  - go-implementation: cross-cutting/boundary em internal/agents.
+  - mastra: comportamento novo entrou no CONSUMIDOR (internal/agents) montando
+    primitivos existentes; kernel intocado.
+
+PENDENTE (não validado por mim):
+  - CI + Golden Gate real-LLM + deploy.
+  - Re-validação em produção: "gastei 45 no cartão nubank" deve criar
+    workflow_run transaction-write (ausência dele era a prova do bug),
+    perguntar categoria via verbatim da tool e persistir com payment_method=7
+    (credit_card) + card_id do Nubank; "comprei 50 no crédito" deve perguntar
+    "Qual cartão foi utilizado?" e resolver o apelido no resume.

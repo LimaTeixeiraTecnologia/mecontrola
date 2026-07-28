@@ -310,6 +310,7 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 		pre = append(pre, guards.NewMultiItemGuard())
 	}
 	if registerExpense := findTool(tools, registerExpenseToolID); registerExpense != nil {
+		pre = append(pre, guards.NewCardExpenseShortcutGuard(registerExpense, findTool(tools, "resolve_card")))
 		pre = append(pre, guards.NewRegisterExpenseShortcutGuard(registerExpense))
 	}
 	if registerIncome := findTool(tools, registerIncomeToolID); registerIncome != nil {
