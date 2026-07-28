@@ -171,3 +171,249 @@ AÇÃO: 4ª tentativa no binário bf68166c; se falhar, repro local com LLM real
   CONCLUSÃO C2: a falha (3x) não se reproduziu no bf68166c. Comportamento
   classificado como não-determinístico do LLM no contexto de histórico
   anterior; gaps de observabilidade F-02 seguem registrados para hardening.
+
+--------------------------------------------------------------------------------
+[C4] EXPIRAÇÃO REAL IN-FLOW (TTL 30min) — PASS (commit b3fde48)
+  Rascunho d7362ced ("gastei 30 no uber", awaiting=category) suspenso 12:25:16.
+  suspendedAt forçado para now-31min.
+  FALHA INTERMEDIÁRIA (causa do operador, não do produto): 1º UPDATE gravou
+  formato Postgres com espaço ("2026-07-28 11:54:47+00") → codec Go exige
+  RFC3339 → resume falhou 3x (outbox 019fa8b1 status=4, last_error=
+  "decode state ... cannot parse ... as T"). Corrigido para
+  "2026-07-28T11:57:43Z" e usuário reenviou "1".
+  Resultado (12:30:42): bot respondeu EXATAMENTE "O registro expirou. Para
+  continuar, envie a informação completa novamente. 🙂" ✓ (WriteExpired)
+  workflow_runs d7362ced: status=succeeded, state.status=4 (expired) ✓
+  outbox do turno: 2 eventos status=3 (Published), attempts=0 ✓
+  Métricas: agents_resume_dispatch_total{outcome="handled"}=1 ✓;
+  agent_guard_decisions_total{guard="expired_without_tool"}: apenas
+  decision=pass — guard NÃO disparou na expiração real ✓ (b3fde48/32fd0f1).
+  (resume_error=1 corresponde à falha de formato acima, explicada.)
+  NOTA para C5: usar RFC3339 no UPDATE de suspendedAt.
+
+================================================================================
+C5 — Reaper 35min (expiracao fora de fluxo, silenciosa) — PASS
+================================================================================
+Data: 2026-07-28 (UTC-3 ≈ 09:33–09:45)
+Deploy: bf68166c
+
+Setup:
+- Usuario enviou "gastei 10 em teste reaper" (12:33:14Z) → assistant perguntou categoria
+  ("Em qual categoria isso se encaixa? 📂 1. Conhecimento 2. Custo Fixo 3. Liberdade Finan...").
+- Rascunho: run_id=6867d9e1-8aeb-44f3-a0c6-bfe6c43b2c2b, workflow=transaction-write,
+  status=suspended, awaiting=category (state.status=1).
+- Forcado envelhecimento via SQL:
+  state.suspendedAt = 2026-07-28T11:57:49Z (RFC3339) E updated_at = now() - 36min (12:05:11Z).
+
+ACHADO ESTRUTURAL (documentado, nao corrigido):
+- O reaper NAO usa state->>'suspendedAt'. internal/platform/workflow/reaper.go:34-35 chama
+  store.ListSuspended(ctx, workflow, cutoff, batch) e o adapter postgres
+  (infrastructure/postgres/store.go:286-295) filtra por updated_at < cutoff.
+- Consequencia: o TTL mede INATIVIDADE DA LINHA (ultimo update), nao o instante em que o
+  run suspendeu. Qualquer update no run (ex.: resume parcial, touch administrativo) reinicia
+  a janela de 35min. No primeiro poll (so suspendedAt forcado, updated_at fresco) o run
+  seguiu 'suspended' por 6 polls de 45s; so foi coletado apos forcar updated_at tambem.
+
+Evidencias:
+- Poll final: 12:45:23Z → status=failed,
+  last_error="workflow: suspenso alem do TTL, expirado pelo reaper" (texto exato).
+- Metrica: workflow_stale_suspended_reaped_total{job="mecontrola-worker",
+  workflow="transaction-write", status="failed"} = 1 (+1 vs baseline 0).
+- Silencio confirmado: platform_messages do usuario nas ultimas 2h — ultima mensagem
+  assistant e a pergunta de categoria das 12:33:14Z; NENHUMA mensagem assistant nova apos
+  o reaper falhar o run (12:45Z). Reaper e silencioso: OK.
+- Nenhuma escrita em transactions/ledger para o rascunho "teste reaper".
+
+Veredito: PASS (com achado documentado: TTL do reaper mede updated_at da linha).
+
+================================================================================
+C6 — Entrada generica de correcao — PASS com desvios documentados
+================================================================================
+Data: 2026-07-28 12:48–12:58 UTC (09:48–09:58 UTC-3)
+Deploy: 500af26 (drift: producao subiu bf68166c -> 500af26 entre C5 e C6;
+commit "fix(agents): proibe markdown incompativel e percentual calculado pelo LLM")
+
+Turnos (todos platform_runs: mecontrola-agent, succeeded, outcome=routed, sem erro):
+1. "quero corrigir um lancamento ai" (12:48:52) → run 7f3c27c1 (4986ms) →
+   "Claro! Qual lancamento voce gostaria de corrigir?..."
+2. "o lancamento do uber" (12:55:01) → run 3ecce3ae (1408ms) →
+   "Qual correcao voce gostaria de fazer no lancamento do Uber?..."
+3. "quero alterar o valor para 35" (12:58:05) → run 56fd9399 (1769ms) →
+   confirmacao estruturada: "💰 Valor: R$ 35,00 / 📂 Categoria: Custo Fixo >
+   Transporte por Aplicativo Recorrente / Posso prosseguir com a alteracao? ✅"
+4. "cancelar" (12:58:15) → run 5eb48cf6 (1207ms) →
+   "Tudo certo, o registro foi cancelado."
+
+Integridade (cancelamento sem mutacao):
+- uber 4ee84fc7-68ea-4f4a-a98e-90e02768d604: amount_cents=3000, version=1,
+  updated_at=2026-07-28 11:36:13Z (inalterado desde a criacao). Sem escrita.
+- Nenhum workflow_runs criado no fluxo de edicao (edicao ocorre via tools do
+  agente em conversa, sem kernel de workflow).
+- Tempo: zero spans dos turnos do agente (gap F-02 reincidente).
+
+Desvios vs roteiro (documentados, nao bloqueantes):
+- D-C6.1: entrada generica NAO lista candidatos nem responde "Nao encontrei um
+  lancamento compativel"; faz coleta conversacional em 2 turnos (qual lancamento
+  → qual correcao). Sem dead-end, sem fallback generico.
+- D-C6.2: confirmacao de edicao mostra apenas o NOVO valor + categoria; NAO
+  mostra "atual R$ 30,00 → novo R$ 35,00". Roteiro C8 esperava atual→novo;
+  ajustar expectativa do C8 para o formato real.
+
+Veredito: PASS (fluxo fecha sem mutacao indevida; desvios de UX registrados).
+
+================================================================================
+F-03 — FAIL: pagamento explicito "no pix" ignorado, bot pergunta cartao
+================================================================================
+Data: 2026-07-28 13:00:23 UTC (10:00 UTC-3) — durante setup do C7
+Deploy: 500af26
+
+Entrada real: "gastei 30 no uber no pix"
+Saida real: "Qual cartão foi utilizado?" (texto livre do LLM, SEM tool call)
+
+Evidencias:
+- platform_runs e108075a-47c0-4f8f-a41f-1b461f0cec54: succeeded, outcome=routed,
+  1261ms, sem erro — ou seja, o turno "deu certo" do ponto de vista do runtime,
+  mas o LLM nao chamou ferramenta alguma.
+- workflow_runs: ZERO runs criados para o turno (sem rascunho, sem awaiting).
+- platform_messages: user 13:00:23.262 → assistant 13:00:23.267 (pergunta de cartao).
+- Tempo: sem spans do turno (F-02 reincidente — nao ha como inspecionar o prompt
+  efetivo nem a decisao do LLM).
+
+Causa estrutural (codigo, nao hipotese):
+- internal/agents/application/agents/guards/register_expense_shortcut.go:17-22 —
+  expenseShortcutBlockers inclui "pix" (e cartao/credito/debito/dinheiro/etc).
+  Qualquer mensagem com forma de pagamento explicita e BLOQUEADA do shortcut
+  deterministico e cai 100% no caminho do LLM.
+- O commit 500af26 (diff inspecionado) so adiciona regras de formatacao/anti-
+  alucinacao no system prompt; nada que explique a falha. E a mesma classe de
+  falha observada no C2 (3a tentativa, build antigo): o LLM, no caminho livre,
+  as vezes pergunta cartao em vez de chamar register_expense com o pix parseado.
+- Conclusao: comportamento ESTOCASTICO do LLM no caminho livre. No reteste do C2
+  (bf68166c) a mesma frase-classe ("gastei 45 na farmacia no pix") funcionou
+  porque o LLM chamou a tool corretamente; desta vez nao chamou.
+
+Impacto no requisito duro do usuario: VIOLADO — "gastei X no pix" NAO pode
+gerar pergunta sobre cartao. Reincidente (3a ocorrencia da classe: 2x run failed
++ 1x pergunta livre no C2; agora pergunta livre novamente no 500af26).
+
+Recomendacao tecnica (registrada, nao aplicada — usuario decide):
+- Estender o shortcut deterministico para mensagens COM pagamento explicito
+  (pix/debito/dinheiro nao precisam de cartao): parsear paymentMethod no regex
+  e invocar register_expense diretamente, removendo a dependencia do LLM para
+  a classe de frase mais comum. Blockers deveriam ser apenas os termos que
+  EXIGEM dado adicional (cartao/credito/parcela/fatura).
+- Alternativa minima: guard de saida que detecta pergunta sobre cartao quando
+  a mensagem original ja continha "pix"/"debito"/"dinheiro" e rejeita/regenera.
+
+Veredito do turno: FAIL. C7-setup pendente — recuperacao sera testada com
+"foi no pix, sem cartao".
+
+--- F-03 recuperacao (setup C7 concluido) ---
+"foi no pix, sem cartao" (13:06) → LLM chamou register_expense corretamente →
+desambiguacao de categoria (1. Custo Fixo > Transporte por Aplicativo Recorrente /
+2. Prazeres > Transporte de Lazer) → "2" → confirmacao (R$30, hoje, Prazeres >
+Transporte de Lazer, pix) → "sim" → "Prontinho! ✅".
+Escrita verificada: tx 2ff7fa05-9295-4508-beb9-20254569c2c4, 3000 cents, pix
+(payment_method=1), category_path="Prazeres > Transporte de Lazer",
+decision_source=user_selected_candidate, editorial_version=10. Workflow
+430657fa-de64-4c26-a966-6bd79fb70c46 succeeded (16s, awaiting=6→st=2).
+Recuperacao conversacional funciona, MAS exige 1 turno extra do usuario para
+corrigir o erro do agente — o FAIL F-03 permanece registrado.
+Massa para C7: 2 ubers R$30 — 4ee84fc7 (credito XP, Custo Fixo) e 2ff7fa05
+(pix, Prazeres).
+
+================================================================================
+C7 — Multi-candidato uber — PASS
+================================================================================
+Data: 2026-07-28 13:08–13:11 UTC — Deploy: 500af26
+Massa: uber XP 4ee84fc7 (3000, credito, Custo Fixo > Transporte por Aplicativo
+Recorrente) + uber pix 2ff7fa05 (3000, Prazeres > Transporte de Lazer).
+
+Fluxo real:
+1. "edita o lancamento do uber" → run 41e77cf3 routed (1450ms) →
+   "Qual alteracao voce gostaria de fazer no lancamento do Uber?" (SEM lista).
+2. "quero alterar o valor para 35" →
+   "Encontrei mais de um lancamento compativel. Qual deles voce quer editar?
+    1. R$ 30,00 - Transporte de Lazer
+    2. R$ 30,00 - Transporte por Aplicativo Recorrente"
+3. "1" → confirmacao: "✏️ Lancamento atual: R$ 30,00 em Transporte de Lazer
+   (pix) / 🔄 Novo valor: R$ 35,00 / Posso atualizar?"
+4. "sim" → "Prontinho, atualizei! ✅ ..."
+
+Assert central (DB):
+- 2ff7fa05 (pix): amount_cents 3000→3500, version 1→2, updated_at 13:11:13Z.
+- 4ee84fc7 (XP): amount_cents=3000, version=1, updated_at 11:36:13Z — INTACTO.
+- Exatamente 1 linha alterada. Candidato correto editado.
+
+Desvios documentados:
+- D-C7.1: desambiguacao ocorre DEPOIS de declarar a troca, nao antes.
+- D-C7.2: lista de candidatos mostra so valor+subcategoria (sem data/forma de
+  pagamento); a confirmacao final inclui "(pix)" — suficiente para distinguir,
+  mas a lista em si seria ambigua com 2 lancamentos iguais na mesma categoria.
+- D-C7.3 (positivo): a confirmacao deste fluxo mostrou atual→novo (diferente do
+  C6, que so mostrou o novo valor) — formato inconsistente entre fluxos.
+
+Veredito: PASS (integridade perfeita: somente o candidato escolhido mudou).
+
+================================================================================
+F-04 — FAIL: "corrija o lancamento de 45 da farmacia para 50" nao entendido
+================================================================================
+Data: 2026-07-28 13:13:18 UTC (10:13 UTC-3) — turno do C8
+Deploy: 500af26
+
+Entrada real: "corrija o lançamento de 45 da farmácia para 50"
+Saida real: "Me conta de novo esse lançamento — o valor e onde foi — que eu
+registro pra você. 🙂" (tratou CORRECAO como NOVO REGISTRO)
+
+Evidencias:
+- platform_runs 6c1637e8-c8dc-4481-9aef-b65a95528478: succeeded/routed, 1638ms.
+- Metrica agent_guard_decisions_total{guard="edit_entry_correction_shortcut"}:
+  inalterada (pass=3) — guard nao casou e caiu no LLM, que desviou o intent.
+
+Causa (codigo, internal/agents/application/agents/guards/edit_entry_correction_shortcut.go):
+- editEntryTwoAmountsLancamentoRe (l.15): exige "...valor (certo) é X e não Y".
+- editEntryTwoAmountsGasteiRe (l.16): exige "no/na <desc> (eu) gastei X e não Y".
+- editEntryNewValueOnlyRe (l.17): exige verbo "mudar/alterar/atualizar valor para".
+- NENHUMA cobre "corrija o lançamento de <valor> da <desc> para <valor>" —
+  padrao natural em PT-BR (verbo corrigir + de-para inline). Alem disso o
+  grupo de descricao `[a-zà-ú]` nao admite valor numerico entre "de" e "da".
+- LLM no caminho livre interpretou como pedido de novo registro: falso
+  negativo de intent de correcao.
+
+BACKLOG DE CORRECAO (consolidado ate aqui — usuario pediu "anotar TUDO"):
+- B-01 (F-03): shortcut de registro bloqueia TODA forma de pagamento explicita
+  (register_expense_shortcut.go:17-22 inclui "pix"/"debito"/"dinheiro") →
+  mensagem com pagamento fica 100% refem do LLM, que e estocastico (ja pediu
+  cartao em mensagem pix 2x documentadas). Correcao: parsear paymentMethod no
+  shortcut; blockers apenas para termos que exigem dado extra (cartao/credito/
+  parcela/fatura). 0 falso positivo: so disparar com pagamento reconhecido.
+- B-02 (F-04): guard de correcao nao cobre "corrija/edita o lançamento de X
+  (da|do|de) <desc> para Y". Adicionar regex de-para inline com verbo
+  corrigir/editar. Risco de falso positivo a avaliar: "de 45" como desc.
+- B-03 (F-02): observabilidade — run.error vazio em falhas de tool; zero spans
+  Tempo nos turnos do agente; logs sem trace_id. Sem isso, toda falha de LLM
+  e caixa-preta (dificulta 0-regressao sustentavel).
+- B-04 (achado C5): TTL do reaper mede updated_at da linha, nao suspendedAt do
+  state (reaper.go:34-35 + store.go:286-295). Decidir e documentar o semantic
+  desejado; hoje qualquer touch no run posterga a expiracao.
+- B-05 (D-C6.2/D-C7.3): formato de confirmacao de edicao inconsistente entre
+  fluxos (C6 mostrou so valor novo; C7 mostrou atual→novo). Padronizar
+  sempre "atual → novo".
+- B-06 (D-C7.2): lista multi-candidato mostra so valor+subcategoria; incluir
+  forma de pagamento/data para desambiguacao real quando valor e categoria
+  forem iguais.
+
+Veredito do turno C8: FAIL. Recuperacao via padrao suportado a seguir.
+
+--- C8 recuperacao / C9-positivo (guard edit_entry_correction_shortcut) ---
+"no lançamento da farmácia o valor certo é 50 e não 45" (13:18 UTC):
+- Metrica: agent_guard_decisions_total{guard="edit_entry_correction_shortcut",
+  decision="handled"} = 1 (+1 vs baseline 0). Guard casou
+  editEntryTwoAmountsLancamentoRe e invocou a tool deterministicamente.
+- Tool devolveu multi-candidato: "1. R$ 45,00 - Medicamentos e Farmácia /
+  2. R$ 50,00 - Medicamentos e Farmácia".
+- B-07 (novo backlog): searchAmountCents=4500 NAO restringiu os candidatos —
+  a farmacia de R$50 (f514197a, de ontem) apareceu como candidata mesmo o
+  argumento de busca sendo 4500. Se o usuario escolhesse "2", editaria o
+  lancamento errado (no-op 50→50) e o alvo real ficaria intacto. Corrigir:
+  filtrar/ranquear candidatos por searchAmountCents quando presente.
