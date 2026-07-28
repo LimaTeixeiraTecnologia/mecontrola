@@ -11,6 +11,7 @@ import (
 	budgetsvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/money"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
 
@@ -26,6 +27,14 @@ type QueryPlanInput struct {
 	Month        int    `json:"month,omitempty"`
 }
 
+func brlPtr(cents *int64) *string {
+	if cents == nil {
+		return nil
+	}
+	formatted := money.FromCents(*cents).BRL()
+	return &formatted
+}
+
 type QueryPlanAlertOutput struct {
 	ID           string `json:"id"`
 	Competence   string `json:"competence"`
@@ -33,13 +42,17 @@ type QueryPlanAlertOutput struct {
 	Threshold    int    `json:"threshold"`
 	State        string `json:"state"`
 	SpentCents   int64  `json:"spentCents"`
+	SpentBRL     string `json:"spentBRL"`
 	PlannedCents int64  `json:"plannedCents"`
+	PlannedBRL   string `json:"plannedBRL"`
 }
 
 type QueryPlanAllocationOutput struct {
 	RootSlug        string   `json:"rootSlug"`
 	PlannedCents    *int64   `json:"plannedCents,omitempty"`
+	PlannedBRL      *string  `json:"plannedBRL,omitempty"`
 	SpentCents      int64    `json:"spentCents"`
+	SpentBRL        string   `json:"spentBRL"`
 	PercentageSpent *float64 `json:"percentageSpent,omitempty"`
 }
 
@@ -47,10 +60,13 @@ type QueryPlanOutput struct {
 	Outcome           string                      `json:"outcome"`
 	Competence        string                      `json:"competence"`
 	TotalCents        *int64                      `json:"totalCents,omitempty"`
+	TotalBRL          *string                     `json:"totalBRL,omitempty"`
 	State             string                      `json:"state"`
 	AutoDraft         bool                        `json:"autoDraft"`
 	TotalSpentCents   int64                       `json:"totalSpentCents"`
+	TotalSpentBRL     string                      `json:"totalSpentBRL"`
 	TotalPlannedCents *int64                      `json:"totalPlannedCents,omitempty"`
+	TotalPlannedBRL   *string                     `json:"totalPlannedBRL,omitempty"`
 	Allocations       []QueryPlanAllocationOutput `json:"allocations"`
 	Alerts            []QueryPlanAlertOutput      `json:"alerts"`
 	ClarifyPrompt     string                      `json:"clarifyPrompt,omitempty"`
@@ -85,16 +101,19 @@ func BuildQueryPlanTool(planner interfaces.BudgetPlanner) tool.ToolHandle {
 				"outcome":           map[string]any{"type": "string"},
 				"competence":        map[string]any{"type": "string"},
 				"totalCents":        map[string]any{"type": "integer"},
+				"totalBRL":          map[string]any{"type": "string"},
 				"state":             map[string]any{"type": "string"},
 				"autoDraft":         map[string]any{"type": "boolean"},
 				"totalSpentCents":   map[string]any{"type": "integer"},
+				"totalSpentBRL":     map[string]any{"type": "string"},
 				"totalPlannedCents": map[string]any{"type": "integer"},
+				"totalPlannedBRL":   map[string]any{"type": "string"},
 				"allocations":       map[string]any{"type": "array"},
 				"alerts":            map[string]any{"type": "array"},
 				"clarifyPrompt":     map[string]any{"type": "string"},
 				"offerCreatePrompt": map[string]any{"type": "string"},
 			},
-			"required":             []string{"outcome", "competence", "state", "autoDraft", "totalSpentCents", "allocations", "alerts"},
+			"required":             []string{"outcome", "competence", "state", "autoDraft", "totalSpentCents", "totalSpentBRL", "allocations", "alerts"},
 			"additionalProperties": false,
 		},
 	}
@@ -147,7 +166,9 @@ func buildQueryPlanExec(planner interfaces.BudgetPlanner) func(context.Context, 
 			allocations[i] = QueryPlanAllocationOutput{
 				RootSlug:        a.RootSlug,
 				PlannedCents:    a.PlannedCents,
+				PlannedBRL:      brlPtr(a.PlannedCents),
 				SpentCents:      a.SpentCents,
+				SpentBRL:        money.FromCents(a.SpentCents).BRL(),
 				PercentageSpent: a.PercentageSpent,
 			}
 		}
@@ -160,17 +181,22 @@ func buildQueryPlanExec(planner interfaces.BudgetPlanner) func(context.Context, 
 				Threshold:    a.Threshold,
 				State:        a.State,
 				SpentCents:   a.SpentCents,
+				SpentBRL:     money.FromCents(a.SpentCents).BRL(),
 				PlannedCents: a.PlannedCents,
+				PlannedBRL:   money.FromCents(a.PlannedCents).BRL(),
 			}
 		}
 		return QueryPlanOutput{
 			Outcome:           queryPlanOutcomeOK,
 			Competence:        summary.Competence,
 			TotalCents:        summary.TotalCents,
+			TotalBRL:          brlPtr(summary.TotalCents),
 			State:             summary.State,
 			AutoDraft:         summary.AutoDraft,
 			TotalSpentCents:   summary.TotalSpentCents,
+			TotalSpentBRL:     money.FromCents(summary.TotalSpentCents).BRL(),
 			TotalPlannedCents: summary.TotalPlannedCents,
+			TotalPlannedBRL:   brlPtr(summary.TotalPlannedCents),
 			Allocations:       allocations,
 			Alerts:            mappedAlerts,
 		}, nil

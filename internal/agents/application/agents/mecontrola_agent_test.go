@@ -317,7 +317,8 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 			dependencies: dependencies{},
 			expect: func(instructions string) {
 				s.Contains(instructions, "REGRA DE FORMATAÇÃO DE VALORES")
-				s.Contains(instructions, "123450 → R$ 1.234,50")
+				s.Contains(instructions, "amountBRL")
+				s.Contains(instructions, "VERBATIM")
 				s.Contains(instructions, "RF-22")
 			},
 		},

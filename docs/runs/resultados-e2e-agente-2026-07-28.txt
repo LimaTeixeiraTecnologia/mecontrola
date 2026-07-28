@@ -1433,3 +1433,45 @@ RODADA 7.1 — CI failure no deploy do query_day (2026-07-28 ~20:28 UTC)
 - Observacao sobre a query: occurred_at e gravado como meia-noite UTC no banco
   (conferido: 20 rows em 2026-07-28 00:00:00+00); o range >= dia e < dia+1 UTC
   cobre o dia inteiro (equivale a 00:00-23:59 sem perder frações de segundo).
+
+--------------------------------------------------------------------------------
+RODADA 8 — correcao de exibicao de valores (centavos→reais) + blindagem "ontem"
+================================================================================
+
+BUG 1 (confirmado pelo usuario): LLM convertia centavos errado e inconsistente
+- Producao 22:48 UTC: total 206700 cents exibido como "R$ 206,70" (dividiu por
+  1000); itens misturavam /1000 ("R$ 30,00" p/ fatura de 30000) e valor cru
+  ("R$ 1.500,00" p/ lanche de 1500). Regra RF-22/RF-36 em texto nao bastava —
+  LLM erra aritmetica.
+- FIX deterministico: toda tool de consulta agora devolve campo gemeo *BRL
+  pre-formatado via internal/platform/money (padrao ja usado em
+  category_detail.go): query_day, query_month (+entries), search_transactions,
+  get_transaction, query_card_invoice (+items), query_plan (+allocations,
+  alerts, totais), list_recurrences, suggest_allocation. Campos *Cents mantidos
+  para logica interna (searchAmountCents etc.).
+- Prompt RF-22/RF-36 reescrito: exibir SEMPRE o campo *BRL verbatim; PROIBIDO
+  converter centavos por conta propria; *Cents so para logica.
+- Schemas strict das tools atualizados (propriedades + required).
+
+BUG 2 ("quanto gastei ontem?" respondeu "sem lancamentos" com 7 despesas no banco)
+- Evidencia VPS: run das 22:48:39 durou 1,1s (vs 5,2s do "hoje" que chamou a
+  tool) — LLM respondeu SEM chamar query_day, copiando quase literalmente a
+  resposta errada das 17:33 (pre-deploy), que estava no historico da thread.
+- FIX: C8 agora proibe reutilizar/parafrasear resposta anterior para pergunta
+  de dia (nova chamada obrigatoria a cada pergunta) + golden cases c10
+  ("quanto gastei ontem?" frase exata da producao) e c11 ("quanto gastei hoje?"
+  exigindo "R$" na resposta).
+
+GAP DE OBSERVABILIDADE (backlog): execucoes do agente nao aparecem em logs
+(Loki) nem traces (Tempo) — so platform_runs no banco. Dificultou o diagnostico
+do Bug 2. Registrar: instrumentar AgentRuntime/tool calls com spans.
+
+VALIDACOES LOCAIS: build/vet (incl. -tags integration repo inteiro) OK;
+go test -race ./internal/agents/... ALL PASS (incl. assercoes BRL nos testes de
+query_day/query_month); golangci-lint 0 issues; teste de prompt atualizado
+(RF-22 agora assere amountBRL/VERBATIM).
+
+VALIDACAO EM PRODUCAO (apos deploy): repetir "quanto gastei hoje?" → esperado
+R$ 2.067,00 (206700 cents) e itens corretos (fatura R$ 300,00, lanche R$ 15,00);
+"quanto gastei ontem?" → R$ 6.721,00 em 7 despesas. Conferir duration do run
+em mecontrola.platform_runs (>3s indica tool call real).

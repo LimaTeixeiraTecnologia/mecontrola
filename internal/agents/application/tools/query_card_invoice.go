@@ -11,6 +11,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/money"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
 
@@ -24,6 +25,7 @@ type QueryCardInvoiceItemOutput struct {
 	RefMonth         string `json:"refMonth"`
 	InstallmentIndex int    `json:"installmentIndex"`
 	AmountCents      int64  `json:"amountCents"`
+	AmountBRL        string `json:"amountBRL"`
 	InvoiceID        string `json:"invoiceId"`
 }
 
@@ -34,6 +36,7 @@ type QueryCardInvoiceOutput struct {
 	ClosingAt       time.Time                    `json:"closingAt"`
 	DueAt           time.Time                    `json:"dueAt"`
 	ItemsTotalCents int64                        `json:"itemsTotalCents"`
+	ItemsTotalBRL   string                       `json:"itemsTotalBRL"`
 	Items           []QueryCardInvoiceItemOutput `json:"items"`
 	Outcome         string                       `json:"outcome,omitempty"`
 	Message         string                       `json:"message,omitempty"`
@@ -69,11 +72,12 @@ func BuildQueryCardInvoiceTool(ledger interfaces.TransactionsLedger, cards inter
 				"closingAt":       map[string]any{"type": "string"},
 				"dueAt":           map[string]any{"type": "string"},
 				"itemsTotalCents": map[string]any{"type": "integer"},
+				"itemsTotalBRL":   map[string]any{"type": "string"},
 				"items":           map[string]any{"type": "array"},
 				"outcome":         map[string]any{"type": "string"},
 				"message":         map[string]any{"type": "string"},
 			},
-			"required":             []string{"id", "cardId", "refMonth", "closingAt", "dueAt", "itemsTotalCents", "items", "outcome", "message"},
+			"required":             []string{"id", "cardId", "refMonth", "closingAt", "dueAt", "itemsTotalCents", "itemsTotalBRL", "items", "outcome", "message"},
 			"additionalProperties": false,
 		},
 	}
@@ -122,6 +126,7 @@ func buildQueryCardInvoiceExec(ledger interfaces.TransactionsLedger, cards inter
 				RefMonth:         item.RefMonth,
 				InstallmentIndex: item.InstallmentIndex,
 				AmountCents:      item.AmountCents,
+				AmountBRL:        money.FromCents(item.AmountCents).BRL(),
 				InvoiceID:        item.InvoiceID.String(),
 			}
 		}
@@ -132,6 +137,7 @@ func buildQueryCardInvoiceExec(ledger interfaces.TransactionsLedger, cards inter
 			ClosingAt:       invoice.ClosingAt,
 			DueAt:           invoice.DueAt,
 			ItemsTotalCents: invoice.ItemsTotalCents,
+			ItemsTotalBRL:   money.FromCents(invoice.ItemsTotalCents).BRL(),
 			Items:           items,
 		}, nil
 	}

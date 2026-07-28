@@ -10,6 +10,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/money"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
 
@@ -24,6 +25,7 @@ type SearchTransactionsEntryOutput struct {
 	ID          string    `json:"id"`
 	RefMonth    string    `json:"refMonth"`
 	AmountCents int64     `json:"amountCents"`
+	AmountBRL   string    `json:"amountBRL"`
 	Direction   string    `json:"direction"`
 	Description string    `json:"description"`
 	CategoryID  string    `json:"categoryId"`
@@ -98,6 +100,7 @@ func buildSearchTransactionsExec(ledger interfaces.TransactionsLedger) func(cont
 				ID:          e.ID,
 				RefMonth:    e.RefMonth,
 				AmountCents: e.AmountCents,
+				AmountBRL:   money.FromCents(e.AmountCents).BRL(),
 				Direction:   e.Direction,
 				Description: e.Description,
 				CategoryID:  e.CategoryID,

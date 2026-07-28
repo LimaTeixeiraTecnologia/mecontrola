@@ -11,6 +11,7 @@ import (
 	budgetsvo "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/money"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
 
@@ -32,6 +33,7 @@ type QueryMonthEntryOutput struct {
 	ID          string    `json:"id"`
 	RefMonth    string    `json:"refMonth"`
 	AmountCents int64     `json:"amountCents"`
+	AmountBRL   string    `json:"amountBRL"`
 	Direction   string    `json:"direction"`
 	Description string    `json:"description"`
 	CreatedAt   time.Time `json:"createdAt"`
@@ -41,8 +43,11 @@ type QueryMonthOutput struct {
 	Outcome       string                  `json:"outcome"`
 	RefMonth      string                  `json:"refMonth"`
 	IncomeCents   int64                   `json:"incomeCents"`
+	IncomeBRL     string                  `json:"incomeBRL"`
 	OutcomeCents  int64                   `json:"outcomeCents"`
+	OutcomeBRL    string                  `json:"outcomeBRL"`
 	TotalCents    int64                   `json:"totalCents"`
+	TotalBRL      string                  `json:"totalBRL"`
 	Entries       []QueryMonthEntryOutput `json:"entries"`
 	ClarifyPrompt string                  `json:"clarifyPrompt,omitempty"`
 }
@@ -77,12 +82,15 @@ func BuildQueryMonthTool(ledger interfaces.TransactionsLedger) tool.ToolHandle {
 				"outcome":       map[string]any{"type": "string"},
 				"refMonth":      map[string]any{"type": "string"},
 				"incomeCents":   map[string]any{"type": "integer"},
+				"incomeBRL":     map[string]any{"type": "string"},
 				"outcomeCents":  map[string]any{"type": "integer"},
+				"outcomeBRL":    map[string]any{"type": "string"},
 				"totalCents":    map[string]any{"type": "integer"},
+				"totalBRL":      map[string]any{"type": "string"},
 				"entries":       map[string]any{"type": "array"},
 				"clarifyPrompt": map[string]any{"type": "string"},
 			},
-			"required":             []string{"outcome", "refMonth", "incomeCents", "outcomeCents", "totalCents", "entries"},
+			"required":             []string{"outcome", "refMonth", "incomeCents", "incomeBRL", "outcomeCents", "outcomeBRL", "totalCents", "totalBRL", "entries"},
 			"additionalProperties": false,
 		},
 	}
@@ -134,6 +142,7 @@ func buildQueryMonthExec(ledger interfaces.TransactionsLedger) func(context.Cont
 				ID:          e.ID,
 				RefMonth:    e.RefMonth,
 				AmountCents: e.AmountCents,
+				AmountBRL:   money.FromCents(e.AmountCents).BRL(),
 				Direction:   e.Direction,
 				Description: e.Description,
 				CreatedAt:   e.CreatedAt,
@@ -143,8 +152,11 @@ func buildQueryMonthExec(ledger interfaces.TransactionsLedger) func(context.Cont
 			Outcome:      queryMonthOutcomeOK,
 			RefMonth:     summary.RefMonth,
 			IncomeCents:  summary.IncomeCents,
+			IncomeBRL:    money.FromCents(summary.IncomeCents).BRL(),
 			OutcomeCents: summary.OutcomeCents,
+			OutcomeBRL:   money.FromCents(summary.OutcomeCents).BRL(),
 			TotalCents:   summary.TotalCents,
+			TotalBRL:     money.FromCents(summary.TotalCents).BRL(),
 			Entries:      mapped,
 		}, nil
 	}

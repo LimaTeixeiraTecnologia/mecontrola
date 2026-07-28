@@ -6,6 +6,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/money"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
 
@@ -23,6 +24,7 @@ type SuggestAllocationOutputItem struct {
 	RootSlug     string `json:"rootSlug"`
 	BasisPoints  int    `json:"basisPoints"`
 	PlannedCents int64  `json:"plannedCents"`
+	PlannedBRL   string `json:"plannedBRL"`
 }
 
 type SuggestAllocationOutput struct {
@@ -77,6 +79,7 @@ func buildSuggestAllocationExec(planner interfaces.BudgetPlanner) func(context.C
 				RootSlug:     r.RootSlug,
 				BasisPoints:  r.BasisPoints,
 				PlannedCents: r.PlannedCents,
+				PlannedBRL:   money.FromCents(r.PlannedCents).BRL(),
 			}
 		}
 		return SuggestAllocationOutput{Allocations: out}, nil

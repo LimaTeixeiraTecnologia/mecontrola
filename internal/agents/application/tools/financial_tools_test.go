@@ -346,8 +346,12 @@ func TestBuildQueryMonthToolSuccess(t *testing.T) {
 	assert.Equal(t, "ok", result.Outcome)
 	assert.Equal(t, "2026-06", result.RefMonth)
 	assert.Equal(t, int64(100000), result.IncomeCents)
+	assert.Equal(t, "R$ 1.000,00", result.IncomeBRL)
 	assert.Equal(t, int64(60000), result.OutcomeCents)
+	assert.Equal(t, "R$ 600,00", result.OutcomeBRL)
+	assert.Equal(t, "R$ 400,00", result.TotalBRL)
 	assert.Len(t, result.Entries, 1)
+	assert.Equal(t, "R$ 50,00", result.Entries[0].AmountBRL)
 }
 
 func TestBuildQueryMonthToolSummaryError(t *testing.T) {

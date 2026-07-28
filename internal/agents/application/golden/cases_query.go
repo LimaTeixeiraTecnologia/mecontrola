@@ -92,5 +92,25 @@ func queryCases() []Case {
 			ResponseProperty: nonEmptyResponse,
 			ResponseDescribe: "gasto de ontem responde exclusivamente a partir de query_day",
 		},
+		{
+			Name:             "c10 quanto gastei ontem frase exata producao",
+			Category:         CategoryQuery,
+			Origin:           "real",
+			Input:            "quanto gastei ontem?",
+			ToolSubset:       []string{"query_day", "query_month"},
+			ExpectedTool:     "query_day",
+			ResponseProperty: nonEmptyResponse,
+			ResponseDescribe: "frase exata da regressao de producao: ontem exige nova chamada a query_day",
+		},
+		{
+			Name:             "c11 quanto gastei hoje frase exata producao",
+			Category:         CategoryQuery,
+			Origin:           "real",
+			Input:            "quanto gastei hoje?",
+			ToolSubset:       []string{"query_day", "query_month"},
+			ExpectedTool:     "query_day",
+			ResponseProperty: containsAny("R$"),
+			ResponseDescribe: "resposta exibe valores em R$ copiados dos campos BRL da ferramenta",
+		},
 	}
 }

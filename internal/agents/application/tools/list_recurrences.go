@@ -7,6 +7,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/money"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
 
@@ -21,6 +22,7 @@ type ListRecurrencesItemOutput struct {
 	Direction            string     `json:"direction"`
 	PaymentMethod        string     `json:"paymentMethod"`
 	AmountCents          int64      `json:"amountCents"`
+	AmountBRL            string     `json:"amountBRL"`
 	Description          string     `json:"description"`
 	CategoryID           string     `json:"categoryId"`
 	CategoryNameSnapshot string     `json:"categoryNameSnapshot"`
@@ -82,6 +84,7 @@ func buildListRecurrencesExec(recurrences interfaces.RecurrenceManager) func(con
 				Direction:            r.Direction,
 				PaymentMethod:        r.PaymentMethod,
 				AmountCents:          r.AmountCents,
+				AmountBRL:            money.FromCents(r.AmountCents).BRL(),
 				Description:          r.Description,
 				CategoryID:           r.CategoryID.String(),
 				CategoryNameSnapshot: r.CategoryNameSnapshot,

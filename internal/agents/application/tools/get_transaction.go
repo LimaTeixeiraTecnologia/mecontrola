@@ -7,6 +7,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/money"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
 
@@ -21,6 +22,7 @@ type GetTransactionOutput struct {
 	Direction               string    `json:"direction"`
 	PaymentMethod           string    `json:"paymentMethod"`
 	AmountCents             int64     `json:"amountCents"`
+	AmountBRL               string    `json:"amountBRL"`
 	Description             string    `json:"description"`
 	CategoryID              string    `json:"categoryId"`
 	CategoryNameSnapshot    string    `json:"categoryNameSnapshot"`
@@ -57,6 +59,7 @@ func BuildGetTransactionTool(ledger interfaces.TransactionsLedger) tool.ToolHand
 				"direction":               map[string]any{"type": "string"},
 				"paymentMethod":           map[string]any{"type": "string"},
 				"amountCents":             map[string]any{"type": "integer"},
+				"amountBRL":               map[string]any{"type": "string"},
 				"description":             map[string]any{"type": "string"},
 				"categoryId":              map[string]any{"type": "string"},
 				"categoryNameSnapshot":    map[string]any{"type": "string"},
@@ -67,7 +70,7 @@ func BuildGetTransactionTool(ledger interfaces.TransactionsLedger) tool.ToolHand
 				"createdAt":               map[string]any{"type": "string"},
 				"updatedAt":               map[string]any{"type": "string"},
 			},
-			"required":             []string{"kind", "id", "userId", "direction", "paymentMethod", "amountCents", "description", "categoryId", "categoryNameSnapshot", "subcategoryNameSnapshot", "refMonth", "occurredAt", "version", "createdAt", "updatedAt"},
+			"required":             []string{"kind", "id", "userId", "direction", "paymentMethod", "amountCents", "amountBRL", "description", "categoryId", "categoryNameSnapshot", "subcategoryNameSnapshot", "refMonth", "occurredAt", "version", "createdAt", "updatedAt"},
 			"additionalProperties": false,
 		},
 	}
@@ -87,6 +90,7 @@ func buildGetTransactionExec(ledger interfaces.TransactionsLedger) func(context.
 			Direction:               entry.Direction,
 			PaymentMethod:           entry.PaymentMethod,
 			AmountCents:             entry.AmountCents,
+			AmountBRL:               money.FromCents(entry.AmountCents).BRL(),
 			Description:             entry.Description,
 			CategoryID:              entry.CategoryID,
 			CategoryNameSnapshot:    entry.CategoryNameSnapshot,

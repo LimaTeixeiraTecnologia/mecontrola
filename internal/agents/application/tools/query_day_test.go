@@ -41,9 +41,13 @@ func TestBuildQueryDayToolTodayDefault(t *testing.T) {
 	assert.Equal(t, "ok", result.Outcome)
 	assert.Equal(t, today, result.Day)
 	assert.Equal(t, int64(50000), result.IncomeCents)
+	assert.Equal(t, "R$ 500,00", result.IncomeBRL)
 	assert.Equal(t, int64(7500), result.OutcomeCents)
+	assert.Equal(t, "R$ 75,00", result.OutcomeBRL)
 	assert.Equal(t, int64(42500), result.TotalCents)
+	assert.Equal(t, "R$ 425,00", result.TotalBRL)
 	assert.Len(t, result.Entries, 1)
+	assert.Equal(t, "R$ 45,00", result.Entries[0].AmountBRL)
 }
 
 func TestBuildQueryDayToolYesterday(t *testing.T) {
