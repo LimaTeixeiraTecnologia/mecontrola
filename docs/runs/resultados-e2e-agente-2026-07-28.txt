@@ -135,3 +135,39 @@ redundante, registrado.
 
 [EXTRA] CONSULTA "como estou na categoria prazeres" (11:36:49) — PASS
   (resposta com dados reais da tool; sem alucinação aparente).
+
+--------------------------------------------------------------------------------
+[C2-RETESTE 1] FARMÁCIA PIX R$ 45 (12:15:28 UTC) — FAIL (3ª falha, modo novo)
+Evidência:
+  platform_messages: user "gastei 45 na farmácia no pix" → assistant
+  "Qual cartão foi utilizado?" (pergunta de CARTÃO para despesa PIX).
+  platform_runs: succeeded/routed, 864ms. workflow_runs: ZERO linhas na
+  janela — pergunta sem estado por trás (LLM em texto livre, sem tool call).
+  Métricas do turno: agent_tool_invocations_total sem register_expense;
+  agent_guard_decisions_total todos decision=pass (nenhum guard atuou).
+  Binário ativo no turno: bf68166c (deploy do usuário ~12:12 UTC, inclui o
+  fix do 💳 + fix category_detail) — texto saiu sem emoji ✓, mas o LLM
+  ignorou "no pix" e imitou a pergunta de cartão do histórico (uber 11:35).
+CAUSA ESTRUTURAL CONFIRMADA (código): register_expense_shortcut.go:17-22
+  lista "pix" e todas as formas de pagamento como BLOQUEADORES — mensagens
+  com pagamento explícito NUNCA passam pelo atalho determinístico e dependem
+  100% do LLM chamar register_expense corretamente.
+RESUMO DAS 3 FALHAS DA MESMA MENSAGEM: 11:20:47 e 11:20:57 (run failed,
+  error vazio, provável tool inexistente) + 12:15:28 (pergunta livre sem
+  tool). Outras mensagens (mercado crédito, uber, consultas) OK nos mesmos
+  binários → falha sistemática desta mensagem neste contexto de histórico.
+AÇÃO: 4ª tentativa no binário bf68166c; se falhar, repro local com LLM real
+  para capturar a saída exata do modelo.
+
+[C2-RETESTE 2] FARMÁCIA PIX R$ 45 no binário bf68166c (12:23:34 UTC) — PASS
+  Confirmação determinística correta: "💰 Valor: R$ 45,00 / 📅 Data: hoje /
+  📂 Categoria: Custo Fixo > Medicamentos e Farmácia / 💳 Forma de pagamento:
+  pix / Posso registrar?" → "sim" → "Prontinho! ✅".
+  DB: transaction 18ad07be — direction=2, payment_method=1 (pix), 4500,
+  snapshots NÃO invertidos, editorial=10, decision_source=
+  user_selected_candidate, origin_operation=transaction_write_register.
+  Ledger: register_expense → resource_id=18ad07be ✓. workflow_runs 648b0371
+  succeeded (awaiting=6=confirmation, pm=pix) ✓.
+  CONCLUSÃO C2: a falha (3x) não se reproduziu no bf68166c. Comportamento
+  classificado como não-determinístico do LLM no contexto de histórico
+  anterior; gaps de observabilidade F-02 seguem registrados para hardening.
