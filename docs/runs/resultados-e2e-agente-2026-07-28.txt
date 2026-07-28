@@ -1415,3 +1415,21 @@ VALIDACAO EM PRODUCAO (apos deploy)
      AND occurred_at <  '2026-07-29'::timestamp AT TIME ZONE 'UTC'
      AND deleted_at IS NULL;
   (soma das despesas do dia inteiro — nao 345 nem 46,10)
+
+--------------------------------------------------------------------------------
+RODADA 7.1 — CI failure no deploy do query_day (2026-07-28 ~20:28 UTC)
+- CD do commit db59ea7 FALHOU nos Integration Tests (build com tag integration):
+  3 arquivos de teste de integracao de agents com assinatura antiga
+  (NewTransactionsLedgerAdapter com 11 args; consumerIntegrationLedger sem
+  GetDaySummary). Producao seguiu na imagem do commit 8d495f2 — por isso o bot
+  respondeu "sem lancamentos" mesmo com 20 rows no dia (conferido no VPS).
+- Lacuna de processo: validacao local rodou `go vet -tags integration` apenas
+  em transactions; agents ficou de fora. Regra nova: SEMPRE vet+build com tag
+  integration no repo inteiro antes de entregar para commit.
+- Fix (3 arquivos, pelo agente): +1 arg nil nos 2 calls do adapter e metodo
+  GetDaySummary no consumerIntegrationLedger. Validado local:
+  go test -race -count=1 -tags=integration nos pacotes quebrados OK;
+  task test:integration OK.
+- Observacao sobre a query: occurred_at e gravado como meia-noite UTC no banco
+  (conferido: 20 rows em 2026-07-28 00:00:00+00); o range >= dia e < dia+1 UTC
+  cobre o dia inteiro (equivale a 00:00-23:59 sem perder frações de segundo).

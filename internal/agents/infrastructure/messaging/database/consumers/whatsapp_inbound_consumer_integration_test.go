@@ -54,6 +54,10 @@ func (consumerIntegrationLedger) GetMonthlySummary(_ context.Context, _ uuid.UUI
 	return agentsifaces.MonthlySummary{}, nil
 }
 
+func (consumerIntegrationLedger) GetDaySummary(_ context.Context, _ uuid.UUID, _ string) (agentsifaces.DaySummary, error) {
+	return agentsifaces.DaySummary{}, nil
+}
+
 func (consumerIntegrationLedger) GetCardInvoice(_ context.Context, _ uuid.UUID, _ string) (agentsifaces.CardInvoice, error) {
 	return agentsifaces.CardInvoice{}, nil
 }
