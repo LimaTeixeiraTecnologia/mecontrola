@@ -413,13 +413,45 @@ var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
 		return goldenCaptureTool("cancel_plan_info", "Retorna o passo a passo oficial e verbatim de cancelamento de assinatura na Kiwify; não altera o estado da assinatura.", goldenBaseSchema(), sink)
 	},
 	"support_info": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("support_info", "Retorna as informações verbatim de contato do suporte (e-mail e prazo de resposta).", goldenBaseSchema(), sink)
+		return goldenSupportInfoTool(sink)
 	},
 	goldenCategoryDetailWithDataKey: goldenCategoryDetailWithDataTool,
 	"category_detail": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("category_detail", "Detalha os lançamentos, planejado, gasto e disponível/excedente de uma categoria do orçamento no mês.", goldenMonthRefSchema("rootSlug"), sink)
 	},
 	"edit_treatment_name": goldenEditTreatmentNameTool,
+}
+
+func goldenSupportInfoTool(sink ToolCaptureSink) tool.ToolHandle {
+	in := llm.Schema{Name: "support_info_input", Strict: false, Schema: goldenBaseSchema()}
+	out := llm.Schema{
+		Name:   "support_info_output",
+		Strict: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"message": map[string]any{"type": "string"},
+			},
+			"required":             []string{"message"},
+			"additionalProperties": false,
+		},
+	}
+	type output struct {
+		Message string `json:"message"`
+	}
+	return tool.NewVerbatimTool[map[string]any, output](
+		"support_info",
+		"Retorna as informações verbatim de contato do suporte (e-mail e prazo de resposta).",
+		in,
+		out,
+		func(_ context.Context, in map[string]any) (output, error) {
+			sink("support_info", in)
+			return output{Message: messages.SupportInfo()}, nil
+		},
+		func(o output) (string, bool) {
+			return o.Message, o.Message != ""
+		},
+	)
 }
 
 const goldenCategoryDetailWithDataKey = "category_detail_com_dados"
