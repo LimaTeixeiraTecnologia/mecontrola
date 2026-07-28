@@ -74,8 +74,8 @@ func (s *CardProvenanceGuardSuite) TestInspect_RegisterExpenseCreditCard_Without
 	})
 	s.True(decision.Handled)
 	s.Equal(cardProvenanceFallbackMessage, decision.Result.Content)
-	s.Contains(decision.Result.Content, "💳")
-	s.NotContains(decision.Result.Content, "cartão")
+	s.NotContains(decision.Result.Content, "💳")
+	s.Contains(decision.Result.Content, "cartão")
 	s.Equal(agent.ToolOutcomeClarify, decision.Result.ToolOutcome)
 }
 
@@ -168,7 +168,8 @@ func (s *CardProvenanceGuardSuite) TestInspect_ResolveCardNotFoundForcesCardClar
 		},
 	})
 	s.True(decision.Handled)
-	s.Contains(decision.Result.Content, "💳")
+	s.NotContains(decision.Result.Content, "💳")
+	s.Contains(decision.Result.Content, "cartão")
 	s.Equal(agent.ToolOutcomeClarify, decision.Result.ToolOutcome)
 }
 

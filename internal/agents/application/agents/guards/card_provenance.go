@@ -7,7 +7,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 )
 
-const cardProvenanceFallbackMessage = "Antes de continuar, preciso saber qual 💳 você quer usar. Pode me dizer o apelido dele (ex.: nubank)?"
+const cardProvenanceFallbackMessage = "Antes de continuar, preciso saber qual cartão você quer usar. Pode me dizer o apelido dele (ex.: nubank)?"
 
 var cardProvenanceResolverTools = map[string]struct{}{
 	"resolve_card":           {},

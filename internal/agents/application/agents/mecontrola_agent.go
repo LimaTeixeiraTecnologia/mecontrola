@@ -326,6 +326,7 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 		guards.NewMultiItemFalseBlockGuard(),
 		guards.NewExpiredWithoutToolGuard(),
 		guards.NewCardProvenanceGuard(),
+		guards.NewWhatsappFormatSanitizerGuard(),
 	}
 	return WithGuardChain(built, o11y, pre, post)
 }

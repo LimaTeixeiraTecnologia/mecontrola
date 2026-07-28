@@ -417,3 +417,370 @@ Veredito do turno C8: FAIL. Recuperacao via padrao suportado a seguir.
   argumento de busca sendo 4500. Se o usuario escolhesse "2", editaria o
   lancamento errado (no-op 50→50) e o alvo real ficaria intacto. Corrigir:
   filtrar/ranquear candidatos por searchAmountCents quando presente.
+
+--- C8 resultado final: PASS (via recuperacao) ---
+"1" → confirmacao "✏️ Lancamento atual: R$ 45,00 em Medicamentos e Farmacia
+(pix) / 🔄 Novo valor: R$ 50,00" → "sim" → "Prontinho, atualizei! ✅".
+DB: 18ad07be 4500→5000, version 1→2, payment_method=1 (pix) preservado,
+category_path / decision_source=user_selected_candidate / editorial_version=10
+preservados — somente amount/version/updated_at mudaram. f514197a (farmacia
+antiga de R$50) intacta. Veredito C8: PASS na recuperacao; o FAIL do turno
+original permanece registrado como F-04/B-02.
+
+================================================================================
+C9 — Guard edit_entry_correction_shortcut: positivo PASS / negativo PASS-FP
+================================================================================
+Positivo (farmacia, 13:18): handled=1 confirmado por metrica + edicao correta.
+Negativo ("no cartão eu gastei 35 e não 30", 13:21 UTC):
+- Guard NAO disparou: handled permaneceu 1 (bloqueador "cartao" OK, 0 falso
+  positivo). Nenhuma transacao editada no turno (verificado: unica escrita
+  recente era a do C8, anterior a mensagem).
+- MAS o LLM repetiu o desvio F-04: "Me conta de novo esse lancamento — o valor
+  e onde foi — que eu registro pra voce." (2a ocorrencia). Agravante do B-02:
+  o fallback do LLM para intents de correcao fora do guard e SISTEMATICAMENTE
+  errado — nao basta ampliar regex; o prompt/caminho livre precisa tratar
+  "gastei X e nao Y" como correcao e pedir o identificador do lancamento.
+Veredito: PASS (sem falso positivo, sem escrita indevida) + FAIL de UX
+registrado no backlog B-02.
+
+================================================================================
+F-06 — FAIL: 💳 como substituto da palavra "cartao" (guard card_provenance)
+================================================================================
+Data: 2026-07-28 13:22 UTC (10:22 UTC-3) — setup do C10
+Deploy: 500af26
+
+Entrada real: "comprei 600 de eletrônico em 3x no crédito"
+Saida real: "Antes de continuar, preciso saber qual 💳 você quer usar. Pode me
+dizer o apelido dele (ex.: nubank)?"
+
+Causa (codigo): internal/agents/application/agents/guards/card_provenance.go:10 —
+const cardProvenanceFallbackMessage hardcoded com 💳 substituindo a palavra
+"cartao". Por ser verbatim de guard (PostGuard), a regra do system prompt
+(mecontrola_agent.go:31) NAO se aplica. A pergunta de cartao em si e LEGITIMA
+(compra no credito exige cartao) — o problema e so o emoji no lugar da palavra.
+Agravante: os testes card_provenance_test.go:77-78 ASSERTAVAM o comportamento
+errado (Contains "💳" + NotContains "cartao") — o erro estava cristalizado em
+teste.
+
+CORRECAO APLICADA (working tree, aguardando commit/deploy do usuario):
+- card_provenance.go:10 → "Antes de continuar, preciso saber qual cartão você
+  quer usar. Pode me dizer o apelido dele (ex.: nubank)?"
+- card_provenance_test.go:77-78 → NotContains "💳" + Contains "cartão"
+- card_provenance_test.go:171 → idem
+Validacao: go build ./internal/agents/... OK; go vet OK;
+go test -race -count=1 ./internal/agents/application/agents/guards/ OK;
+gofmt limpo. golangci-lint local indisponivel (v1 vs config v2) — fica para CI.
+
+B-08 (backlog — usuario decide escopo): outras ocorrencias de 💳 como
+substituto da palavra em strings user-facing NAO cobertas por este fix:
+- create_card.go:111,154,157,160 ("esse 💳?" em perguntas de cadastro)
+- list_cards_shortcut.go:84,87 ("nenhum 💳 cadastrado", "Aqui estão seus 💳:")
+- onboarding_workflow.go:908,1017,1025 (prompts de cadastro de cartao)
+- catalog.go:330,381 (💳 decorativo em pergunta de pagamento)
+- Golden tests que ESPERAM 💳 na resposta (cases_card.go:33,45,60 e
+  cases_expense_income.go:82 notContainsAny ja cobre pix) — expectativas
+  conflitam com a regra dura do usuario; precisam ser revisadas junto.
+- Confirmacoes "💳 Forma de pagamento: X" (catalog.go:246) sao rotulo com
+  emoji, nao substituicao da palavra — usuario nao reclamou; manter ate
+  decisao explicita.
+
+--- F-04 3a ocorrencia (C10, 13:29 UTC) ---
+"edita o lançamento do eletrônico" → "Me conta de novo esse lançamento — o
+valor e onde foi — que eu registro pra você. 🙂"
+COMPARACAO DIRETA: "edita o lançamento do uber" (C7, 13:08) foi entendido
+("Qual alteração você gostaria de fazer no lançamento do Uber?"); a mesma
+classe de frase com "eletrônico" caiu no re-registro. Comportamento
+ESTOCASTICO do LLM confirmado para intents de correcao fora do guard.
+Recuperacao NAO arriscada em texto livre (bot em modo re-registro poderia
+criar lancamento duplicado); usado o padrao deterministico do guard.
+ANTES (tx 5499e530-6197-480f-8de0-bec7f92aa406): amount=60000, direction=2,
+payment_method=7, card_id=91323c8b-5d0c-47f9-8276-df26bc748267 (Nubank),
+installments_total=3, card_closing_day=24, card_due_day=1, ref_month=2026-07,
+occurred_at=2026-07-28, category_path="Custo Fixo > Consultas e Exames",
+decision_source=user_selected_candidate, editorial_version=10, version=1.
+
+================================================================================
+C10 — Credito parcelado: preservacao de campos na edicao — PASS
+================================================================================
+Fluxo: setup "comprei 600 de eletrônico em 3x no crédito" → (F-06 💳) → nubank
+→ categoria Custo Fixo > Consultas e Exames → sim → registrado (5499e530).
+Turno de edicao "edita o lançamento do eletrônico" → F-04 (3a ocorrencia).
+Recuperacao via guard: "no lançamento do eletrônico o valor certo é 550 e não
+600" → confirmacao "atual R$ 600,00 em Consultas e Exames (crédito) → novo
+R$ 550,00" → sim → "Prontinho, atualizei! ✅".
+
+DIFF campo a campo (ANTES 13:27:57 → DEPOIS 13:32:16):
+- amount_cents 60000→55000 ✓ | version 1→2 ✓ | updated_at ✓ (esperados)
+- card_id=91323c8b (Nubank) PRESERVADO ✓
+- installments_total=3 PRESERVADO ✓
+- card_closing_day=24 / card_due_day=1 PRESERVADOS ✓
+- Todos category_* PRESERVADOS (path, snapshots, decision_source=
+  user_selected_candidate, editorial_version=10, score, confidence...) ✓
+- ref_month=2026-07, occurred_at, origin_wamid/item_seq/operation, direction,
+  payment_method, description PRESERVADOS ✓
+DESVIO MENOR (D-C10.1): category_decided_at re-escrito para o instante da
+edicao mesmo sem troca de categoria. Semanticamente defensavel (re-validacao),
+mas foge do assert estrito "so amount/version/updated_at mudam". Registrar no
+backlog como B-09 (decidir: preservar decided_at original quando a categoria
+nao muda, ou documentar o refresh como comportamento desejado).
+Veredito: PASS.
+
+================================================================================
+C11 — "que dia é hoje?" — PASS
+================================================================================
+Referencia VPS (TZ=America/Sao_Paulo date): 2026-07-28 10:33 -03, terca-feira.
+Resposta real (10:37): "Hoje é 28 de julho de 2026, uma terça-feira. 📅"
+Data e dia da semana EXATOS — injecao de data/hora no system prompt
+(commit 112d428) funcionando em producao. Veredito: PASS.
+
+================================================================================
+C12 — Interrupcao de rascunho por receita — FAIL (F-07 / B-10)
+================================================================================
+Data: 2026-07-28 13:38 UTC — Deploy: 500af26
+Fluxo real:
+1. "gastei 20 no café" (13:38:45) → draft 329387a8-2bb0-4b88-a23f-5fb3db591378
+   suspended, kind=2, awaiting=1 (categoria), candidatas = raizes de DESPESA.
+2. "recebi 500 de freelance" (13:38:50, turno de 13ms) → NAO substituiu o
+   rascunho: o run segue suspended (updated_at 13:38:50) e o bot re-perguntou
+   a MESMA lista de categorias de despesa ("1. Conhecimento 2. Custo Fixo
+   3. Liberdade Financeira 4. Metas 5. Prazeres") — para uma RECEITA.
+
+Causa (codigo):
+- internal/agents/application/workflows/write_shared.go:179-181 —
+  isNewCompleteOperation exige reMoney E reLaunchVerbs.
+- reMoney (l.85): so casa "R$ 500" | "500 reais" | "500,00". Numero pelado
+  "500" NAO casa → "recebi 500 de freelance" nao e detectada como nova
+  operacao → o texto cai no resume de categoria do rascunho do cafe →
+  DecideTransactionCategoryChoice falha → reprompt da pergunta de despesa.
+- INCONSISTENCIA: expenseShortcutRe (register_expense_shortcut.go:15) aceita
+  valor pelado ("gastei 20 no café" abriu draft), mas a deteccao de
+  interrupcao nao aceita. O mecanismo TransactionWriteStatusReplaced existe
+  (transaction_write_workflow.go:295,440,480) mas nao dispara com a forma
+  mais comum de digitacao.
+B-10 (backlog): alinhar reMoney de isNewCompleteOperation com o padrao de
+valor aceito no registro (numero pelado). Risco de falso positivo a avaliar:
+resposta de categoria contendo numero ("2") nao tem verbo de lancamento,
+entao reLaunchVerbs ja protege; "recebi 500..." tem verbo → seguro.
+
+Veredito: FAIL. Limpeza: cancelar o rascunho do cafe e registrar a receita
+separadamente.
+
+--- C12 limpeza: PASS ---
+"cancelar" (13:41:51) → "Tudo certo, o registro foi cancelado. 🙂" → run do cafe
+329387a8 fechado com state.status=3 (cancelled); NENHUMA tx de cafe no DB.
+"recebi 500 de freelance" (13:42) → confirmacao de receita SEM pergunta de
+categoria (match automatico) → "💰 Valor: R$ 500,00 / 📥 Origem: freelance /
+Posso registrar?" → "sim" → "Boa notícia! 🎉...".
+DB: tx 3f00a4fa-b830-4bb2-815b-eae70f709bdb direction=1, 50000 cents,
+category_path="Renda Variável > Freelance", decision_source=
+user_selected_candidate. Run c11166d4 succeeded (kind=1, st=2).
+Observacao positiva: receita tem fluxo proprio (Origem, sem pergunta de
+categoria quando o match e forte) — correto. O FAIL do C12 e exclusivamente
+a nao-deteccao da interrupcao (B-10).
+
+================================================================================
+F-08 — FAIL: resposta de categoria raiz-only no caminho LLM → usecaseError 2x
+================================================================================
+Data: 2026-07-28 13:46:49–13:47:15 UTC (R3) — Deploy: 500af26
+Entrada: "gastei 77 em teste recusa no pix" → pergunta de categoria (raizes) →
+"1" (Conhecimento) → WhatsApp: "não consegui concluir agora, pode repetir?"
+→ "1" de novo → mesma mensagem → "não" → "Tudo certo, o registro foi
+cancelado. 🙂" (platform_messages; verificar entrega).
+
+Evidencias:
+- platform_runs 893c036f e 78474367: FAILED, outcome=usecaseError, ~1.4s,
+  campo error VAZIO (F-02 — sem log Loki, sem span Tempo do erro).
+- ZERO workflow_runs criado para o turno — fluxo inteiro no caminho LLM+tool
+  (sem kernel). Contraste: C10 (kernel) perguntou subcategoria; aqui nao.
+- Zero tx de 7700 no DB (escrita bloqueada corretamente).
+
+Causa (mecanismo confirmado): validate_category_write_gate
+(migrations/000004_category_write_gate_schema.up.sql:269) exige
+category_id=raiz E subcategory_id=folha direta. "teste recusa" nao casa folha
+alguma sob Conhecimento; o caminho LLM tentou persistir com raiz-only →
+trigger rejeitou → usecaseError → consumer enviou fallbackReply
+(whatsapp_inbound_consumer.go:230-235). O caminho LLM NAO faz o passo de
+subcategoria que o kernel faz.
+B-12 (backlog): caminho LLM de register_expense precisa do clarify de
+subcategoria (dois niveis) quando so a raiz foi escolhida — ou bloquear
+escrita root-only ANTES do insert com mensagem clara, nunca fallback generico.
+
+B-11 (backlog, GRAVE): platform_messages registrou "Não consegui registrar.
+Tente novamente em breve." mas o WhatsApp ENTREGOU "não consegui concluir
+agora, pode repetir?" (fallbackReply). O historico do thread que o LLM le NAO
+e o que o usuario viu — poluicao de contexto e quebra de auditabilidade.
+Corrigir: persistir em platform_messages exatamente o texto entregue.
+
+R3 (recusar confirmacao): NAO executado conforme roteiro — o fluxo quebrou
+antes da confirmacao. Sera re-executado sem "no pix" (caminho kernel, dois
+niveis de categoria) para validar o "não" na confirmacao.
+
+================================================================================
+R1 — PASS | R2 — PASS | R3 — PASS (re-execucao)
+================================================================================
+R1 (13:44): "gastei 15 no lanche no pix" → categoria → confirmacao (pix) → sim
+→ "Prontinho! ✅". DB: direction=2, 1500, payment_method=1, Prazeres > Bares
+e Lanches. Sem pergunta de cartao — evidencia da ESTOCASTICIDADE do F-03:
+mesma classe de frase, desfecho diferente por turno.
+R2 (13:45): "gastei 99 em teste cancelamento" → "cancelar" na 1a pergunta →
+"Tudo certo, o registro foi cancelado. 🙂". DB: 0 tx 9900; run st=3 (cancelled).
+R3 1a tentativa (13:46): F-08 (ver acima) — quebrou antes da confirmacao.
+R3 re-execucao (13:52, sem "no pix", caminho kernel): "gastei 77 em teste
+recusa" → raiz "2" → subcategoria "1" (Açougue) → pergunta de pagamento
+("Como você pagou? (pix, débito, crédito, dinheiro...) 💳" — 💳 decorativo,
+catalog.go:381, ja no B-08) → "pix" → confirmacao R$77/Custo Fixo > Açougue/
+pix → "não" → "Tudo certo, o registro foi cancelado. 🙂".
+DB: 0 tx 7700; run st=3 (cancelled) em awaiting=6 (confirmacao). PASS.
+
+================================================================================
+R4 — REPROMPT DE CONFIRMACAO (2 falhas → cancela) — PASS
+================================================================================
+Linha do tempo real (platform_messages, fonte de verdade):
+- 13:54:50Z confirmacao (R$33 / Custo Fixo > Água / pix)
+- 13:55:01Z "talvez" #1 → "Não entendi. Por favor, responda apenas *sim* ou
+  *não* para confirmar." (texto exato transaction_write_messages.go:82; o
+  paste do WhatsApp omite os asteriscos porque renderiza negrito — ressalva 5)
+- 14:01:06Z "talvez" #2 → "Tudo certo, o registro foi cancelado. 🙂"
+Run: st=3 (cancelled), confirmRepromptCount=1. DB: 0 tx de 3300.
+DecideTransactionConfirmation (transaction_write_decisions.go:183) cancela na
+2a falha (max=1 reprompt) — comportamento conforme especificado.
+
+CORRECAO DE REGISTRO (honestidade): durante a execucao, um poll intermediario
+capturou o reprompt do "talvez" #1 e foi interpretado como um 2o reprompt
+(alarme de off-by-one/loop). A linha do tempo completa provou que NAO houve
+desvio — o alarme foi falso e nao gerou finding. Licoes: so classificar FAIL
+com a sequencia completa de platform_messages.
+Veredito: PASS.
+
+================================================================================
+R5 — PASS | R6 — PASS-por-criterio com comportamento ruim documentado (B-13)
+================================================================================
+R5 (14:05): "recebi 200 de venda" → "💰 Valor: R$ 200,00 / 📥 Origem: venda /
+Posso registrar?" → sim → "Boa notícia! 🎉...". DB: direction=1, 20000,
+"Vendas > Vendas Diversas". PASS.
+
+R6 (14:05:48–14:05:56): "gastei 55 em teste consulta" → pergunta de
+SUBcategoria (Custo Fixo: Consultas e Exames/Odontologia — raiz auto-match).
+"quanto gastei hoje?" → NAO respondida: texto engolido pelo resume do draft
+(isNewCompleteOperation exige valor monetario — mesma classe do B-10).
+Efeitos reais no run f819214d (seguiu suspended):
+- repromptCount=1 e a pergunta REGREDIU de subcategoria para raiz;
+- candidatas RECONSTRUIDAS a partir do texto da consulta ("quanto gastei
+  hoje?" nao casa folha → lista de raizes), poluindo o contexto original
+  (description segue "teste consulta").
+Criterios do roteiro: sem crash, sem fallback generico, sem escrita errada →
+PASS-por-criterio. B-13 (backlog): consulta durante rascunho deve ser
+respondida com rascunho estacionado (ou mensagem explicita "termine ou
+cancele o registro atual"); o reprompt de categoria NAO pode reconstruir
+candidatas a partir do resumeText — deve repetir as candidatas originais.
+
+================================================================================
+C13 — Metricas observacionais — PASS | R7 — Idempotencia — PASS c/ ressalva
+================================================================================
+C13:
+- agent_empty_completion_retries_total: SEM SERIE (0) — retry de conclusao
+  vazia (e16dd2c) nao disparou no recorte. Observacional: PASS (ressalva 1).
+- agent_guard_decisions_total{guard="expired_without_tool"}: apenas pass=4,
+  handled=0 → nenhuma alucinacao de expiracao no recorte (gate do roteiro
+  linha 390). PASS.
+
+R7 (recorte desde 2026-07-28 11:00Z):
+- agents_write_ledger: 0 duplicatas (wamid,item_seq,operation). PASS.
+- outbox_events: 353 published (status=3); 1 com status=4 (failed) —
+  evento 019fa8b1 (agents.whatsapp.inbound.v1, 3 tentativas): erro de decode
+  de state CAUSADO PELA MINHA injecao de teste do C4 (suspendedAt em formato
+  Postgres com espaco, antes da correcao para RFC3339). Falha de preparo do
+  teste, nao defeito de produto; recuperada na epoca com reenvio. Documentada.
+- whatsapp_message_status: 0 failed. PASS.
+- channel_processed_messages: 87 wamids distintos (dedup integro). PASS.
+
+================================================================================
+VALIDACAO FINAL — GATES F1–F6 (recorte 2026-07-28 11:00Z–14:10Z)
+================================================================================
+F1 (baseline por id): PASS. 16 transacoes — 8 de baseline intactas (amount/
+version/updated_at de 27/07) + 8 explicadas por cenarios: mercado 13000 v2
+(C1), uber XP 3000 (C3), farmacia 5000 v2 (C2+C8), uber pix 3500 v2 (C7),
+eletronico 55000 v2 (C10), freelance 50000 (C12-limpeza), lanche 1500 (R1),
+venda 20000 (R5). Nenhuma escrita fora de cenario; nenhum deleted_at.
+F2 (outbox 100% status=3): EXCECAO DOCUMENTADA — 353/354 published; 1 failed
+(019fa8b1) causado pela injecao de teste do C4 (formato de data), nao pelo
+produto. Nenhuma falha de outbox de origem organica.
+F3 (whatsapp_message_status 0 failed): PASS.
+F4 (metricas): PASS — agents_transaction_write_false_success_total: sem serie
+(+0); agents_whatsapp_inbound_total{outcome="error"}: sem serie (+0);
+workflow_version_conflict_total: sem serie (0).
+F5 (platform_runs failed fora de cenario intencional): EXCECAO — 4 runs
+failed no recorte, TODOS correlacionados a findings: 2x C2 (11:20, build
+antigo, ja corrigido no bf68166c) + 2x F-08/R3 (13:46–13:47, FAIL de produto
+documentado). Nenhum failed inexplicado.
+F6 (logs de erro): EXCECAO — 4 linhas ERROR "agent.runtime.finish_run: falha
+na execucao do run" (11:20:48, 11:20:58, 13:46:59, 13:47:07), mesmas 4
+ocorrencias do F5. Nenhum erro fora dessas. As linhas NAO carregam o erro
+real (F-02/B-03).
+
+================================================================================
+TABELA FINAL — cenario × veredito × evidencia × ressalva
+================================================================================
+S0  baseline/deploy ........... PASS — bf68166c → 500af26 (drift registrado)
+C1  editar mercado 120→130 .... PASS — tx f907b927 v2, evidencias no adendo
+C2  farmacia pix .............. FAIL→PASS — 3 falhas (build antigo); reteste
+                                PASS no bf68166c (tx 18ad07be)
+C3  uber sem pagamento ........ PASS c/ desvios UX (pre-confirmacao do LLM)
+C4  expiracao in-flow ......... PASS — "O registro expirou...", run st=4
+C5  reaper 35min .............. PASS — last_error exato, metrica +1, silencio;
+                                ACHADO: TTL mede updated_at (B-04)
+C6  correcao generica ......... PASS c/ desvios (coleta 2 turnos; confirmacao
+                                so mostra valor novo — D-C6.2/B-05)
+C7  multi-candidato uber ...... PASS — so 1 linha alterada; desvios D-C7.x
+C8  farmacia 45→50 ............ FAIL no turno (F-04) → PASS na recuperacao;
+                                B-07: searchAmountCents nao filtra candidatos
+C9  guard edicao +/- .......... PASS — handled=1, 0 falso positivo; agravante
+                                B-02 (fallback LLM erra correcao)
+C10 credito parcelado ......... PASS — diff integro (card/installments/
+                                categoria preservados); D-C10.1 decided_at
+C11 "que dia é hoje?" ......... PASS — data exata vs VPS
+C12 interrupcao por receita ... FAIL (F-07/B-10) — "recebi 500..." engolida
+                                pelo rascunho; limpeza PASS
+C13 metricas observacionais ... PASS — 0 ocorrencias anomalas
+R1  despesa pix ............... PASS — tx 5f3ab01a
+R2  cancelar no meio .......... PASS — 0 tx 9900, run cancelled
+R3  recusar confirmacao ....... FAIL na 1a (F-08/B-12) → PASS na re-execucao
+R4  reprompt 2x → cancela ..... PASS — cancelou no 2o "talvez" (alarme falso
+                                meu corrigido com timeline completa)
+R5  receita ................... PASS — tx 85e89a40 direction=1
+R6  rascunho + consulta ....... PASS-por-criterio — consulta engolida;
+                                B-13 (reprompt reconstruiu candidatas)
+R7  idempotencia .............. PASS c/ ressalva — 0 dupes ledger, 0 failed
+                                whatsapp, dedup 87; 1 outbox failed (injecao
+                                de teste C4)
+
+================================================================================
+VEREDITO GLOBAL
+================================================================================
+Pela regra F7 (PASS global somente com 100% verdes + gates limpos):
+NAO-PASS — o produto NAO esta production-ready neste recorte. O ensaio foi
+completo (todos os cenarios executados com evidencia), mas ha 4 classes de
+falha de produto abertas + 1 falha corrigida aguardando deploy:
+
+ABERTAS (bloqueantes para production-proof):
+1. F-03/B-01: mensagem com pagamento explicito depende 100% do LLM
+   (estocastico): ja pediu cartao em mensagem "no pix" 2x documentadas.
+2. F-04/B-02: intents de correcao fora dos regexes do guard sao
+   SISTEMATICAMENTE desviados para re-registro pelo LLM (3 ocorrencias).
+3. F-07/B-10: interrupcao de rascunho so e detectada com valor monetario
+   explicito (R$/reais/centavos); "recebi 500 de freelance" e engolida.
+4. F-08/B-12: caminho LLM de register_expense nao faz clarify de subcategoria;
+   escolha raiz-only → usecaseError (write gate) → fallback generico 2x.
+5. B-11 (grave, auditoria): platform_messages registra texto DIFERENTE do
+   entregue no WhatsApp nos fallbacks — historico do LLM diverge da realidade.
+
+CORRIGIDA (working tree, aguardando commit/deploy do usuario):
+6. F-06: 💳 como substituto da palavra "cartao" no guard card_provenance —
+   constante + 2 asserts de teste corrigidos; go build/vet/test -race OK.
+
+BACKLOG COMPLETO: B-01..B-13 detalhados nas secoes F-03, F-04, C5, F-06,
+C9/C10, F-07, C8, F-08, R6 acima.
+
+RECOMENDACAO: corrigir B-01, B-02, B-10, B-12, B-11 (nesta ordem de impacto),
+deploy, e re-executar SOMENTE os cenarios afetados (C2-classe pix, C8, C12,
+R3, R6) + gates F1–F6. O restante do roteiro esta verde e nao precisa re-rodar.
