@@ -1150,3 +1150,79 @@ PENDENCIAS
    b. Se o LLM registrar de verdade (tool), fluxo completa — melhor desfecho.
 2. Rodada seguinte: item 2 (system prompt -> register_expense com cardId),
    B-02, B-11, B-03..B-09, B-13.
+
+--------------------------------------------------------------------------------
+RE-VALIDACAO RODADA 3 — "gastei 45 no cartão nubank" — 18:06 UTC (deploy 0526ef0)
+--------------------------------------------------------------------------------
+[PASS — desfecho (b) como projetado]
+1. LLM fabricou PERGUNTA DE SUBCATEGORIA parafraseada ("Qual é a subcategoria
+   dentro de *Custo Fixo*? 📂" + 12 opcoes + sufixo do catalogo) — de novo SEM
+   workflow_run (zero runs na janela, confirmado).
+2. Fix A funcionou: sufixo estrutural ("ou me diga o nome da subcategoria.")
+   casou -> category_without_tool forçou fallback + UsecaseError NO MESMO TURNO.
+   Usuario nao foi levado a um "2" sem saida (diferenca chave vs 17:22).
+3. Fix B1/B2 funcionou: platform_runs.error POPULADO com o texto fabricado
+   (lido integralmente) — F-02 resolvido tambem para caminho guard-forcado.
+4. Consumidor entregou fallbackReply ("não consegui concluir agora, pode
+   repetir?") — whatsapp_inbound_consumer.go:229-235 mapeia qualquer outcome
+   nao-sucedido para essa string, enquanto platform_messages registra o
+   fallback do guard ("Não consegui registrar. Tente novamente em breve.").
+   Divergencia de texto ENTRE CAMADAS explicada (sabor do B-11): nao e perda
+   de dados, sao duas constantes de fallback diferentes.
+
+[PENDENTE — coerencia de fallback] Unificar texto de falha entregue vs
+registrado (consumer usa fallbackReply generico; platform_messages guarda o do
+guard). Decisao de produto, nao bug funcional.
+
+[PENDENTE — raiz] LLM continua fabricando em vez de chamar register_expense
+com cardId. Cura raiz = item 2 (system prompt). Guards sao rede de seguranca,
+nao substituto.
+
+================================================================================
+RODADA 4 — F-08 cura raiz: sequência obrigatória pós-resolve_card (prompt)
+Data: 2026-07-28 (após deploy 0526ef0)
+================================================================================
+
+PROBLEMA (evidência produção, run 17:22:23 UTC e traces 9febcb30.../c6336664...):
+  "gastei 45 no cartão nubank" → LLM chamou resolve_card (found=true) e, em vez
+  de chamar register_expense com o cardId, redigiu pergunta de subcategoria por
+  conta própria → category guard bloqueou → fallback ao usuário.
+  As regras L.100/102/105/109 já mandavam resolve_card → register_expense, mas
+  nenhuma PROIBIA explicitamente encerrar o turno com texto fabricado após
+  resolve_card found=true.
+
+MUDANÇA (somente texto de instruções — sem código novo, sem abstração):
+  Arquivo: internal/agents/application/agents/mecontrola_agent.go
+  Nova regra na REGRA ABSOLUTA DE SELEÇÃO DETERMINÍSTICA DE FERRAMENTA,
+  após a regra do cardId obrigatório:
+  "REGRA ABSOLUTA DE SEQUÊNCIA PÓS-RESOLVE_CARD": found=true → ÚNICA ação
+  permitida é chamar register_expense IMEDIATAMENTE com cardId +
+  paymentMethod=credit_card (+ installments); PROIBIDO responder texto,
+  formular pergunta de categoria/subcategoria/pagamento/confirmação ou
+  encerrar o turno; categoria/pagamento/confirmação vêm do outcome=clarify
+  da própria register_expense; única pergunta permitida pós-resolve_card é
+  sobre o cartão e SOMENTE quando found=false.
+
+GATES DE SKILLS (respondidos, não reabertos):
+  - design-patterns-mandatory: NÃO APLICAR PADRÃO (mudança de texto; sem
+    abstração/composição/variação nova).
+  - domain-modeling-production: sem diff em **/domain/** → só princípios DMMF.
+  - go-implementation: cross-cutting/boundary em internal/agents.
+  - mastra: gates 1/3/4 OK (kernel não tocado; gates 2/5/6 não afetados).
+
+VALIDAÇÃO LOCAL (proporcional ao escopo):
+  - gofmt -l internal/agents/ → limpo
+  - go build ./internal/agents/... → OK
+  - go vet ./internal/agents/... → OK
+  - go test -race -count=1 ./internal/agents/... → OK (todos os pacotes,
+    incluindo golden harness unit-level)
+  - ./.tools/bin/golangci-lint run ./internal/agents/... → 0 issues
+    (binário do sistema é v1 e incompatível com .golangci.yml v2; usado o
+    binário pinado do repositório)
+
+PENDENTE (não validado por mim):
+  - Golden Gate real-LLM na CI após commit.
+  - Re-validação em produção pós-deploy: "gastei 45 no cartão nubank" deve
+    registrar de verdade (workflow_run criado; pergunta de categoria legítima
+    com verbatim vindo da tool; transação persistida com payment_method
+    credit_card + card_id do Nubank).
