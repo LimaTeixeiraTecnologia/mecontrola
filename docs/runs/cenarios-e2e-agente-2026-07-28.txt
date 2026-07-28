@@ -1,0 +1,505 @@
+================================================================================
+ROTEIRO E2E PRODUCTION-PROOF — AGENTE WHATSAPP / TRANSACTION-WRITE
+Data: 2026-07-28
+Usuário sob teste: 9bbbbbcd-2081-40a8-9780-2b5d818f1580 (+5511986896322)
+VPS: ssh mecontrola-vps | DB: mecontrola_db (schema mecontrola) | Stack: Swarm
+Escopo: commits de 2026-07-27 (3a4d06a..e16dd2c) + reafirmação 6f05b05 (2026-07-19)
+
+REGRAS DESTE ROTEIRO
+- Nenhum PASS sem evidência colada (linha de SELECT, log, métrica ou trace).
+- Nenhuma resposta inventada: se o bot divergir do esperado, registrar o texto
+  REAL em platform_messages (role=assistant) e marcar FAIL/DIVERGÊNCIA.
+- Fonte de verdade das respostas do bot: tabela mecontrola.platform_messages,
+  não apenas o relato visual do WhatsApp.
+- Entre cenários: nenhum workflow_runs ativo/suspenso do usuário. Se sobrar,
+  enviar "cancelar" no WhatsApp antes de prosseguir.
+
+COMANDOS-BASE
+  DB:    ssh mecontrola-vps 'docker exec $(docker ps -qf name=mecontrola_postgres.1) psql -U mecontrola -d mecontrola_db -c "<SQL>"'
+  LOGS:  ssh mecontrola-vps 'docker service logs mecontrola_server --since 15m 2>&1 | grep -F "<str>"'
+         ssh mecontrola-vps 'docker service logs mecontrola_worker --since 15m 2>&1 | grep -F "<str>"'
+  PROM:  ssh mecontrola-vps 'docker exec $(docker ps -qf name=mecontrola_otel-lgtm) wget -qO- "http://localhost:9090/api/v1/query?query=<promql>"'
+  TRACE: ssh mecontrola-vps 'docker exec $(docker ps -qf name=mecontrola_otel-lgtm) wget -qO- "http://localhost:3200/api/search?tags=..."'
+
+UID = 9bbbbbcd-2081-40a8-9780-2b5d818f1580 (usar nas queries abaixo)
+
+================================================================================
+[S0] SETUP E BASELINE (bloqueante antes de qualquer mensagem)
+================================================================================
+
+S0.1 — CONFIRMAR QUE O DEPLOY CONTÉM OS COMMITS
+  A imagem rodando é ghcr.io/limateixeiratecnologia/mecontrola@sha256:4ce0d633...
+  Verificações (qualquer uma positiva serve; nenhuma positiva = PARAR e reportar):
+  a) docker inspect do container server → comparar digest com o build do CI do
+     commit e16dd2c (HEAD de 2026-07-27).
+  b) Evidência comportamental: métrica agent_empty_completion_retries_total só
+     existe a partir de e16dd2c. Query:
+       agent_empty_completion_retries_total
+     Se a série existir (mesmo com valor 0), o binário é novo.
+  PASS: deploy confirmado contendo e16dd2c. FAIL: parar execução e reportar.
+
+S0.2 — BASELINE DB (anotar valores)
+  SELECT count(*) AS tx_total, max(created_at) FROM mecontrola.transactions
+   WHERE user_id='UID';
+  SELECT id, bank, nickname, closing_day, due_day FROM mecontrola.cards
+   WHERE user_id='UID' AND deleted_at IS NULL;
+  SELECT version FROM mecontrola.category_editorial_version;
+  SELECT status, count(*) FROM mecontrola.workflow_runs
+   WHERE correlation_key LIKE 'UID:%' GROUP BY status;
+  SELECT count(*) FROM mecontrola.platform_runs WHERE resource_id='UID';
+
+S0.3 — BASELINE MÉTRICAS (anotar valores de todas as séries)
+  agent_runs_total
+  agent_empty_completion_retries_total
+  agent_guard_decisions_total
+  agents_write_total
+  agents_resume_dispatch_total
+  agents_whatsapp_inbound_total
+  agents_transaction_write_false_success_total
+  workflow_runs_total
+  workflow_stale_suspended_reaped_total
+  workflow_version_conflict_total
+
+S0.4 — PRÉ-CONDIÇÃO: ≥1 cartão ativo (necessário para C1 e C10).
+  Se não houver: criar via agente ("quero cadastrar um cartão") como SETUP.
+
+S0.5 — PRÉ-CONDIÇÃO: nenhum workflow_runs ativo/suspenso do usuário.
+  Se houver: enviar "cancelar" no WhatsApp e confirmar status terminal.
+
+================================================================================
+[C1] DESPESA NO CRÉDITO — snapshot de categoria não invertido + texto de cartão
+     Commits: 3a4d06a
+================================================================================
+PRÉ-CONDIÇÃO: cartão ativo (S0.4); nenhum rascunho aberto (S0.5).
+
+ENVIAR: "gastei 120 no mercado no crédito"
+SE O BOT PEDIR CARTÃO: responder o apelido exato do cartão (ex.: "nubank")
+SE O BOT PEDIR CATEGORIA: responder "1" (índice) ou o nome da categoria
+QUANDO PEDIR CONFIRMAÇÃO: responder "sim"
+
+ESPERADO (bot):
+  - Pergunta de categoria: "Em qual categoria isso se encaixa? 📂" +
+    "Responda o número ou o nome. 🙂" (fonte: messages/catalog.go:344,349)
+  - Confirmação: "💰 Valor: R$ 120,00\n📅 Data: hoje\n📂 Categoria: ...\n
+    💳 Forma de pagamento: ...\n\nPosso registrar?" (fonte: catalog.go:246)
+    → texto de cartão SEM emoji quebrado (commit 3a4d06a)
+  - Sucesso: começa com "Prontinho! ✅"
+
+CHECK DB:
+  SELECT id, payment_method, amount_cents, description,
+         category_name_snapshot, subcategory_name_snapshot,
+         category_editorial_version, card_id, installments_total,
+         origin_operation, origin_wamid
+    FROM mecontrola.transactions
+   WHERE user_id='UID' AND deleted_at IS NULL
+   ORDER BY created_at DESC LIMIT 1;
+  Esperado: payment_method=7 (credit_card); amount_cents=12000;
+  card_id = id do cartão; category_name_snapshot e subcategory_name_snapshot
+  NÃO invertidos (categoria no campo de categoria); category_editorial_version
+  = version atual (S0.2); origin_operation='transaction_write_register'.
+  SELECT wamid, item_seq, operation, resource_kind, resource_id
+    FROM mecontrola.agents_write_ledger WHERE user_id='UID'
+   ORDER BY created_at DESC LIMIT 1;
+  Esperado: resource_kind='transaction', resource_id = id da transação.
+
+CHECK MÉTRICA:
+  agents_write_total{operation="register_expense",outcome="created"} → +1 vs S0.3
+  agents_transaction_write_false_success_total → +0 (inalterada)
+
+CRITÉRIO: PASS só com bot conforme + linha DB conforme + ledger conforme +
+métrica created +1 e false_success +0.
+
+================================================================================
+[C2] ESCOLHA DE CATEGORIA COM MARKDOWN — Commit: a204893
+================================================================================
+ENVIAR: "gastei 45 na farmácia no pix"
+QUANDO PEDIR CATEGORIA: responder "*Saúde*"   (com asteriscos, markdown)
+QUANDO PEDIR CONFIRMAÇÃO: responder "sim"
+
+ESPERADO (bot): categoria aceita SEM reprompt indevido; sucesso "Prontinho! ✅".
+  Reprompt indevido seria: "Qual se encaixa melhor? 📂" repetido ou
+  "Não entendi..." após resposta válida.
+
+CHECK DB: última transação com amount_cents=4500, payment_method pix,
+  category_id correspondente a Saúde (verificar category_name_snapshot).
+
+RESSALVA CONHECIDA (documentar, não é falha): "*2*" (índice numérico com
+markdown) NÃO casa por índice — o índice usa strconv.Atoi no texto cru; cai no
+matching por nome normalizado. Só o NOME com markdown é coberto pelo commit.
+
+CRITÉRIO: PASS = categoria resolvida para Saúde sem reprompt; FAIL = reprompt
+ou categoria errada.
+
+================================================================================
+[C3] EDIÇÃO DIRETA PREENCHE VALORES ANTERIORES — Commit: c04f5af
+================================================================================
+PRÉ-CONDIÇÃO: transação de C1 existe (mercado, R$ 120,00).
+
+ENVIAR: "edita o lançamento do mercado"
+SE O BOT PEDIR O QUE MUDAR / NOVO VALOR: responder "130" ou "valor 130"
+QUANDO PEDIR CONFIRMAÇÃO: responder "sim"
+
+ESPERADO (bot): confirmação de edição MOSTRANDO valores anteriores:
+  "✏️ Lançamento atual: R$ 120,00 em *Mercado* (...)
+   🔄 Novo valor: R$ 130,00
+
+   Posso atualizar?"
+  (fonte: messages/transaction_write_messages.go:47)
+  Sucesso: "Prontinho, atualizei! ✅"
+
+CHECK DB: transação do mercado com amount_cents=13000, version incrementado
+  (+1 vs C1), demais campos íntegros.
+
+CRITÉRIO: PASS = texto de confirmação contém valor ANTIGO (R$ 120,00) e NOVO
+(R$ 130,00) + DB atualizado. FAIL = confirmação sem valores anteriores.
+
+================================================================================
+[C4] EXPIRAÇÃO REAL IN-FLOW (TTL 30min, forçada via banco) — Commit: b3fde48
+================================================================================
+ENVIAR: "gastei 30 no uber"
+→ PARAR na primeira pergunta (categoria ou pagamento). NÃO responder ainda.
+
+CAPTURAR run_id:
+  SELECT id, status, state->>'awaiting' AS awaiting, state->>'suspendedAt'
+    FROM mecontrola.workflow_runs
+   WHERE workflow='transaction-write' AND correlation_key LIKE 'UID:%'
+     AND status='suspended' ORDER BY updated_at DESC LIMIT 1;
+
+FORÇAR EXPIRAÇÃO (única escrita direta no banco; SELECT antes/depois):
+  UPDATE mecontrola.workflow_runs
+     SET state = jsonb_set(state, '{suspendedAt}',
+           to_jsonb((now() - interval '31 minutes')::text))
+   WHERE id = '<run_id>';
+
+ENVIAR: "uber"
+
+ESPERADO (bot): "O registro expirou. Para continuar, envie a informação
+  completa novamente. 🙂" (fonte: transaction_write_messages.go:78)
+
+CHECK DB: run com state->>'status' = 'expired' (ou status terminal equivalente).
+CHECK MÉTRICA:
+  agents_resume_dispatch_total{outcome="handled"} → +1
+  agent_guard_decisions_total{guard="expired_without_tool",decision="handled"}
+    → +0 NESTE TURNO (expiração real veio do workflow, não do guard)
+
+CRITÉRIO: PASS = texto exato de expiração + run expired + guard não disparado.
+
+================================================================================
+[C5] REAPER (35min) FORÇADO VIA BANCO
+================================================================================
+ENVIAR: "gastei 10 em teste reaper"
+→ PARAR na primeira pergunta. Capturar run_id (query do C4).
+
+FORÇAR:
+  UPDATE mecontrola.workflow_runs
+     SET state = jsonb_set(state, '{suspendedAt}',
+           to_jsonb((now() - interval '36 minutes')::text))
+   WHERE id = '<run_id>';
+
+AGUARDAR o tick do job agents-transaction-write-reaper (rodar a query abaixo a
+cada ~1min até mudar).
+
+CHECK DB:
+  SELECT id, status, last_error FROM mecontrola.workflow_runs WHERE id='<run_id>';
+  Esperado: status='failed',
+  last_error='workflow: suspenso alem do TTL, expirado pelo reaper'
+
+CHECK MÉTRICA: workflow_stale_suspended_reaped_total → +1
+CHECK NEGATIVO: nenhuma mensagem nova ao usuário —
+  SELECT role, content, created_at FROM mecontrola.platform_messages
+   WHERE thread_id IN (SELECT thread_id FROM mecontrola.platform_threads
+                        WHERE resource_id='UID')
+   ORDER BY created_at DESC LIMIT 3;
+  (nenhuma linha assistant sobre expiração do reaper)
+
+CRITÉRIO: PASS = run failed pelo reaper + métrica +1 + silêncio para o usuário.
+
+================================================================================
+[C6] EDIT_ENTRY COM ENTRYID INVÁLIDO CAI EM BUSCA POR CRITÉRIO — Commit: 35f3388
+================================================================================
+ENVIAR: "quero corrigir um lançamento aí"
+
+ESPERADO (bot) — qualquer UM dos dois = PASS:
+  a) "Encontrei mais de um lançamento compatível. Qual deles você quer editar?"
+     + lista numerada (fonte: transaction_write_messages.go:101), ou
+  b) "Não encontrei um lançamento compatível para editar. Pode me dar mais
+     detalhes (valor, categoria ou descrição)?" (fonte: :90)
+FAIL: fallback genérico ("não consegui concluir agora, pode repetir?"), crash,
+ou ausência de resposta.
+
+CHECK DB: zero alterações em transactions no turno.
+CHECK LOG: sem Error em "workflows.transaction_write: search_edit_candidates:"
+
+CRITÉRIO: PASS = resposta (a) ou (b) + DB intacta + log limpo.
+
+================================================================================
+[C7] MULTI-CANDIDATO + ESCOLHA NUMERADA (lacuna coberta)
+================================================================================
+PRÉ-CONDIÇÃO: ≥2 lançamentos compatíveis com o termo "uber" (C4 criou um de
+R$ 30; criar outro via setup: "gastei 30 no uber no pix" → concluir).
+
+ENVIAR: "edita o lançamento do uber"
+ESPERADO (bot): "Encontrei mais de um lançamento compatível. Qual deles você
+  quer editar?\n\n1. R$ 30,00 - ...\n2. R$ 30,00 - ..."
+ENVIAR: "1"
+ESPERADO (bot): confirmação de edição do candidato 1 ("✏️ Lançamento atual: ...")
+ENVIAR: novo valor se pedir, depois "sim"
+
+CHECK DB: apenas o candidato escolhido alterado; o outro uber intacto.
+  Conferir state->>'targetTransactionId' = id do candidato 1 no workflow_runs.
+
+CRITÉRIO: PASS = lista numerada + escolha "1" respeitada + só 1 linha alterada.
+
+================================================================================
+[C8] BUSCA POR VALOR ANTIGO + VALOR NOVO SEPARADOS — Commits: b1f1da7 + a025f41
+================================================================================
+PRÉ-CONDIÇÃO: transação da farmácia de R$ 45,00 existe (C2).
+
+ENVIAR: "corrija o lançamento de 45 da farmácia para 50"
+QUANDO PEDIR CONFIRMAÇÃO: "sim"
+
+ESPERADO (bot): "✏️ Lançamento atual: R$ 45,00 ..." + "🔄 Novo valor: R$ 50,00"
+  → prova de que a BUSCA usou 45 (valor atual) e o NOVO valor é 50.
+  FAIL se buscar por 50 (não acharia) ou gravar 45.
+
+CHECK DB: farmácia com amount_cents=5000; nenhuma outra transação alterada
+  (comparar updated_at das demais).
+
+CRITÉRIO: PASS = confirmação com 45→50 + DB com 5000 + demais intactas.
+
+================================================================================
+[C9] GUARD DETERMINÍSTICO DE CORREÇÃO — Commit: 203c138
+================================================================================
+PRÉ-CONDIÇÃO: lançamento uber de R$ 30,00 existente (C4/C7).
+
+ENVIAR: "no uber eu gastei 35 e não 30"
+  (casa o regex Padrão B: n[ao] <desc> (eu) gastei X e não Y —
+   fonte: guards/edit_entry_correction_shortcut.go:16)
+QUANDO PEDIR CONFIRMAÇÃO: "sim"
+
+ESPERADO (bot): fluxo de edição aberto pela tool edit_entry (confirmação de
+  edição ou clarify da tool), SEM texto solto do LLM.
+CHECK MÉTRICA:
+  agent_guard_decisions_total{guard="edit_entry_correction_shortcut",
+    decision="handled"} → +1 vs baseline
+CHECK DB: uber escolhido com amount_cents=3500.
+
+VARIANTE NEGATIVA (bloqueador):
+ENVIAR: "no cartão eu gastei 35 e não 30"
+ESPERADO: guard NÃO dispara (contém "cartão", bloqueador — fonte: :19-23).
+CHECK MÉTRICA: edit_entry_correction_shortcut decision="handled" → +0 neste turno.
+
+CRITÉRIO: PASS = handled +1 na frase-alvo + edição correta + bloqueador não
+dispara na variante.
+
+================================================================================
+[C10] EDIÇÃO DE CRÉDITO PARCELADO PRESERVA CARTÃO/PARCELAS/EVIDÊNCIA
+      Commits: 8300022 + 4ad802d + 7a21182 + 3a4d06a
+================================================================================
+SETUP: ENVIAR "comprei 600 de eletrônico em 3x no crédito" → cartão → categoria
+→ "sim". Capturar o ANTES completo:
+  SELECT id, amount_cents, version, card_id, installments_total,
+         card_closing_day, card_due_day, category_id, subcategory_id,
+         category_name_snapshot, subcategory_name_snapshot, category_kind,
+         category_path, category_outcome, category_score, category_confidence,
+         category_match_quality, category_signal_type, category_matched_term,
+         category_match_reason, category_decision_source,
+         category_editorial_version
+    FROM mecontrola.transactions
+   WHERE user_id='UID' AND description ILIKE '%eletrônico%'
+   ORDER BY created_at DESC LIMIT 1;
+
+ENVIAR: "edita o lançamento do eletrônico"
+SE PEDIR O QUE MUDAR: "valor 550"  (NÃO trocar categoria)
+QUANDO PEDIR CONFIRMAÇÃO: "sim"
+
+ESPERADO (bot): "✏️ Lançamento atual: R$ 600,00 ..." + "🔄 Novo valor: R$ 550,00"
+  + "Posso atualizar?" → "Prontinho, atualizei! ✅"
+
+CHECK DB (DEPOIS — rodar o mesmo SELECT):
+  MUDOU:  amount_cents=55000, version+1, updated_at
+  INALTERADOS (FAIL se qualquer um mudar): card_id, installments_total=3,
+  card_closing_day, card_due_day, category_id, subcategory_id,
+  category_name_snapshot, subcategory_name_snapshot (e não invertidos),
+  category_kind, category_path, category_outcome, category_score,
+  category_confidence, category_match_quality, category_signal_type,
+  category_matched_term, category_match_reason, category_editorial_version
+  category_decision_source='user_selected_candidate'
+
+CHECK MÉTRICA: agents_write_total{operation="edit_entry",outcome="created"} +1
+
+CRITÉRIO: PASS = diff antes/depois exatamente como acima, campo a campo.
+
+================================================================================
+[C11] DATA/HORA NO SYSTEM PROMPT — Commit: 112d428
+================================================================================
+ENVIAR: "que dia é hoje?"
+
+ESPERADO (bot): resposta com a DATA REAL DE HOJE no fuso America/Sao_Paulo.
+  Comparar com: ssh mecontrola-vps 'TZ=America/Sao_Paulo date'
+  FAIL: data errada, ano errado, ou recusa em responder.
+
+CHECK TRACE (Tempo): span do LLM do turno (agent.execute/agent.stream) —
+  payload do system prompt deve conter "## Data e Hora Atuais" e
+  "Agora são HH:MM de DD/MM/AAAA".
+  Ressalva: se o payload do prompt não for capturado no span, registrar a
+  limitação e valer o assert comportamental acima.
+
+CRITÉRIO: PASS = data correta na resposta (e evidência de prompt se disponível).
+
+================================================================================
+[C12] REAFIRMAÇÃO REGISTRA SOMENTE A MENSAGEM ATUAL — Commit: 6f05b05
+================================================================================
+ENVIAR: "gastei 20 no café"
+→ na pergunta de categoria, NÃO responder a categoria. ENVIAR em vez disso:
+  "recebi 500 de freelance"
+→ seguir o NOVO fluxo (origem/categoria da receita) até "sim".
+
+ESPERADO (bot): o rascunho do café é descartado e o fluxo da receita segue
+  normalmente até confirmação da RECEITA.
+
+CHECK DB:
+  - run antigo (café): state->>'status' = 'replaced'
+  - nova transactions: direction=1 (income), amount_cents=50000
+  - platform_messages: o turno "recebi 500 de freelance" aparece UMA vez como
+    user; nenhuma resposta assistant duplicada misturando café + freelance.
+CHECK MÉTRICA: agents_resume_dispatch_total{outcome="not_handled"} → +1
+  (resume não tratado pelo workflow antigo → cai no runtime do agente)
+
+CRITÉRIO: PASS = run antigo replaced + receita criada + mensagens limpas.
+
+================================================================================
+[C13] GUARDS OBSERVACIONAIS — Commits: e16dd2c + 32fd0f1
+================================================================================
+Executar AO FINAL de todos os cenários (consolida o recorte inteiro):
+
+a) RETRY DE CONCLUSÃO VAZIA (e16dd2c):
+   CHECK MÉTRICA: agent_empty_completion_retries_total (delta vs S0.3)
+   CHECK LOG: "agent.runtime.execute: conclusão vazia do LLM, tentando novamente"
+   - Se delta > 0: verificar que os runs correspondentes concluíram SEM o
+     usuário receber "Não consegui registrar" → PASS.
+   - Se delta = 0 E sem log: marcar "NÃO EXERCITADO EM PRODUÇÃO — coberto por
+     internal/platform/agent/runtime_test.go" (ressalva; não forçável sem
+     injeção de falha no provider LLM).
+
+b) EXPIRED_WITHOUT_TOOL (32fd0f1):
+   CHECK MÉTRICA: agent_guard_decisions_total{guard="expired_without_tool",
+     decision="handled"} (delta vs S0.3)
+   - Incremento só é aceitável adjacente ao C4. Qualquer incremento em outro
+     turno = FAIL (texto de expiração fora de hora).
+   - Se 0: PASS (nenhuma alucinação de expiração ocorreu no recorte).
+
+================================================================================
+REGRESSÃO BASE — R1..R7 (fluxos que NÃO podem quebrar)
+================================================================================
+
+R1 — DESPESA PIX COMPLETA
+  ENVIAR: "gastei 15 no lanche no pix" → categoria → "sim"
+  ESPERADO: confirmação padrão + "Prontinho! ✅"; DB: direction=2, pix, 1500.
+
+R2 — CANCELAR NO MEIO
+  ENVIAR: "gastei 99 em teste cancelamento" → na primeira pergunta: "cancelar"
+  ESPERADO: "Tudo certo, o registro foi cancelado. 🙂"
+    (fonte: transaction_write_messages.go:74)
+  DB: run state->>'status'='cancelled'; ZERO nova transação de 9900.
+
+R3 — RECUSAR CONFIRMAÇÃO
+  ENVIAR: "gastei 77 em teste recusa no pix" → categoria → na confirmação: "não"
+  ESPERADO: "Tudo certo, o registro foi cancelado. 🙂"; ZERO transação de 7700.
+
+R4 — REPROMPT DE CONFIRMAÇÃO (2 falhas → cancela)
+  ENVIAR: "gastei 33 em teste reprompt no pix" → categoria → na confirmação:
+    "talvez"
+  ESPERADO: "Não entendi. Por favor, responda apenas *sim* ou *não* para
+    confirmar." (fonte: transaction_write_messages.go:82)
+  ENVIAR: "talvez" (2ª falha)
+  ESPERADO: cancelado; run 'cancelled'; ZERO transação de 3300.
+
+R5 — RECEITA
+  ENVIAR: "recebi 200 de venda" → origem/categoria → "sim"
+  ESPERADO: confirmação "💰 Valor: R$ 200,00\n📥 Origem: ..." (catalog.go:253);
+    sucesso "Boa notícia! 🎉"; DB: direction=1, amount_cents=20000.
+
+R6 — RASCUNHO ABERTO + CONSULTA
+  ENVIAR: "gastei 55 em teste consulta" → na pergunta, ENVIAR: "quanto gastei hoje?"
+  ESPERADO: comportamento real documentado (consulta respondida e rascunho
+  preservado, OU replace tratado) — registrar o que ocorrer em
+  platform_messages e workflow_runs; depois "cancelar" para limpar.
+  CRITÉRIO: sem crash, sem fallback genérico, sem escrita errada.
+
+R7 — IDEMPOTÊNCIA E PIPELINE DE EVENTOS (consolidado do recorte)
+  DB:
+    SELECT wamid, item_seq, operation, count(*) FROM mecontrola.agents_write_ledger
+     WHERE user_id='UID' GROUP BY 1,2,3 HAVING count(*)>1;
+    → esperado: 0 linhas (sem duplicata de escrita).
+    SELECT status, count(*) FROM mecontrola.outbox_events
+     WHERE aggregate_user_id='UID' AND created_at > '<início do ensaio>'
+     GROUP BY status;
+    → esperado: tudo status=3 (Published), attempts sem retries anômalos.
+    SELECT message_id, status, error_code FROM mecontrola.whatsapp_message_status
+     WHERE created_at > '<início do ensaio>' ORDER BY created_at DESC;
+    → esperado: nenhum status='failed'.
+    SELECT count(DISTINCT message_id) FROM mecontrola.channel_processed_messages
+     WHERE channel='whatsapp' AND processed_at > '<início do ensaio>';
+    → todos os wamids do ensaio presentes (dedup íntegro).
+
+================================================================================
+RESSALVAS E LACUNAS (declaradas, sem invenção)
+================================================================================
+1. RETRY DE CONCLUSÃO VAZIA (e16dd2c) e guard EXPIRED_WITHOUT_TOOL (32fd0f1)
+   dependem de comportamento do LLM — NÃO forçáveis deterministicamente via
+   WhatsApp. Validação observacional (C13) + cobertura unitária existente
+   (runtime_test.go, expired_without_tool_test.go).
+2. "*2*" (índice com markdown) NÃO casa por índice numérico — o índice usa
+   strconv.Atoi no texto cru; apenas o NOME com markdown é coberto (a204893).
+3. EDIÇÃO pix→crédito é bloqueada por design (PaymentMethodMigrationBlocked).
+   Cenário opcional: se houver lançamento pix, tentar "edita o lançamento X,
+   pagamento crédito" e registrar o texto real exibido.
+4. REPLAY de webhook (mesmo wamid 2x) não é reproduzível pelo WhatsApp real —
+   validado indiretamente em R7 (channel_processed_messages + ledger).
+5. Textos do bot conferidos contra platform_messages (role=assistant), fonte
+   de verdade — não apenas o relato visual do WhatsApp.
+6. A ÚNICA escrita direta no banco é o UPDATE de state->>'suspendedAt' em
+   C4/C5, escopada por run_id, com SELECT antes/depois.
+
+================================================================================
+VALIDAÇÃO FINAL — GATE DE 0 REGRESSÃO (rodar após o último cenário)
+================================================================================
+F1. Re-rodar baseline S0.2: nenhuma transação criada/alterada fora dos cenários
+    executados (diff por id).
+F2. outbox_events do usuário: 100% status=3 no recorte.
+F3. whatsapp_message_status: 0 failed no recorte.
+F4. Métricas (deltas vs S0.3):
+    agents_transaction_write_false_success_total → +0
+    agents_whatsapp_inbound_total{outcome="error"} → +0
+    workflow_version_conflict_total → sem incremento anômalo
+F5. platform_runs do usuário no recorte: nenhum status='failed' com
+    outcome='usecaseError' fora de cenário intencional.
+F6. Logs do recorte completo: sem Error em "agent.runtime.",
+    "workflows.transaction_write:", "transactions/repository:" que não
+    corresponda a cenário intencional.
+F7. Tabela final no arquivo de resultados: cenário × veredito × evidência ×
+    ressalva. Veredito global PASS somente com 100% dos cenários obrigatórios
+    verdes + gates F1–F6 limpos.
+================================================================================
+
+================================================================================
+ADENDO 2026-07-28 — ACHADOS REAIS DA 1ª EXECUÇÃO (ver resultados-e2e-...txt)
+================================================================================
+A1. PERGUNTA DE CARTÃO: existem DOIS caminhos —
+    a) determinístico (workflow): "Qual cartão foi utilizado?" — SEM emoji ✓
+    b) composto pelo LLM (system prompt mandava 💳): observado
+       "Qual é o apelido do 💳 que você usou?" — FAIL corrigido localmente
+       (scrub 💳→cartão no system prompt + cardNotFoundClarifyMessage).
+       ASSERT ATUALIZADO para todos os cenários com cartão: qualquer pergunta
+       de cartão DEVE usar a palavra "cartão", nunca 💳 como substantivo.
+       Válido em produção somente APÓS o próximo deploy (fix local commitável).
+A2. C2 FARMÁCIA PIX: falhou 2x no deploy e16dd2c9 (run failed/usecaseError com
+    error vazio; provável tool alucinada pelo LLM — sem registro no ledger e
+    sem span do starter). RE-TESTE OBRIGATÓRIO da mesma mensagem no próximo
+    bloco de execução; se repetir, escalar como bug com trace em mãos.
+A3. UX observada (não bloqueante): LLM compõe bloco de confirmação próprio
+    antes do bloco determinístico do workflow (C1) e pré-confirmação antes da
+    desambiguação (C3) — registrar se repetir nos próximos cenários.
+A4. Baseline atualizado após 1ª execução: 10 transactions (mercado R$130
+    Nubank, uber R$30 XP), workflow_runs sem ativos no momento do adendo.

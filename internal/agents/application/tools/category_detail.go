@@ -147,7 +147,7 @@ func buildCategoryDetailExec(planner interfaces.BudgetPlanner, ledger interfaces
 			}, nil
 		}
 
-		alloc := matchAllocation(summary.Allocations, root.Slug)
+		alloc := matchAllocation(summary.Allocations, budgetRootSlugForCategory(root.Slug))
 		entries, err := ledger.ListMonthlyEntries(ctx, userID, competenceStr, "", categoryDetailEntriesLimit)
 		if err != nil {
 			return CategoryDetailOutput{}, fmt.Errorf("agents.tool.category_detail: lançamentos mensais: %w", err)
@@ -184,6 +184,14 @@ func matchCategoryRoot(categories []interfaces.Category, term string) (interface
 
 func normalizeCategoryTerm(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
+}
+
+func budgetRootSlugForCategory(catalogSlug string) string {
+	compound := "expense." + strings.ReplaceAll(catalogSlug, "-", "_")
+	if _, err := budgetsvo.ParseRootSlug(compound); err != nil {
+		return catalogSlug
+	}
+	return compound
 }
 
 func matchAllocation(allocations []interfaces.AllocationSummary, rootSlug string) interfaces.AllocationSummary {
@@ -245,7 +253,7 @@ func categoryNamesBySlug(categories []interfaces.Category) map[string]string {
 	names := make(map[string]string, len(categories))
 	for _, c := range categories {
 		if c.Slug != "" && c.Name != "" {
-			names[c.Slug] = c.Name
+			names[budgetRootSlugForCategory(c.Slug)] = c.Name
 		}
 	}
 	return names

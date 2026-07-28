@@ -127,7 +127,7 @@ func TestBuildCategoryDetailTool_GeneralSummary(t *testing.T) {
 			TotalPlannedCents: &total,
 			TotalSpentCents:   spentTotal,
 			Allocations: []interfaces.AllocationSummary{
-				{RootSlug: "custo-fixo", PlannedCents: &total, SpentCents: spentTotal},
+				{RootSlug: "expense.custo_fixo", PlannedCents: &total, SpentCents: spentTotal},
 			},
 		}, nil).Once()
 	reader.EXPECT().
@@ -164,7 +164,7 @@ func TestBuildCategoryDetailTool_SpecificCategory(t *testing.T) {
 		GetMonthlySummary(mock.Anything, testUserID, mock.AnythingOfType("string")).
 		Return(interfaces.BudgetSummary{
 			Allocations: []interfaces.AllocationSummary{
-				{RootSlug: "custo-fixo", PlannedCents: &planned, SpentCents: spent},
+				{RootSlug: "expense.custo_fixo", PlannedCents: &planned, SpentCents: spent},
 			},
 		}, nil).Once()
 	reader.EXPECT().
@@ -186,6 +186,9 @@ func TestBuildCategoryDetailTool_SpecificCategory(t *testing.T) {
 	require.NoError(t, json.Unmarshal(out, &result))
 	assert.Equal(t, categoryDetailOutcomeOK, result.Outcome)
 	assert.Contains(t, result.Message, "Custo Fixo")
+	assert.Contains(t, result.Message, "R$ 2.000,00")
+	assert.Contains(t, result.Message, "R$ 500,00")
+	assert.NotContains(t, result.Message, "Planejado: —")
 }
 
 func TestBuildCategoryDetailTool_CategoryNotFound(t *testing.T) {

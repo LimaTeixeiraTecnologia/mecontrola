@@ -14,7 +14,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 )
 
-const cardNotFoundClarifyMessage = "❌ Não encontrei esse 💳. Pode me dizer o apelido do 💳 (ex.: nubank) para eu localizar o certo?"
+const cardNotFoundClarifyMessage = "❌ Não encontrei esse cartão. Pode me dizer o apelido do cartão (ex.: nubank) para eu localizar o certo?"
 
 type RegisterExpenseInput struct {
 	AmountCents     int64  `json:"amountCents"`
