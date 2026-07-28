@@ -29,9 +29,6 @@ func (g *confirmationWithoutToolGuard) Inspect(_ context.Context, _ agent.Reques
 	if !containsConfirmationMarker(out.Content) {
 		return GuardDecision{}
 	}
-	if len(out.ToolCalls) > 0 {
-		return GuardDecision{}
-	}
 	forced := out
 	forced.Content = successWithoutToolFallbackMessage
 	forced.ToolOutcome = agent.ToolOutcomeUsecaseError

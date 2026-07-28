@@ -60,13 +60,15 @@ func (s *CategoryWithoutToolGuardSuite) TestInspect() {
 			},
 		},
 		{
-			name: "pergunta de categoria com tool chamada passa adiante",
+			name: "pergunta de categoria com tool auxiliar sem verbatim e substituida por falha honesta",
 			out: agent.Result{
 				Content:   "Em qual categoria isso se encaixa? 📂",
-				ToolCalls: []agent.ToolCallRecord{{Tool: "register_expense", Outcome: agent.ToolCallOutcomeSuccess}},
+				ToolCalls: []agent.ToolCallRecord{{Tool: "resolve_card_by_nickname", Outcome: agent.ToolCallOutcomeSuccess}},
 			},
 			expect: func(decision GuardDecision) {
-				s.False(decision.Handled)
+				s.True(decision.Handled)
+				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
+				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
 			},
 		},
 		{

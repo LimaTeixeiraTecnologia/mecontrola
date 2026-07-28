@@ -30,9 +30,6 @@ func (g *categoryWithoutToolGuard) Inspect(_ context.Context, _ agent.Request, o
 	if !containsCategoryMarker(out.Content) {
 		return GuardDecision{}
 	}
-	if len(out.ToolCalls) > 0 {
-		return GuardDecision{}
-	}
 	forced := out
 	forced.Content = successWithoutToolFallbackMessage
 	forced.ToolOutcome = agent.ToolOutcomeUsecaseError

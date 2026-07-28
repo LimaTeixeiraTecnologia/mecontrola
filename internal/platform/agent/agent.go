@@ -201,6 +201,8 @@ func (a *agentImpl) completeWithTools(ctx context.Context, llmReq *llm.Request, 
 			msg, record, status, verbatim, ok := a.invokeToolCall(ctx, toolMap, tc)
 			if ok {
 				llmReq.Messages = append(llmReq.Messages, msg)
+			}
+			if record.Tool != "" {
 				allRecords = append(allRecords, record)
 			}
 			if status == toolExecError {
@@ -221,11 +223,15 @@ func (a *agentImpl) completeWithTools(ctx context.Context, llmReq *llm.Request, 
 func (a *agentImpl) invokeToolCall(ctx context.Context, toolMap map[string]tool.ToolHandle, tc llm.ToolCall) (llm.Message, ToolCallRecord, toolExecStatus, string, bool) {
 	h, ok := toolMap[tc.FunctionName]
 	if !ok {
-		return llm.Message{}, ToolCallRecord{}, toolExecError, "", false
+		content := fmt.Sprintf("tool %s: unknown tool", tc.FunctionName)
+		record := ToolCallRecord{Tool: tc.FunctionName, Outcome: ToolCallOutcomeError, Content: content, ArgumentsJSON: tc.ArgumentsJSON}
+		return llm.Message{}, record, toolExecError, "", false
 	}
 	argsBytes, marshalErr := json.Marshal(tc.ArgumentsJSON)
 	if marshalErr != nil {
-		return llm.Message{}, ToolCallRecord{}, toolExecError, "", false
+		content := fmt.Errorf("tool %s: marshal arguments: %w", h.ID(), marshalErr).Error()
+		record := ToolCallRecord{Tool: h.ID(), Outcome: ToolCallOutcomeError, Content: content, ArgumentsJSON: tc.ArgumentsJSON}
+		return llm.Message{}, record, toolExecError, "", false
 	}
 	tCtx := a.hooks.BeforeTool(ctx, a.id, h.ID())
 	if id, idOk := ctx.Value(identityKey{}).(*toolIdentity); idOk && id != nil {

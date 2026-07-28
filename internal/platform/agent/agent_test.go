@@ -741,6 +741,34 @@ func (s *AgentTestSuite) TestExecute_ToolError_StructuredMessageDeliveredToLLM()
 	}
 }
 
+func (s *AgentTestSuite) TestExecute_UnknownTool_RecordsFailureForObservability() {
+	s.providerMock.EXPECT().
+		Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+		Return(llm.Response{
+			ToolCalls: []llm.ToolCall{{
+				ID:            "tc-ghost",
+				FunctionName:  "ghost_tool",
+				ArgumentsJSON: map[string]any{"foo": "bar"},
+			}},
+		}, nil).Once()
+	s.providerMock.EXPECT().
+		Complete(mock.Anything, mock.AnythingOfType("llm.Request")).
+		Return(llm.Response{Content: "não consegui concluir agora, pode repetir?"}, nil).Once()
+
+	a := NewAgent("agent-1", "instr", s.providerMock, s.obs)
+	result, err := a.Execute(s.ctx, Request{
+		AgentID:  "agent-1",
+		Messages: []llm.Message{{Role: "user", Content: "sim"}},
+	})
+
+	s.NoError(err)
+	s.Equal(ToolOutcomeUsecaseError, result.ToolOutcome)
+	s.Len(result.ToolCalls, 1, "tool desconhecida deve gerar ToolCallRecord de erro para observabilidade")
+	s.Equal("ghost_tool", result.ToolCalls[0].Tool)
+	s.Equal(ToolCallOutcomeError, result.ToolCalls[0].Outcome)
+	s.Contains(result.ToolCalls[0].Content, "unknown tool")
+}
+
 type alwaysValidDecoder struct{}
 
 func (d *alwaysValidDecoder) Schema() llm.Schema      { return llm.Schema{Name: "test"} }

@@ -907,3 +907,186 @@ PENDENCIAS (inegociaveis para production-ready)
    freelance" durante rascunho deve iniciar novo fluxo, nao ser engolido).
 3. Backlog restante: B-02 (frases de correcao "o valor certo e X"),
    B-11 (divergencia platform_messages x WhatsApp entregue), B-03..B-09, B-13.
+
+================================================================================
+RE-VALIDACAO POS-DEPLOY — 2026-07-28 ~16:37 UTC (producao rodando 886853c)
+CI: run 30369408712 SUCCESS total (12 jobs: Governance, Quality, Unit, Build,
+Vuln, Golden Gate real-LLM, Integration, Quality Gates, Push, Scan&Sign,
+Deploy Swarm, Healthcheck). Evidencias via ssh mecontrola-vps (db mecontrola_db,
+schema mecontrola) + Tempo (otel-lgtm:3200). Usuario: 9bbbbbcd-...-2b5d818f1580.
+================================================================================
+
+[B-01 PASS] "gastei 45 na farmácia no pix" (16:37:32.026528Z)
+- Resposta de confirmacao em 16:37:32.028772Z -> 2,2ms fim-a-fim: caminho
+  DETERMINISTICO (shortcut), sem LLM no loop (LLM levaria segundos).
+- platform_runs: succeeded, outcome=routed, duration_ms=20
+  (started_at 16:37:32.011616Z) — pre-guard roteou para a tool.
+- Bloco de confirmacao exibiu "💳 Forma de pagamento: pix" — sufixo de
+  pagamento parseado pelo guard; ZERO "Qual cartão foi utilizado?"
+  (modo de falha F-03 eliminado nessa classe de mensagem).
+- Transacao persistida: direction=2 (despesa), amount_cents=4500,
+  payment_method=1 (= PaymentMethodPix, iota+1 em
+  internal/transactions/domain/valueobjects/payment_method.go:13),
+  description="farmácia", category_path="Custo Fixo > Medicamentos e Farmácia",
+  card_id nulo, installments nulo.
+- workflow_runs: transaction-write succeeded (16:37:32 -> 16:37:39, "sim").
+
+[B-10 PASS] "recebi 500 de freelance" (16:37:47.015539Z)
+- Novo fluxo de receita iniciado (NAO engolido): confirmacao imediata
+  "💰 Valor: R$ 500,00 / 📥 Origem: freelance / Posso registrar?".
+- platform_runs: succeeded, outcome=routed, duration_ms=11.
+- Transacao persistida: direction=1 (receita), amount_cents=50000,
+  description="freelance", category_path="Renda Variável > Freelance".
+- workflow_runs: transaction-write succeeded (16:37:47 -> 16:37:53, "sim").
+
+Observacao de tracing (nao e falha): Tempo nao mostrou span da execucao do
+agente na janela 16:37:32-16:38:40 — o caminho sync do shortcut nao gera
+trace visivel (mesma ressalva de observabilidade ja registrada no C13).
+Spans presentes: POST /api/v1/whatsapp/inbound, consumers
+(monthly_summary_recompute, auth_events), embedding index.
+
+PENDENTE DE ENVIO PELO USUARIO (proximas frases de validacao):
+1. B-12/R3: "gastei 77 em teste recusa no pix" + resposta invalida ->
+   pergunta fabricada deve virar falha honesta + run usecase_error.
+2. C12 suspenso: iniciar rascunho ("gastei 20 no café"), NAO responder a
+   pergunta, enviar "recebi 500 de freelance" -> novo fluxo; depois
+   cancelar/retomar o rascunho.
+3. F-06: fluxo de credito -> pergunta de cartao SEM emoji 💳 na frase.
+4. Classe 0-FP (shortcut NAO pode disparar): "gastei 45 no cartão nubank",
+   "gastei 30 no almoço no vale", "paguei no crédito em 12x",
+   "gastei 30 no ônibus e 15 no café".
+
+--------------------------------------------------------------------------------
+R3 RE-RUN + C12 SUSPENSO — 2026-07-28 ~16:45-16:48 UTC (producao 886853c)
+--------------------------------------------------------------------------------
+[R3/B-01 PASS] "gastei 77 em teste recusa no pix" (16:45:22.0225Z)
+- Pergunta de categoria em 16:45:22.0246Z (2ms, deterministico; run routed 19ms).
+- DIFERENCA CRUCIAL vs R3 original (FAIL de manha, ZERO runs = pergunta
+  fabricada pelo LLM): agora workflow_run REAL transaction-write
+  suspended/awaiting_input criado 16:45:22.0188Z. Pergunta veio do kernel.
+- Estado do rascunho (workflow_runs.state): amountCents=7700,
+  description="teste recusa", paymentMethod="pix" — sufixo parseado (B-01).
+- "talvez" (16:45:31) -> reprompt identico 1us depois (deterministico), run
+  segue suspenso. Correto.
+- Nota honesta: o guard B-12 (category_without_tool) NAO foi exercido — nao
+  houve fabricacao. Cobertura dele e unitaria; em producao so dispara se o
+  LLM fabricar pergunta sem tool/run.
+
+[C12 PASS — cenario exato do FAIL F-07 de manha]
+1. "recebi 500 de freelance" com rascunho R$77 suspenso (16:47:54):
+   run do rascunho encerrado (succeeded 16:47:54.011) + run NOVO da receita
+   (16:47:54.023). Mensagem NAO engolida — B-10.
+2. "cancelar" (16:48:00): run da receita encerrado; ZERO transacao de 500
+   persistida (confirmado por query na janela).
+3. "2" (16:48:13): terceiro run retomou o rascunho R$77 -> pergunta de
+   subcategoria de Custo Fixo. Rascunho sobreviveu a interrupcao.
+4. "1" -> confirmacao R$77 Custo Fixo > Açougue, pagamento pix -> "sim":
+   persistido direction=2, payment_method=1 (pix), 7700, "teste recusa",
+   "Custo Fixo > Açougue", sem cartao. Run succeeded (16:48:34).
+
+PENDENTE DE ENVIO PELO USUARIO:
+3. F-06: fluxo de credito (ex.: "comprei 50 no crédito") -> pergunta do
+   cartao SEM emoji no meio da frase.
+4. Classe 0-FP (shortcut NAO pode disparar): "gastei 45 no cartão nubank",
+   "gastei 30 no almoço no vale", "paguei no crédito em 12x",
+   "gastei 30 no ônibus e 15 no café".
+
+--------------------------------------------------------------------------------
+F-06 + FLUXO CREDITO + NOVO F-08 — 2026-07-28 ~16:52-16:53 UTC (producao 886853c)
+--------------------------------------------------------------------------------
+[F-06 PASS] Pergunta de cartao: "Qual é o apelido do cartão que você usou? 💳"
+— palavra "cartão" presente, emoji ao final (nao substitui a palavra).
+
+[PASS] "comprei 50 no crédito" -> Nubank -> confirmacao -> sim -> categoria ->
+subcategoria -> confirmacao -> sim: persistido 5000 cents, payment_method=7
+(credit_card), has_card=true, installments_total=1, "Custo Fixo > Açougue".
+Desvios menores (nao bloqueantes): (a) descricao persistida como "crédito"
+(parse fraco do LLM — o item comprado e desconhecido); (b) usuario confirmou
+2x (uma com "Categoria: (será resolvida automaticamente)" e outra final).
+
+[F-08 FAIL — NOVO, causa raiz com evidencia de tracing]
+"gastei 45 no cartão nubank" (16:53:14) -> bot exibiu bloco de confirmacao
+("Categoria: (será resolvida automaticamente)... Posso registrar?") -> "sim"
+(16:53:22) -> "Não consegui registrar. Tente novamente em breve."
+Cadeia de causa raiz (trace 9febcb30... / c6336664...):
+1. Run 16:53:12 (routed, 2634ms): 2x llm.complete; o LLM chamou a tool
+   resolve_card_by_nickname (span agents.binding.card_manager...) e depois
+   ESCREVEU o bloco de confirmacao ele mesmo — ZERO workflow_run criado
+   (confirmado por query: nenhum run na janela 16:53:12-16:53:23).
+2. O guard confirmation_without_tool NAO bloqueou: ele so força fallback
+   quando len(toolCalls)==0; aqui havia a tool auxiliar resolve_card ->
+   condicao de bypass confirmada.
+3. Run 16:53:21 ("sim"): llm.complete -> span agents.runtime.tool_call_failure
+   (STATUS_CODE_ERROR, SEM atributos de tool/erro) -> run failed usecaseError
+   com campo error VAZIO -> fallback. Nada persistido (confirmado).
+4. Recorrencia do F-02 (observabilidade): error vazio em platform_runs,
+   span sem atributos, ZERO linhas de log de erro nos 4 services na janela.
+Nota: no fluxo "comprei 50" o bloco "será resolvida automaticamente" tambem
+foi texto do LLM; la o "sim" seguinte chamou register_expense corretamente
+(run criado 16:52:46.860) — ou seja, o desfecho depende de sorte estocastica
+do LLM na chamada seguinte. Inaceitavel para production-proof.
+
+DIRECAO DE CORRECAO PROPOSTA (aguardando aprovacao — fora do escopo B-01/10/12):
+1. Endurecer confirmation_without_tool: marcador de confirmacao so passa com
+   ExpectedVerbatimText(toolCalls) != "" (tool auxiliar sem verbatim nao
+   autoriza bloco de confirmacao). Verificar antes todos os fluxos que hoje
+   dependem de marcador+toolCall-sem-verbatim (risco de falso bloqueio).
+2. Raiz: LLM deve chamar register_expense com cardId apos resolver o cartao
+   (system prompt/tooling), em vez de redigir confirmacao propria.
+3. F-02: propagar erro real para platform_runs.error + atributos no span
+   tool_call_failure + log estruturado.
+
+================================================================================
+RODADA 2 DE CORRECOES — F-08 (guard) + F-02 (observabilidade) — 2026-07-28
+Escopo aprovado pelo usuario: itens 1 (endurecer confirmation guard) e 3 (F-02).
+Item 2 (LLM chamar register_expense com cardId) fica para rodada seguinte.
+Gates: design-patterns = NAO APLICAR PADRAO (mudancas locais de condicao e
+propagacao de erro); domain-modeling = sem diff em **/domain/** (so DMMF).
+================================================================================
+
+[F-02] internal/platform/agent/agent.go
+- Causa raiz confirmada: invokeToolCall descartava o ToolCallRecord quando o
+  LLM chamava tool INEXISTENTE (alucinada) ou args nao serializaveis — sem
+  record, aggregateToolErrorContent ficava vazio -> platform_runs.error vazio,
+  log vazio, span sem erro. Foi o que aconteceu no "sim" do F-08.
+- Fix: ambos os branches de falha agora retornam record com
+  Outcome=ToolCallOutcomeError e Content ("tool X: unknown tool" /
+  "tool X: marshal arguments: ..."); completeWithTools anexa o record mesmo
+  quando ok=false. Comportamento visivel ao LLM INALTERADO (nenhuma tool
+  message extra no loop — zero risco de regressao no Golden Gate).
+- Efeito: errStr real -> platform_runs.error populado, span
+  agents.runtime.tool_call_failure com RecordError, log estruturado com erro.
+- Teste novo: TestExecute_UnknownTool_RecordsFailureForObservability
+  (agent_test.go) — ghost_tool -> usecaseError + record com Tool/Outcome/Content.
+
+[F-08] internal/agents/application/agents/guards/confirmation_without_tool.go
+  e category_without_tool.go
+- Removido o bypass "len(toolCalls) > 0 -> passa": marcador de confirmacao
+  ("posso registrar?"/"posso atualizar?") ou de categoria ("em qual categoria
+  isso se encaixa?"/"qual subcategoria?"/"qual se encaixa melhor?") agora EXIGE
+  ExpectedVerbatimText(toolCalls) != "". Tool auxiliar sem verbatim (ex.:
+  resolve_card_by_nickname) nao autoriza mais bloco fabricado -> força
+  successWithoutToolFallbackMessage + ToolOutcomeUsecaseError (falha honesta).
+- 0 falso bloqueio por construcao: toda confirmacao/pergunta legitima no loop
+  do agente vem como verbatim de tool de escrita (campos message/clarifyPrompt/
+  confirmationPrompt/offerCreatePrompt/impactNote); perguntas do kernel fora do
+  loop (resume_dispatcher, 1us) nao passam pelos PostGuards.
+- Testes atualizados: cenario "tool auxiliar sem verbatim" agora FORCA fallback
+  (espelha F-08); cenario "verbatim de tool de escrita" passa; ambos os guards.
+
+GATES EXECUTADOS (evidencia local)
+- go build ./... OK; go vet (platform/agent, guards) OK; gofmt limpo.
+- go test -race -count=1 ./internal/platform/... ./internal/agents/...:
+  EXIT 0, 46 pacotes ok, zero FAIL.
+- Gate3 (zero comentarios) OK; gate R5.26 (sem "_ident") OK.
+- golangci-lint local indisponivel (v1 vs config v2) — rodar em CI.
+
+PENDENCIAS
+1. Commit/push/deploy: usuario. CI deve rodar Golden Gate (real-LLM) — olhar
+   especialmente cenarios de confirmacao legitima (nao pode haver falso
+   bloqueio).
+2. Apos deploy, re-validar: "gastei 45 no cartão nubank" -> sim (nao pode
+   exibir confirmacao fantasma; esperado: registrar via tool OU falha honesta
+   com run.error populado desta vez).
+3. Rodada seguinte: item 2 (LLM chamar register_expense com cardId apos
+   resolver cartao — system prompt), B-02, B-11, B-03..B-09, B-13.

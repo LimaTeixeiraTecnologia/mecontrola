@@ -40,10 +40,26 @@ func (s *ConfirmationWithoutToolGuardSuite) TestInspect() {
 			},
 		},
 		{
-			name: "bloco de confirmacao com tool chamada passa adiante",
+			name: "bloco de confirmacao com tool auxiliar sem verbatim e substituido por falha honesta",
 			out: agent.Result{
 				Content:   "✅ Encontrei este lançamento. Posso registrar?",
-				ToolCalls: []agent.ToolCallRecord{{Tool: "register_expense", Outcome: agent.ToolCallOutcomeSuccess}},
+				ToolCalls: []agent.ToolCallRecord{{Tool: "resolve_card_by_nickname", Outcome: agent.ToolCallOutcomeSuccess}},
+			},
+			expect: func(decision GuardDecision) {
+				s.True(decision.Handled)
+				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
+				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
+			},
+		},
+		{
+			name: "bloco de confirmacao com verbatim de tool de escrita passa adiante",
+			out: agent.Result{
+				Content: "✅ Encontrei este lançamento. Posso registrar?",
+				ToolCalls: []agent.ToolCallRecord{{
+					Tool:    "register_expense",
+					Outcome: agent.ToolCallOutcomeSuccess,
+					Content: `{"message":"✅ Encontrei este lançamento. Posso registrar?"}`,
+				}},
 			},
 			expect: func(decision GuardDecision) {
 				s.False(decision.Handled)
