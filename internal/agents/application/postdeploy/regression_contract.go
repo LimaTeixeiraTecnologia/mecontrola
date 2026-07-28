@@ -4,6 +4,7 @@ var RegisteredTools = []string{
 	"register_expense",
 	"register_income",
 	"query_month",
+	"query_day",
 	"query_plan",
 	"edit_entry",
 	"delete_entry",

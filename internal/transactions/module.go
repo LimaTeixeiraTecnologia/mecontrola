@@ -50,6 +50,7 @@ type TransactionsModule struct {
 	GetTransactionUC                *usecases.GetTransaction
 	GetMonthlySummaryUC             *usecases.GetMonthlySummary
 	ListMonthlyEntriesUC            *usecases.ListMonthlyEntries
+	GetDaySummaryUC                 *usecases.GetDaySummary
 	HasOpenInstallmentsUC           *usecases.HasOpenInstallments
 	GetCardInvoiceUC                *usecases.GetCardInvoice
 	CreateRecurringTemplateUC       *usecases.CreateRecurringTemplate
@@ -234,6 +235,11 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		uow.NewUnitOfWork(b.db),
 		b.o11y,
 	)
+	getDS := usecases.NewGetDaySummary(
+		factory,
+		uow.NewUnitOfWork(b.db),
+		b.o11y,
+	)
 	hasOpenInstallments := usecases.NewHasOpenInstallments(
 		factory,
 		uow.NewUnitOfWork(b.db),
@@ -301,6 +307,7 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		DeleteRecurringTemplateUC:       deleteRT,
 		GetMonthlySummaryUC:             getMS,
 		ListMonthlyEntriesUC:            listME,
+		GetDaySummaryUC:                 getDS,
 		HasOpenInstallmentsUC:           hasOpenInstallments,
 		CreateRecurringTemplateUC:       createRT,
 		ListRecurringTemplatesUC:        listRT,

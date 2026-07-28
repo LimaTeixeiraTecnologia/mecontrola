@@ -1349,3 +1349,69 @@ BUG ABERTO (reportado, SEM fix nesta rodada — precisa decisão de produto):
     anti-alucinação de consultas (RF-10/11). Causa provável: não existe consulta
     por DIA — query_month traz o mês com limit e o LLM improvisou. Precisa de
     capacidade de consulta por período/dia (decisão de produto + desenho).
+
+================================================================================
+RODADA 7 — query_day: consulta deterministica de gastos do dia (2026-07-28)
+================================================================================
+
+BUG ORIGINAL
+- "quanto gastei hoje?" respondeu R$ 46,10 e depois R$ 345,00 — so os 2 pix
+  recentes da conversa. Real: 15 despesas no dia. Causa raiz: nao existia
+  capacidade de consulta por dia; o LLM improvisava a partir do historico.
+
+DESCOBERTAS
+- monthly_summary_repository.go ListEntries tem payment_method <> 7:
+  exclusao de credito e DELIBERADA (credito entra via card_invoice_items).
+- occurred_at em mecontrola.transactions e TIMESTAMPTZ (migration 000001),
+  NAO date. Primeira versao da query usava "occurred_at = $2" e retornava
+  0 linhas — pego pelo teste de integracao antes de subir.
+- Write path grava occurred_at = time.Now().UTC() (transaction_write_workflow.go).
+
+DECISAO SEMANTICA
+- query_day inclui TODAS as formas de pagamento (visao de atividade do dia,
+  diferente do resumo mensal que exclui credito deliberadamente).
+- "hoje/ontem" = dia UTC, alinhado ao write path. Fuso do usuario e
+  follow-up conhecido (usuario em -03:00 pode ver borda de 21h).
+
+ARQUIVOS
+- transactions (novos): interfaces/day_entries_repository.go,
+  dtos/output/day_summary.go, usecases/get_day_summary.go (+_test),
+  repositories/postgres/day_entries_repository.go (+integration_test),
+  usecases/mocks/unit_of_work_day_summary.go
+- transactions (editados): interfaces/repository_factory.go,
+  repositories/factory.go, module.go,
+  jobs/handlers/monthly_summary_reconciler_job_integration_test.go
+- agents (novos): tools/query_day.go (+_test)
+- agents (editados): interfaces/transactions_ledger.go (+GetDaySummary,
+  struct DaySummary), binding/transactions_ledger_adapter.go (+_test),
+  module.go, agents/mecontrola_agent.go (regra C8), golden/cases_query.go
+  (c8/c9), postdeploy/regression_contract.go (32 tools), module_test.go
+- .mockery.yml: DayEntriesRepository adicionado; mocks regenerados.
+
+VALIDACOES LOCAIS
+- gofmt limpo; go build ./... OK; go vet ./... OK (incl. tag integration)
+- go test -race -count=1 ./internal/transactions/... ./internal/agents/...: ALL PASS
+- integracao (testcontainer): TestDayEntriesRepositorySuite OK (3 cenarios:
+  filtra so o dia alvo com income+outcome, dia vazio, dia invalido)
+- golangci-lint run (escopo transactions+agents): 0 issues
+- gate de comentarios em producao: limpo
+- inventario RF-54/RF-27 atualizado: 32 tools
+
+DRIFT REGISTRADO (pre-existente, nao corrigido nesta rodada)
+- mockery: interface CardThresholdReader nao encontrada em
+  budgets/application/interfaces — erro ja existia antes desta mudanca.
+
+PENDENCIA CONHECIDA
+- Query user_id+range de occurred_at nao tem indice parcial dedicado
+  (volume por usuario e baixo; planner usa user_created_idx/seq scan).
+  Avaliar indice (user_id, occurred_at) WHERE deleted_at IS NULL se a
+  volumetria crescer — exige migration propria + skill postgresql.
+
+VALIDACAO EM PRODUCAO (apos deploy)
+- Enviar "quanto gastei hoje?" e conferir no VPS que a resposta bate com:
+  SELECT description, amount_cents, direction FROM mecontrola.transactions
+   WHERE user_id='9bbbbbcd-2081-40a8-9780-2b5d818f1580'
+     AND occurred_at >= '2026-07-28'::timestamp AT TIME ZONE 'UTC'
+     AND occurred_at <  '2026-07-29'::timestamp AT TIME ZONE 'UTC'
+     AND deleted_at IS NULL;
+  (soma das despesas do dia inteiro — nao 345 nem 46,10)

@@ -8,4 +8,5 @@ type RepositoryFactory interface {
 	RecurringTemplateRepository(db database.DBTX) RecurringTemplateRepository
 	MonthlySummaryRepository(db database.DBTX) MonthlySummaryRepository
 	RecurringMaterializationRepository(db database.DBTX) RecurringMaterializationRepository
+	DayEntriesRepository(db database.DBTX) DayEntriesRepository
 }

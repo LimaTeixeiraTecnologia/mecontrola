@@ -21,6 +21,7 @@ type transactionsLedgerAdapter struct {
 	deleteTx          *txusecases.DeleteTransaction
 	listMonthlyE      *txusecases.ListMonthlyEntries
 	getMonthlySumm    *txusecases.GetMonthlySummary
+	getDaySumm        *txusecases.GetDaySummary
 	getTx             *txusecases.GetTransaction
 	getCardInvoice    *txusecases.GetCardInvoice
 	searchTx          *txusecases.SearchTransactions
@@ -35,6 +36,7 @@ func NewTransactionsLedgerAdapter(
 	deleteTx *txusecases.DeleteTransaction,
 	listMonthlyE *txusecases.ListMonthlyEntries,
 	getMonthlySumm *txusecases.GetMonthlySummary,
+	getDaySumm *txusecases.GetDaySummary,
 	getTx *txusecases.GetTransaction,
 	getCardInvoice *txusecases.GetCardInvoice,
 	searchTx *txusecases.SearchTransactions,
@@ -48,6 +50,7 @@ func NewTransactionsLedgerAdapter(
 		deleteTx:          deleteTx,
 		listMonthlyE:      listMonthlyE,
 		getMonthlySumm:    getMonthlySumm,
+		getDaySumm:        getDaySumm,
 		getTx:             getTx,
 		getCardInvoice:    getCardInvoice,
 		searchTx:          searchTx,
@@ -402,5 +405,51 @@ func (a *transactionsLedgerAdapter) GetMonthlySummary(ctx context.Context, _ uui
 		IncomeCents:  out.IncomeCents,
 		OutcomeCents: out.OutcomeCents,
 		TotalCents:   out.TotalCents,
+	}, nil
+}
+
+func (a *transactionsLedgerAdapter) GetDaySummary(ctx context.Context, _ uuid.UUID, day string) (agentsifaces.DaySummary, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.transactions_ledger.get_day_summary")
+	defer span.End()
+
+	ctx, err := a.principalCtx(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.DaySummary{}, err
+	}
+
+	out, err := a.getDaySumm.Execute(ctx, day)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.DaySummary{}, fmt.Errorf("agents/binding/transactions_ledger: resumo do dia: %w", err)
+	}
+
+	entries := make([]agentsifaces.MonthlyEntry, 0, len(out.Entries))
+	for _, e := range out.Entries {
+		kind, err := agentsifaces.ParseEntryKind(e.Kind)
+		if err != nil {
+			span.RecordError(err)
+			return agentsifaces.DaySummary{}, fmt.Errorf("agents/binding/transactions_ledger: kind inválido %q: %w", e.Kind, err)
+		}
+		entries = append(entries, agentsifaces.MonthlyEntry{
+			Kind:                    kind,
+			ID:                      e.ID,
+			RefMonth:                e.RefMonth,
+			AmountCents:             e.AmountCents,
+			Direction:               e.Direction,
+			Description:             e.Description,
+			CategoryID:              e.CategoryID,
+			SubcategoryID:           e.SubcategoryID,
+			CategoryNameSnapshot:    e.CategoryNameSnapshot,
+			SubcategoryNameSnapshot: e.SubcategoryNameSnapshot,
+			CreatedAt:               e.CreatedAt,
+		})
+	}
+	return agentsifaces.DaySummary{
+		Day:          out.Day,
+		IncomeCents:  out.IncomeCents,
+		OutcomeCents: out.OutcomeCents,
+		TotalCents:   out.TotalCents,
+		Entries:      entries,
 	}, nil
 }

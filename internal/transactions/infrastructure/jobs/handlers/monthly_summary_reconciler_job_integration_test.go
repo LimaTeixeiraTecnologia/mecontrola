@@ -98,6 +98,10 @@ func (f *integrationRepositoryFactory) RecurringMaterializationRepository(db dat
 	return txpostgres.NewRecurringMaterializationRepository(f.o11y, db)
 }
 
+func (f *integrationRepositoryFactory) DayEntriesRepository(db database.DBTX) interfaces.DayEntriesRepository {
+	return txpostgres.NewDayEntriesRepository(f.o11y, db)
+}
+
 type stubReconcileUseCase struct{}
 
 func (u *stubReconcileUseCase) Execute(ctx context.Context) error { return nil }

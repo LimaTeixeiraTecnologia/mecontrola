@@ -36,3 +36,7 @@ func (f *repositoryFactory) MonthlySummaryRepository(db database.DBTX) interface
 func (f *repositoryFactory) RecurringMaterializationRepository(db database.DBTX) interfaces.RecurringMaterializationRepository {
 	return postgres.NewRecurringMaterializationRepository(f.o11y, db)
 }
+
+func (f *repositoryFactory) DayEntriesRepository(db database.DBTX) interfaces.DayEntriesRepository {
+	return postgres.NewDayEntriesRepository(f.o11y, db)
+}

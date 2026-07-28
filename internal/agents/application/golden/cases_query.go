@@ -72,5 +72,25 @@ func queryCases() []Case {
 			ResponseProperty:   containsAny("junho de 2026"),
 			ResponseDescribe:   "retrospectiva compõe query_plan/query_month e exibe mês por extenso",
 		},
+		{
+			Name:             "c8 quanto gastei hoje",
+			Category:         CategoryQuery,
+			Origin:           "real",
+			Input:            "quanto gastei hoje?",
+			ToolSubset:       []string{"query_day", "query_month"},
+			ExpectedTool:     "query_day",
+			ResponseProperty: nonEmptyResponse,
+			ResponseDescribe: "gasto do dia responde exclusivamente a partir de query_day",
+		},
+		{
+			Name:             "c9 quanto gastei ontem",
+			Category:         CategoryQuery,
+			Origin:           "synthetic",
+			Input:            "quanto eu gastei ontem?",
+			ToolSubset:       []string{"query_day", "query_month"},
+			ExpectedTool:     "query_day",
+			ResponseProperty: nonEmptyResponse,
+			ResponseDescribe: "gasto de ontem responde exclusivamente a partir de query_day",
+		},
 	}
 }

@@ -13,10 +13,19 @@ type TransactionsLedger interface {
 	DeleteTransaction(ctx context.Context, ref EntryRef, version int64) error
 	ListMonthlyEntries(ctx context.Context, userID uuid.UUID, refMonth string, cursor string, limit int) ([]MonthlyEntry, error)
 	GetMonthlySummary(ctx context.Context, userID uuid.UUID, refMonth string) (MonthlySummary, error)
+	GetDaySummary(ctx context.Context, userID uuid.UUID, day string) (DaySummary, error)
 	GetCardInvoice(ctx context.Context, cardID uuid.UUID, refMonth string) (CardInvoice, error)
 	SearchTransactions(ctx context.Context, userID uuid.UUID, query, refMonth string, limit int) ([]Entry, error)
 	GetTransaction(ctx context.Context, txID string) (Entry, error)
 	SearchEditCandidates(ctx context.Context, userID uuid.UUID, q EditCandidateQuery) ([]Entry, error)
+}
+
+type DaySummary struct {
+	Day          string
+	IncomeCents  int64
+	OutcomeCents int64
+	TotalCents   int64
+	Entries      []MonthlyEntry
 }
 
 type EditCandidateQuery struct {

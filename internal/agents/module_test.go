@@ -51,9 +51,9 @@ func testBuildFinancialToolsArgs() []tool.ToolHandle {
 	)
 }
 
-func TestBuildFinancialTools_ReturnsExactly31Tools(t *testing.T) {
+func TestBuildFinancialTools_ReturnsExactly32Tools(t *testing.T) {
 	tools := testBuildFinancialToolsArgs()
-	assert.Len(t, tools, 31)
+	assert.Len(t, tools, 32)
 }
 
 func TestBuildFinancialTools_RegistersCreateCardTool(t *testing.T) {

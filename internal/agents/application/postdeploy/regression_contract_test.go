@@ -103,7 +103,7 @@ func (s *RegressionContractSuite) TestExtraInDetectsUndocumentedAddition() {
 }
 
 func (s *RegressionContractSuite) TestRegisteredToolsCountMatchesInventory() {
-	s.Len(RegisteredTools, 31, "inventário de tools deve refletir exatamente as tools ativas em module.go (RF-27)")
+	s.Len(RegisteredTools, 32, "inventário de tools deve refletir exatamente as tools ativas em module.go (RF-27)")
 }
 
 func (s *RegressionContractSuite) TestRegisteredScorersCountMatchesInventory() {
