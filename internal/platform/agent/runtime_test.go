@@ -427,6 +427,7 @@ func (s *RuntimeTestSuite) TestExecute_OutcomeOutcomeField_UsecaseErrorOnEmptyCo
 	s.Require().Len(runs.updated, 1)
 	s.Equal(RunStatusFailed, runs.updated[0].Status)
 	s.Equal(ToolOutcomeUsecaseError, runs.updated[0].Outcome)
+	s.Equal("conclusão vazia sem tool call", runs.updated[0].Error)
 }
 
 func (s *RuntimeTestSuite) TestExecute_EmptyCompletion_RetriesOnceThenSucceeds() {

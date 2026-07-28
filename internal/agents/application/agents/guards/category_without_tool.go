@@ -11,6 +11,8 @@ var categoryWithoutToolMarkers = []string{
 	"em qual categoria isso se encaixa?",
 	"qual subcategoria?",
 	"qual se encaixa melhor?",
+	"responda o número ou o nome.",
+	"ou me diga o nome da subcategoria.",
 }
 
 type categoryWithoutToolGuard struct{}

@@ -245,6 +245,52 @@ func (s *GuardChainAgentSuite) hasLabel(fields []observability.Field, key, value
 	return false
 }
 
+func (s *GuardChainAgentSuite) TestExecute_PostGuardForcedUsecaseError_AppendsEvidenceRecord() {
+	fabricated := "Qual é a categoria para esse gasto? 📂\n1. *Conhecimento*\n\nResponda o número ou o nome. 🙂"
+	underlying := &stubGuardChainUnderlyingAgent{result: agent.Result{Content: fabricated}}
+
+	built := WithGuardChain(underlying, fake.NewProvider(), nil, []guards.PostGuard{guards.NewCategoryWithoutToolGuard()})
+	output, err := built.Execute(s.ctx, agent.Request{AgentID: "agent-1"})
+
+	s.NoError(err)
+	s.Equal(agent.ToolOutcomeUsecaseError, output.ToolOutcome)
+	s.Require().Len(output.ToolCalls, 1)
+	s.Equal("guard:category_without_tool", output.ToolCalls[0].Tool)
+	s.Equal(agent.ToolCallOutcomeError, output.ToolCalls[0].Outcome)
+	s.Equal(fabricated, output.ToolCalls[0].Content)
+}
+
+func (s *GuardChainAgentSuite) TestExecute_PostGuardHandledWithoutUsecaseError_NoEvidenceRecord() {
+	underlying := &stubGuardChainUnderlyingAgent{result: agent.Result{Content: "resposta original"}}
+	post := &stubPostGuard{name: "post-1", decision: guards.GuardDecision{Handled: true, Result: agent.Result{Content: "resposta corrigida"}}}
+
+	built := WithGuardChain(underlying, fake.NewProvider(), nil, []guards.PostGuard{post})
+	output, err := built.Execute(s.ctx, agent.Request{AgentID: "agent-1"})
+
+	s.NoError(err)
+	s.Equal("resposta corrigida", output.Content)
+	s.Empty(output.ToolCalls)
+}
+
+func (s *GuardChainAgentSuite) TestExecute_ResultAlreadyUsecaseError_NoDuplicateEvidence() {
+	underlying := &stubGuardChainUnderlyingAgent{result: agent.Result{
+		Content:     "texto com Posso registrar?",
+		ToolOutcome: agent.ToolOutcomeUsecaseError,
+		ToolCalls: []agent.ToolCallRecord{{
+			Tool:    "register_expense",
+			Outcome: agent.ToolCallOutcomeError,
+			Content: "tool register_expense: falha real",
+		}},
+	}}
+
+	built := WithGuardChain(underlying, fake.NewProvider(), nil, []guards.PostGuard{guards.NewConfirmationWithoutToolGuard()})
+	output, err := built.Execute(s.ctx, agent.Request{AgentID: "agent-1"})
+
+	s.NoError(err)
+	s.Require().Len(output.ToolCalls, 1)
+	s.Equal("register_expense", output.ToolCalls[0].Tool)
+}
+
 func (s *GuardChainAgentSuite) TestStream_DelegatesToUnderlyingAgent() {
 	underlying := &stubGuardChainUnderlyingAgent{}
 	built := WithGuardChain(underlying, fake.NewProvider(), nil, nil)

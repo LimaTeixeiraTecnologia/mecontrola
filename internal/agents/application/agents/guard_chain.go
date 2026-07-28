@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"strings"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
@@ -12,6 +13,7 @@ import (
 const (
 	guardDecisionPass    = "pass"
 	guardDecisionHandled = "handled"
+	maxGuardEvidenceSize = 500
 )
 
 type guardChainMetrics struct {
@@ -62,6 +64,13 @@ func (g *guardChainAgent) Execute(ctx context.Context, in agent.Request) (agent.
 		decision := guard.Inspect(ctx, in, result)
 		if decision.Handled {
 			g.recordDecision(ctx, in.AgentID, guard.Name(), guardDecisionHandled)
+			if decision.Result.ToolOutcome == agent.ToolOutcomeUsecaseError && result.ToolOutcome != agent.ToolOutcomeUsecaseError {
+				decision.Result.ToolCalls = append(decision.Result.ToolCalls, agent.ToolCallRecord{
+					Tool:    "guard:" + guard.Name(),
+					Outcome: agent.ToolCallOutcomeError,
+					Content: truncateGuardEvidence(result.Content, maxGuardEvidenceSize),
+				})
+			}
 			result = decision.Result
 			continue
 		}
@@ -69,6 +78,14 @@ func (g *guardChainAgent) Execute(ctx context.Context, in agent.Request) (agent.
 	}
 
 	return result, nil
+}
+
+func truncateGuardEvidence(content string, maxRunes int) string {
+	runes := []rune(strings.TrimSpace(content))
+	if len(runes) <= maxRunes {
+		return string(runes)
+	}
+	return string(runes[:maxRunes])
 }
 
 func (g *guardChainAgent) recordDecision(ctx context.Context, agentID, guardName, decision string) {

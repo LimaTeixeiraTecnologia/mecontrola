@@ -237,6 +237,9 @@ func (r *agentRuntime) finishRun(ctx context.Context, run Run, platformThreadID 
 		runStatus = RunStatusFailed
 		toolOutcome = ToolOutcomeUsecaseError
 		errStr = aggregateToolErrorContent(result.ToolCalls)
+		if errStr == "" && strings.TrimSpace(result.Content) == "" {
+			errStr = "conclusão vazia sem tool call"
+		}
 	}
 	if runStatus == RunStatusSucceeded && r.writeToolGuardFailed(result.ToolCalls) {
 		runStatus = RunStatusFailed

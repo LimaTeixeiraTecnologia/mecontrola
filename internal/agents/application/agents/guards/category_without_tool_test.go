@@ -60,6 +60,17 @@ func (s *CategoryWithoutToolGuardSuite) TestInspect() {
 			},
 		},
 		{
+			name: "pergunta fabricada com redacao parafraseada mas estrutura do catalogo",
+			out: agent.Result{
+				Content: "Qual é a categoria para esse gasto? 📂\n1. *Conhecimento*\n2. *Custo Fixo*\n3. *Liberdade Financeira*\n4. *Metas*\n5. *Prazeres*\n\nResponda o número ou o nome. 🙂",
+			},
+			expect: func(decision GuardDecision) {
+				s.True(decision.Handled)
+				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
+				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
+			},
+		},
+		{
 			name: "pergunta de categoria com tool auxiliar sem verbatim e substituida por falha honesta",
 			out: agent.Result{
 				Content:   "Em qual categoria isso se encaixa? 📂",

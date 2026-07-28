@@ -1090,3 +1090,63 @@ PENDENCIAS
    com run.error populado desta vez).
 3. Rodada seguinte: item 2 (LLM chamar register_expense com cardId apos
    resolver cartao — system prompt), B-02, B-11, B-03..B-09, B-13.
+
+================================================================================
+RODADA 3 — REGRESSAO PÓS-DEPLOY 3cafc13 (14:22 local / 17:22 UTC) — 2026-07-28
+================================================================================
+
+[REGRESSAO CONFIRMADA] "gastei 45 no cartão nubank" -> bot perguntou
+"Qual é a categoria para esse gasto? 📂" (redacao NOVA) -> "2" ->
+"Não consegui registrar. Tente novamente em breve."
+
+DIAGNOSTICO (evidencia VPS, sem suposicao)
+- Run 1 (17:22:23, routed, 1760ms, LLM): ZERO workflow_runs na janela e a string
+  "Qual é a categoria para esse gasto" NAO existe no codigo (grep) -> pergunta
+  FABRICADA pelo LLM imitando a estrutura do catalogo (opcoes numeradas +
+  sufixo "Responda o número ou o nome. 🙂"). Os marcadores do
+  category_without_tool eram so os 3 cabecalhos exatos -> bypass.
+- Run 2 ("2", 17:22:34, failed/usecaseError, 3573ms): error VAZIO de novo.
+  1 llm.complete, nenhum guard handled confiavel nas metricas (increase
+  fracionario ruidoso para eventos unitarios). Conclusao honesta: a
+  instrumentacao NAO consegue explicar essa falha — residuo do F-02: guard
+  forcado e conclusao vazia nao deixam rastro do motivo.
+
+[FIX A] guards/category_without_tool.go — marcadores estruturais
+- Adicionados os sufixos do catalogo: "responda o número ou o nome." e
+  "ou me diga o nome da subcategoria." (existem APENAS em catalog.go:341,344,
+  dentro de numberedCategoryOptions). Parafrases que copiam a estrutura (caso
+  observado) agora sao forcadas a falha honesta.
+- 0 FP: legitimas sempre tem verbatim de tool (loop) ou vem do dispatcher
+  (fora dos PostGuards). Teste novo com o texto exato da producao.
+- Limitacao honesta registrada: parafrase que NAO copie o sufixo ainda passa;
+  cobertura total depende do item 2 (LLM chamar register_expense).
+
+[FIX B1] agents/guard_chain.go — evidencia de falha forcada por guard
+- Quando um PostGuard força ToolOutcomeUsecaseError (e o resultado ainda nao
+  era UsecaseError), a cadeia anexa ToolCallRecord sintetico
+  {Tool:"guard:<nome>", Outcome:Error, Content:<conteudo original, 500 runes>}.
+- Efeito: platform_runs.error, span (RecordError) e log passam a conter
+  "qual guard disparou + o que o LLM tinha dito".
+- Sem efeito colateral: record de erro nao entra em ExpectedVerbatimText, nao
+  esta no writeToolSet, e scorers leem hooks de tool (nao result.ToolCalls).
+- Testes: evidencia anexada / sem evidencia quando handled sem UsecaseError /
+  sem duplicar quando o resultado ja era UsecaseError.
+
+[FIX B2] platform/agent/runtime.go — errStr em conclusao vazia
+- Conclusao vazia sem tool call agora grava error="conclusão vazia sem tool
+  call" (antes: vazio). Teste: asserção no cenario existente.
+
+GATES
+- go build ./... OK; go vet (platform/agent, agents) OK; gofmt limpo.
+- go test -race -count=1 ./internal/platform/... ./internal/agents/...:
+  EXIT 0, 46 pacotes ok, zero FAIL.
+- golangci-lint local indisponivel (v1 vs config v2) — CI.
+
+PENDENCIAS
+1. Commit/push/deploy: usuario. Re-validar em producao:
+   a. "gastei 45 no cartão nubank" -> se o LLM fabricar pergunta/confirmacao,
+      deve vir falha honesta IMEDIATA (sem turno extra) + run.error populado
+      com "guard:category_without_tool"/"guard:confirmation_without_tool".
+   b. Se o LLM registrar de verdade (tool), fluxo completa — melhor desfecho.
+2. Rodada seguinte: item 2 (system prompt -> register_expense com cardId),
+   B-02, B-11, B-03..B-09, B-13.
