@@ -323,6 +323,7 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 		guards.NewInternalTermsGuard(),
 		guards.NewSuccessWithoutToolGuard(),
 		guards.NewConfirmationWithoutToolGuard(),
+		guards.NewCategoryWithoutToolGuard(),
 		guards.NewMultiItemFalseBlockGuard(),
 		guards.NewExpiredWithoutToolGuard(),
 		guards.NewCardProvenanceGuard(),

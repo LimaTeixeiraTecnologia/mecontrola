@@ -31,14 +31,29 @@ func TestParseRegisterExpenseShortcut(t *testing.T) {
 		wantOK  bool
 		wantAmt int64
 		wantDsc string
+		wantPay string
 	}{
 		{name: "producao gastei 500 no mercado", input: "Gastei 500 no mercado", wantOK: true, wantAmt: 50000, wantDsc: "mercado"},
 		{name: "producao gastei 20 no cinema", input: "Gastei 20 no cinema", wantOK: true, wantAmt: 2000, wantDsc: "cinema"},
 		{name: "producao gastei 30 na padaria", input: "Gastei 30 na padaria", wantOK: true, wantAmt: 3000, wantDsc: "padaria"},
 		{name: "paguei conta de luz", input: "paguei 200 na conta de luz", wantOK: true, wantAmt: 20000, wantDsc: "conta de luz"},
 		{name: "separador de milhar", input: "gastei 1.234,56 no mercado", wantOK: true, wantAmt: 123456, wantDsc: "mercado"},
+		{name: "pix no fim dispara com pagamento", input: "gastei 500 no mercado no pix", wantOK: true, wantAmt: 50000, wantDsc: "mercado", wantPay: "pix"},
+		{name: "producao farmacia no pix", input: "gastei 45 na farmácia no pix", wantOK: true, wantAmt: 4500, wantDsc: "farmácia", wantPay: "pix"},
+		{name: "producao uber no pix", input: "gastei 30 no uber no pix", wantOK: true, wantAmt: 3000, wantDsc: "uber", wantPay: "pix"},
+		{name: "debito no fim", input: "paguei 100 no mercado no débito", wantOK: true, wantAmt: 10000, wantDsc: "mercado", wantPay: "debit_card"},
+		{name: "debito em conta antes de debito", input: "paguei 80 na conta de água no débito em conta", wantOK: true, wantAmt: 8000, wantDsc: "conta de água", wantPay: "debit_in_account"},
+		{name: "dinheiro no fim", input: "gastei 25 no táxi em dinheiro", wantOK: true, wantAmt: 2500, wantDsc: "táxi", wantPay: "cash"},
+		{name: "pix sem conector", input: "gastei 50 na feira pix", wantOK: true, wantAmt: 5000, wantDsc: "feira", wantPay: "pix"},
+		{name: "mercado pago nao confunde com descricao mercado", input: "gastei 60 no mercado no mercado pago", wantOK: true, wantAmt: 6000, wantDsc: "mercado", wantPay: "mercado_pago"},
+		{name: "apple pay duas palavras", input: "paguei 99 no iphone com apple pay", wantOK: true, wantAmt: 9900, wantDsc: "iphone", wantPay: "apple_pay"},
 		{name: "credito nao dispara", input: "comprei 500 no cartão nubank", wantOK: false},
-		{name: "forma de pagamento nao dispara", input: "gastei 500 no mercado no pix", wantOK: false},
+		{name: "cartao no fim nao dispara", input: "gastei 45 na farmácia no cartão", wantOK: false},
+		{name: "vale pelado nao dispara", input: "gastei 45 no almoço no vale", wantOK: false},
+		{name: "vale refeicao nao dispara", input: "gastei 45 no almoço no vale-refeição", wantOK: false},
+		{name: "parcelado nao dispara", input: "gastei 45 na farmácia parcelado", wantOK: false},
+		{name: "pix grudado em palavra nao dispara", input: "gastei 50 no pixel art", wantOK: true, wantAmt: 5000, wantDsc: "pixel art"},
+		{name: "ted grudado em palavra nao vira pagamento", input: "gastei 50 no united", wantOK: true, wantAmt: 5000, wantDsc: "united"},
 		{name: "pergunta nao dispara", input: "quanto gastei no mercado?", wantOK: false},
 		{name: "multiplos nao dispara", input: "gastei 30 no onibus e 15 no cafe", wantOK: false},
 		{name: "receita nao dispara", input: "Recebi 2 mil de salario", wantOK: false},
@@ -59,6 +74,10 @@ func TestParseRegisterExpenseShortcut(t *testing.T) {
 			}
 			if dsc, _ := args["description"].(string); dsc != scenario.wantDsc {
 				t.Fatalf("description = %q; want %q", args["description"], scenario.wantDsc)
+			}
+			pay, _ := args["paymentMethod"].(string)
+			if pay != scenario.wantPay {
+				t.Fatalf("paymentMethod = %q; want %q", pay, scenario.wantPay)
 			}
 		})
 	}

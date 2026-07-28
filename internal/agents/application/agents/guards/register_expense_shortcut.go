@@ -15,10 +15,39 @@ var (
 	expenseShortcutRe = regexp.MustCompile(`(?i)^\s*(?:hoje\s+|ontem\s+)?(?:gastei|paguei|torrei)\s+(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real|conto|contos|pila|mango)?\s+(?:no|na|nos|nas|em|com|de|do|da|pra|para)\s+([a-zà-ú][a-zà-ú' ]*?)\s*$`)
 
 	expenseShortcutBlockers = []string{
-		"cartão", "cartao", "crédito", "credito", "parcel", "fatura",
-		"pix", "débito", "debito", "dinheiro", "espécie", "especie",
-		"boleto", "vale", "ted", "doc", "apple pay", "google pay",
-		"picpay", "mercado pago", "cheque",
+		"cartão", "cartao", "crédito", "credito", "parcel", "fatura", "vale",
+	}
+
+	expenseShortcutPayments = []struct {
+		phrase string
+		method string
+	}{
+		{"débito em conta", "debit_in_account"},
+		{"debito em conta", "debit_in_account"},
+		{"transferência", "transferencia"},
+		{"transferencia", "transferencia"},
+		{"mercado pago", "mercado_pago"},
+		{"mercadopago", "mercado_pago"},
+		{"apple pay", "apple_pay"},
+		{"applepay", "apple_pay"},
+		{"google pay", "google_pay"},
+		{"googlepay", "google_pay"},
+		{"dinheiro", "cash"},
+		{"espécie", "cash"},
+		{"especie", "cash"},
+		{"débito", "debit_card"},
+		{"debito", "debit_card"},
+		{"boleto", "boleto"},
+		{"picpay", "picpay"},
+		{"cheque", "cheque"},
+		{"pix", "pix"},
+		{"ted", "ted"},
+		{"doc", "doc"},
+	}
+
+	expenseShortcutTrailingConnectors = []string{
+		"no", "na", "nos", "nas", "em", "com", "de", "do", "da",
+		"pra", "para", "pelo", "pela", "via",
 	}
 )
 
@@ -67,7 +96,8 @@ func (g *registerExpenseShortcutGuard) Inspect(ctx context.Context, in agent.Req
 }
 
 func parseRegisterExpenseShortcut(message string, handle tool.ToolHandle) (map[string]any, bool) {
-	normalized := strings.ToLower(strings.TrimSpace(message))
+	trimmed := strings.TrimSpace(message)
+	normalized := strings.ToLower(trimmed)
 	if normalized == "" {
 		return nil, false
 	}
@@ -76,7 +106,8 @@ func parseRegisterExpenseShortcut(message string, handle tool.ToolHandle) (map[s
 			return nil, false
 		}
 	}
-	match := expenseShortcutRe.FindStringSubmatch(message)
+	body, paymentMethod := splitExpensePaymentSuffix(trimmed)
+	match := expenseShortcutRe.FindStringSubmatch(body)
 	if len(match) != 3 {
 		return nil, false
 	}
@@ -92,8 +123,41 @@ func parseRegisterExpenseShortcut(message string, handle tool.ToolHandle) (map[s
 	if toolPropertyWantsString(handle, "amountCents") {
 		amountArg = strconv.FormatInt(amountCents, 10)
 	}
-	return map[string]any{
+	args := map[string]any{
 		"amountCents": amountArg,
 		"description": description,
-	}, true
+	}
+	if paymentMethod != "" {
+		args["paymentMethod"] = paymentMethod
+	}
+	return args, true
+}
+
+func splitExpensePaymentSuffix(message string) (string, string) {
+	for _, payment := range expenseShortcutPayments {
+		body, ok := trimFoldWordSuffix(message, payment.phrase)
+		if !ok {
+			continue
+		}
+		for _, connector := range expenseShortcutTrailingConnectors {
+			if trimmed, okTrim := trimFoldWordSuffix(body, connector); okTrim {
+				body = trimmed
+				break
+			}
+		}
+		return body, payment.method
+	}
+	return message, ""
+}
+
+func trimFoldWordSuffix(message string, suffix string) (string, bool) {
+	trimmed := strings.TrimRight(message, " ")
+	if len(trimmed) < len(suffix) || !strings.EqualFold(trimmed[len(trimmed)-len(suffix):], suffix) {
+		return message, false
+	}
+	idx := len(trimmed) - len(suffix)
+	if idx > 0 && trimmed[idx-1] != ' ' {
+		return message, false
+	}
+	return strings.TrimSpace(trimmed[:idx]), true
 }

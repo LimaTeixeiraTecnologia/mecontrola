@@ -83,6 +83,7 @@ var (
 	}
 
 	reMoney       = regexp.MustCompile(`(?i)(R\$\s*\d[\d.,]*|\b\d[\d.,]*\s*(?:reais|real|contos?|pilas?|mangos?)\b|\b\d{1,3}(?:\.\d{3})*,\d{2}\b)`)
+	reBareAmount  = regexp.MustCompile(`\b\d+(?:[.,]\d{1,2})?\b`)
 	reLaunchVerbs = regexp.MustCompile(`(?i)\b(gastei|paguei|comprei|recebi|ganhei)\b`)
 
 	reDescriptionParaphrase = regexp.MustCompile(`(?i)^(?:compras?|pagamentos?|recebimentos?|gastos?|paguei|comprei|recebi|gastei)\s+(?:de|do|da|dos|das|no|na|nos|nas|em|com)\s+(.+)$`)
@@ -177,7 +178,30 @@ func isCancelMessage(text string) bool {
 }
 
 func isNewCompleteOperation(text string) bool {
-	return reMoney.MatchString(text) && reLaunchVerbs.MatchString(text)
+	if !reLaunchVerbs.MatchString(text) {
+		return false
+	}
+	if reMoney.MatchString(text) {
+		return true
+	}
+	return hasBareAmountToken(text)
+}
+
+func hasBareAmountToken(text string) bool {
+	for _, token := range reBareAmount.FindAllString(text, -1) {
+		if !isYearToken(token) {
+			return true
+		}
+	}
+	return false
+}
+
+func isYearToken(token string) bool {
+	if len(token) != 4 {
+		return false
+	}
+	year, err := strconv.Atoi(token)
+	return err == nil && year >= 1900 && year <= 2099
 }
 
 func NormalizeEntryDescription(description string) string {
