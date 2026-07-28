@@ -30,10 +30,10 @@ func cardCases() []Case {
 			ToolSubset:   []string{"register_expense", "resolve_card_not_found", "list_cards"},
 			ExpectedTool: "resolve_card_not_found",
 			ResponseProperty: allOf(
-				containsAny("💳"),
-				notContainsAny("qual cartão", "cartão você quer", "cartões você tem", "cartões cadastrados"),
+				containsAny("cartão"),
+				notContainsAny("💳"),
 			),
-			ResponseDescribe: "💳 não reconhecido gera pedido de escolha com emoji, nunca lançamento em 💳 inventado",
+			ResponseDescribe: "cartão não reconhecido gera pedido de escolha sem emoji, nunca lançamento em cartão inventado",
 		},
 		{
 			Name:             "lista cartoes explicitamente pedida",
