@@ -128,6 +128,20 @@ func goldenMonthRefSchema(extra ...string) map[string]any {
 	}
 }
 
+func goldenDayRefSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"dayRefKind": map[string]any{
+				"type":        "string",
+				"enum":        []string{"today", "yesterday"},
+				"description": "Dia de referência da consulta. Use today para hoje e yesterday para ontem.",
+			},
+		},
+		"additionalProperties": false,
+	}
+}
+
 func goldenMonthAskYearTool(sink ToolCaptureSink) tool.ToolHandle {
 	in := llm.Schema{Name: "query_month_ask_year_input", Strict: false, Schema: goldenMonthRefSchema("refMonth")}
 	out := llm.Schema{
@@ -319,7 +333,10 @@ var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
 		return goldenCaptureTool("create_recurrence", "Cria template recorrente; se o usuário citar a categoria desejada, copie o trecho literal no campo categoryText", goldenBaseSchema("description", "amountCents", "frequency", "dayOfMonth", "direction", "categoryText"), sink)
 	},
 	"query_month": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("query_month", "Consulta o resumo e os lançamentos do mês financeiro do usuário; use para 'quanto gastei?', 'como foi meu mês?', 'última transação' e 'últimas N transações'.", goldenMonthRefSchema("refMonth"), sink)
+		return goldenCaptureTool("query_month", "Consulta o resumo e os lançamentos do mês financeiro do usuário; use para perguntas do mês, 'como foi meu mês?', 'última transação' e 'últimas N transações'. Não use para hoje ou ontem.", goldenMonthRefSchema("refMonth"), sink)
+	},
+	"query_day": func(sink ToolCaptureSink) tool.ToolHandle {
+		return goldenCaptureTool("query_day", "Consulta o total gasto, total recebido e lançamentos de hoje ou ontem. Use obrigatoriamente para 'quanto gastei hoje?' ou 'quanto gastei ontem?'.", goldenDayRefSchema(), sink)
 	},
 	"get_transaction": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("get_transaction", "Retorna os detalhes de um lançamento de transação pelo ID.", goldenBaseSchema("txId"), sink)
@@ -494,6 +511,15 @@ func (s *GoldenRealLLMSuite) executorFor(tools []tool.ToolHandle) AgentExecutor 
 }
 
 const goldenRepeatsPerCase = 3
+
+func TestGoldenToolSubsetsAreRegisteredInHarnessCatalog(t *testing.T) {
+	for _, c := range AllCases() {
+		for _, name := range c.ToolSubset {
+			_, ok := goldenToolCatalog[name]
+			require.Truef(t, ok, "caso %q referencia tool %q ausente no goldenToolCatalog", c.Name, name)
+		}
+	}
+}
 
 func (s *GoldenRealLLMSuite) TestGoldenSetGate() {
 	t := s.T()
