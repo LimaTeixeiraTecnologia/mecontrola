@@ -1475,3 +1475,56 @@ VALIDACAO EM PRODUCAO (apos deploy): repetir "quanto gastei hoje?" → esperado
 R$ 2.067,00 (206700 cents) e itens corretos (fatura R$ 300,00, lanche R$ 15,00);
 "quanto gastei ontem?" → R$ 6.721,00 em 7 despesas. Conferir duration do run
 em mecontrola.platform_runs (>3s indica tool call real).
+
+--------------------------------------------------------------------------------
+RODADA 8 — VALIDACAO EM PRODUCAO: APROVADA (2026-07-28 23:31-23:32 UTC)
+- "quanto gastei hoje?" → "R$ 2.067,00" — bate com o banco (206700 cents, 15
+  despesas). Itens corretos: fatura R$ 300,00, lanche R$ 15,00, eletrônico
+  R$ 600,00/R$ 550,00. Bug 1 MORTO.
+- "quanto gastei ontem?" → "R$ 6.721,00" com os 7 itens exatos do banco
+  (672100 cents). Bug 2 MORTO (tool chamada — ver abaixo).
+- platform_runs: 23:31:46 (4,2s) e 23:32:03 (3,5s), ambos succeeded/routed —
+  duracoes compativeis com tool call real (vs 1,1s da resposta improvisada).
+- OBSERVACAO residual (nao bloqueante): a listagem de "hoje" omitiu 3 dos 15
+  itens (teste recusa R$ 77, um credito R$ 50, uma farmacia R$ 45) — total
+  correto, detalhe resumido pelo LLM. Candidato a regra de "listar TODOS os
+  entries" ou limite de exibicao declarado.
+
+--------------------------------------------------------------------------------
+RODADA 9 — B-14: guard deterministico para consulta de dia (QueryDayShortcut)
+================================================================================
+
+BUG (evidencia VPS 23:39 UTC): "quanto gastei hoje?" e "quanto gastei ontem?"
+responderam "sem lancamentos" SEM tool call na primeira tentativa; retry
+segundos depois funcionou. LLM nao-deterministico contorna a regra C8 — prompt
+nao e garantia. platform_runs: runs "succeeded" sem tool call = falso sucesso.
+
+FIX (padrao existente: CardExpenseShortcutGuard/RegisterExpenseShortcutGuard):
+- internal/agents/application/agents/guards/query_day_shortcut.go (novo):
+  PreGuard query_day_shortcut. Regexes ancoradas conservadoras cobrem:
+  "quanto gastei/recebi hoje/ontem", "quanto eu gastei...", "o que eu gastei...",
+  "quais (foram) (os) gastos/recebimentos (de) hoje/ontem", "me diz quanto...".
+  NAO dispara (0 falso positivo): mes/semana/ano, registros, "quanto gastei hoje
+  no mercado?" (merchant), fatura, orcamento — esses caem no fluxo LLM normal.
+- Resposta composta deterministicamente em Go (sem LLM): total de outcomeBRL/
+  incomeBRL + TODOS os entries da direcao pedida (mata tambem o residual de
+  itens omitidos) + dia vazio com mensagem padrao. Erro da tool = fall-through
+  para o LLM (disponibilidade preservada).
+- Mapeamento hoje/ontem -> today/yesterday (o enum da tool); teste pegou o bug
+  do mapeamento antes de subir.
+- Wiring: mecontrola_agent.go apos RegisterIncomeShortcutGuard.
+
+VALIDACOES: gofmt limpo; build/vet repo inteiro (incl. -tags integration) OK;
+go test -race ./internal/agents/... ALL PASS (16 cenarios de parse + 6 de
+guard: expense/income, dia vazio, erro da tool, nao-consulta, handle nil);
+golangci-lint 0 issues.
+
+VALIDACAO EM PRODUCAO (apos deploy):
+1. "quanto gastei hoje?" → R$ 2.108,00 (206700+4100 padaria) com TODOS os
+   16 itens de despesa listados — resposta identica em TODAS as tentativas
+   (deterministico, sem intermitencia).
+2. "quanto gastei ontem?" → R$ 6.721,00, 7 itens.
+3. "quanto recebi hoje?" → R$ 2.050,00 (190000+15000 freela), 6 receitas.
+4. platform_runs: run com ToolCall query_day registrado (outcome routed).
+5. 0 regressao: "quanto gastei esse mes?" (LLM+query_month), registros pix/
+   credito, fatura, orcamento — fluxos inalterados.
