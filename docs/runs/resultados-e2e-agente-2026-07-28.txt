@@ -1709,3 +1709,104 @@ VALIDAÇÃO EM PRODUÇÃO (pós-deploy): usuário envia
 candidatos (ou lista numerada), NUNCA "mais de um lançamento" nem re-ask
 genérico; se o guard de segurança disparar, o re-ask deve ser o de
 correção. Runs sem failed novo.
+
+RESULTADO PRODUÇÃO B-02 (2026-07-29 10:26-10:27 UTC) — VALIDADO, 0 REGRESSÃO:
+- Input 07:26 BRT: "no cartão eu gastei 35 e não 30" → SEM bloqueio
+  multi-item, SEM re-ask genérico. Agente pediu o apelido do cartão
+  (ambíguo: usuário tem Nubank e XP — comportamento correto).
+- "nubank" → edit_entry buscou candidatos por valor antigo (R$ 30,00):
+  listou 4 numerados (Transporte Público, Restaurantes, Transporte por
+  Aplicativo Recorrente, Cinema e Teatro).
+- "1" → confirmação "R$ 30,00 em Transporte Público (pix) → R$ 35,00";
+  "sim" → "Prontinho, atualizei! ✅".
+- DB confirma: lançamento "ônibus" amount_cents 3000 → 3500,
+  updated_at=2026-07-29 10:27:22 UTC (foi_editado=true). Valor NOVO
+  correto, lançamento CERTO (o escolhido pelo usuário).
+- Runs desde 10:20 UTC: 4 succeeded, 0 failed.
+- B-02 MORTO em produção.
+
+======================================================================
+RODADA 14 (2026-07-29) — RECOMENDAÇÕES PÓS-VALIDAÇÃO (Rec 2 a 5)
+======================================================================
+
+REC 2 — DEAD-LETTER OUTBOX
+2a. Alerta Grafana `mc-outbox-dead-letter` adicionado em
+    deployment/telemetry/grafana/provisioning/alerting/rules.yaml
+    (grupo infraestrutura; expr increase(outbox_dead_letter_total[5m]) > 0;
+    severity critical). YAML validado com yaml.safe_load.
+2b. Evento morto id 019fa8b1-1afb-7657-8c2b-0270b00a311b
+    (agents.whatsapp.inbound.v1, attempts=3, payload = mensagem "1" de
+    2026-07-28 ~11:54 UTC). Causa raiz: codec de versão antiga não
+    decodificava timestamp formato Postgres ("2026-07-28 11:54:47.568099+00"
+    sem "T"); corrigido em deploy posterior — não recorreu em 40+h de uso
+    intenso. Decisão recomendada: DESCARTE AUDITADO (não reprocessar:
+    mensagem "1" fora de contexto, pendência expirada, risco de falso
+    positivo). SQL de descarte proposto:
+    UPDATE mecontrola.outbox_events SET status=3, published_at=now(),
+      last_error='descarte manual auditado 2026-07-29: mensagem "1" fora de contexto (pendencia expirada); causa raiz codec corrigida em deploy posterior',
+      updated_at=now()
+    WHERE id='019fa8b1-1afb-7657-8c2b-0270b00a311b' AND status=4;
+    (published_at=now() exigido pelo check outbox_events_published_status_check:
+    status=3 <=> published_at IS NOT NULL.)
+    ESTADO: EXECUTADO com aval do usuário em 2026-07-29 11:16 UTC.
+    Verificação pós-execução: status=3, published_at preenchido, last_error
+    auditável preservado; dead-letters (status=4) = 0 no banco.
+
+REC 3 — OBSERVABILIDADE AgentRuntime (gap: spans de uma instância do
+worker não chegavam ao Tempo e era impossível distinguir instâncias)
+Fatos (VPS): span agent.runtime.execute fluía até 2026-07-28 23:44 UTC;
+hoje 0 spans apesar de ~15 mensagens processadas (13+ runs succeeded).
+2 workers com imagem idêntica, config OTEL idêntica, ambos healthy;
+rede OTLP alcançável de dentro de ambos (HTTP 405 no /v1/traces);
+zero erros de export nos logs; sampler AlwaysSample (rate=1.0).
+Hipótese forte: uma task específica parou de exportar (batcher).
+3a. service.instance.id adicionado aos resources OTel:
+    cmd/worker/worker.go e cmd/server/server.go passam
+    ResourceAttributes{"service.instance.id": os.Hostname()} ao
+    otel.Config do devkit (createResource suporta ResourceAttributes;
+    devkit NÃO usa resource.WithFromEnv, logo OTEL_RESOURCE_ATTRIBUTES
+    seria ignorado — por isso via código). No swarm, hostname do container
+    é único por task e visível em `docker ps` no VPS.
+    Validação local: go build ./cmd/..., go vet ./cmd/..., gofmt limpos.
+    Validação produção (pós-deploy): 1 mensagem WhatsApp → trace no Tempo
+    deve conter service.instance.id e permitir distinguir worker-1/worker-2.
+3b. Alertas Grafana novos (grupo infraestrutura, rules.yaml validado):
+    - mc-tracing-spans-absent: sum(rate(otelcol_receiver_accepted_spans[30m]))
+      < 0.01 por 15m. Baseline medido: ~1.44 spans/s constantes nas últimas
+      6h (incluindo madrugada, jobs instrumentados) → ausência de 30 min é
+      sinal confiável, baixo risco de falso positivo.
+    - mc-tracing-export-failed: increase(otelcol_exporter_send_failed_spans[10m])
+      > 0 por 5m (collector aceita mas não exporta → traces perdidos).
+    Limitação documentada: alerta de ausência é GLOBAL; perda parcial por
+    instância só é detectável pós-3a (service.instance.id), via query
+    manual no Tempo ou alerta futuro por instância se o gap recorrer.
+
+REC 4 — SUÍTE DE REGRESSÃO CONTÍNUA (checklist pós-deploy canônico)
+Executar após TODO deploy que toque agente/worker (ordem fixa):
+  1. "gastei 45 na farmácia no pix" → confirmação direta com categoria
+     Custo Fixo > Medicamentos e Farmácia, SEM perguntar cartão.
+  2. "gastei 30 no almoço no vale" → forma de pagamento vale-refeição,
+     sem reprompt de categoria se Res‑… (0-FP suíte).
+  3. "gastei 30 no ônibus e 15 no café" → bloqueio multi-item
+     ("registro um de cada vez"), NUNCA registra 2 de uma vez.
+  4. "no cartão eu gastei 35 e não 30" → edit_entry com busca de
+     candidatos; NUNCA "Me conta de novo esse lançamento".
+  5. "quanto gastei hoje?" → total com casas decimais corretas (÷100)
+     e período 00:00–23:59 local.
+  6. "quanto está minha fatura do cartão nubank?" → fatura do mês
+     vigente/próximo com fallback, vencimento correto.
+  7. Verificação DB/runs: platform_runs sem failed novo; outbox sem
+     dead-letter novo (status=4); spans no Tempo com service.instance.id
+     das duas instâncias de worker.
+Métrica de guard (B-16): monitorar
+  SELECT count(*) FROM mecontrola.platform_runs
+  WHERE status='failed' AND error LIKE 'guard %'
+    AND started_at > now() - interval '24 hours';
+  — esperado: 0 em operação normal; >0 indica falso bloqueio ativo.
+
+REC 5 — BACKLOG CONSCIENTE (documentado, não implementado nesta rodada)
+  - Fuso do "hoje": queries de dia usam data local do servidor; usuários
+    em outro fuso podem ver dia errado. Avaliar occurred_at em fuso do
+    usuário quando multi-fuso for requisito real.
+  - Índice (user_id, occurred_at) nas tabelas de transações: criar
+    migration quando volumetria justificar (medir antes com EXPLAIN).

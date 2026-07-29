@@ -307,6 +307,102 @@ groups:
                   query: { params: [C] }
                   evaluator: { type: gt, params: [1000] }
 
+      - uid: mc-outbox-dead-letter
+        title: Evento em dead-letter no outbox
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Evento do outbox atingiu max_attempts e foi promovido a dead-letter (status=4)."
+          description: "Side-effect pode ter sido perdido. Verificar: SELECT id, event_type, attempts, last_error FROM mecontrola.outbox_events WHERE status = 4; decidir reprocessar ou descartar com registro auditável. Runbook: docs/runbooks/deploy-anti-storm.md"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'increase(outbox_dead_letter_total[5m])'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0] }
+
+      - uid: mc-tracing-spans-absent
+        title: Pipeline de tracing sem spans
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Nenhum span chegou ao OpenTelemetry Collector nos ultimos 30 minutos."
+          description: "Baseline saudavel e ~1.4 spans/s continuos (jobs instrumentados). Ausencia total indica collector/Tempo indisponivel ou exportadores quebrados em todos os servicos. Verificar saude do otel-lgtm e conectividade OTLP (4317/4318) a partir dos containers."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 2700, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(otelcol_receiver_accepted_spans[30m]))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: lt, params: [0.01] }
+
+      - uid: mc-tracing-export-failed
+        title: Falha ao exportar spans para o Tempo
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "OpenTelemetry Collector esta falhando ao exportar spans para o backend de tracing."
+          description: "Spans aceitos mas nao exportados: traces estao sendo perdidos. Verificar Tempo, recursos do otel-lgtm (memoria/queue) e otelcol_exporter_queue_size."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'increase(otelcol_exporter_send_failed_spans[10m])'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0] }
+
   - orgId: 1
     name: negocio
     folder: MeControla Alerts

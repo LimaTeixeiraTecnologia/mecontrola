@@ -55,16 +55,21 @@ func Run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	hostname, hostnameErr := os.Hostname()
+	if hostnameErr != nil {
+		hostname = "unknown"
+	}
 	o11yConfig := &otel.Config{
-		Environment:     cfg.AppConfig.Environment,
-		ServiceName:     cfg.HTTPConfig.ServiceNameAPI,
-		ServiceVersion:  cfg.O11yConfig.ServiceVersion,
-		TraceSampleRate: cfg.O11yConfig.TraceSampleRate,
-		OTLPEndpoint:    cfg.O11yConfig.NormalizedExporterEndpoint(),
-		Insecure:        cfg.O11yConfig.ExporterInsecure,
-		LogLevel:        observability.LogLevel(cfg.O11yConfig.LogLevel),
-		OTLPProtocol:    otel.OTLPProtocol(cfg.O11yConfig.ExporterProtocol),
-		LogFormat:       observability.LogFormat(cfg.O11yConfig.LogFormat),
+		Environment:        cfg.AppConfig.Environment,
+		ServiceName:        cfg.HTTPConfig.ServiceNameAPI,
+		ServiceVersion:     cfg.O11yConfig.ServiceVersion,
+		TraceSampleRate:    cfg.O11yConfig.TraceSampleRate,
+		OTLPEndpoint:       cfg.O11yConfig.NormalizedExporterEndpoint(),
+		Insecure:           cfg.O11yConfig.ExporterInsecure,
+		LogLevel:           observability.LogLevel(cfg.O11yConfig.LogLevel),
+		OTLPProtocol:       otel.OTLPProtocol(cfg.O11yConfig.ExporterProtocol),
+		LogFormat:          observability.LogFormat(cfg.O11yConfig.LogFormat),
+		ResourceAttributes: map[string]string{"service.instance.id": hostname},
 	}
 	o11y, err := otel.NewProvider(context.Background(), o11yConfig)
 	if err != nil {
