@@ -228,7 +228,7 @@ PASS: 1387440 cents, dia 5, income, resolução determinística, payment_method=
 
 | # | Você envia | Bot responde (esperado) |
 |---|-----------|------------------------|
-| 1 | `todo mês eu recebo 800 de pensão` | Pergunta o dia do mês: "Em qual dia do mês ele se repete? 📅 (de 1 a 28, ex.: 5)" (slot determinístico; NÃO confirma lançamento avulso; domínio aceita apenas dias 1–28) |
+| 1 | `todo mês eu recebo 800 de pensão` | Pergunta o dia do mês: "Em qual dia do mês ele se repete? 📅 (ex.: 5)" (slot determinístico; NÃO confirma lançamento avulso; dias 1–31 aceitos — 29/30/31 materializam no último dia em meses curtos) |
 | 2 | `dia 10` | Confirmação de recorrência: R$ 800,00, dia 10 |
 | 3 | `sim` | Recorrência criada |
 

@@ -2925,3 +2925,68 @@ PENDENTE (usuário): commit + CI + deploy. REVALIDAÇÃO PÓS-DEPLOY:
    LLM, que deve pedir esclarecimento; registrar o comportamento real);
 3) no slot, responder "31" -> reprompt com o texto "(de 1 a 28, ex.: 5)";
 4) dedup 7.2 (repetir aluguel) segue pendente de validação em produção.
+
+================================================================================
+RODADA 28 — 2026-07-29 ~23h30 UTC — Feature: recorrência dia 29–31 com clamp
+para o último dia do mês (decisão de produto do usuário: "recebo todo mês no
+último dia do mês"; semântica escolhida: clamp para último dia CORRIDO, sem
+conceito de dia útil/feriado).
+================================================================================
+
+DECISÃO DE SCHEMA (skill postgresql-production-standards, modo recommendation):
+- Contexto observado: migrations/000001_initial_schema.up.sql:923 —
+  CHECK (day_of_month BETWEEN 1 AND 28) em
+  mecontrola.transactions_recurring_templates; PostgreSQL 16.14 em produção
+  (SHOW server_version via psql na VPS); tabela com 3 linhas (volume
+  desprezível, lock instantâneo); motor de migrations com par up/down e
+  SET LOCAL lock_timeout/statement_timeout como convenção (000011).
+- Regra oficial aplicada: CHECK e ALTER TABLE ... DROP/ADD CONSTRAINT —
+  https://www.postgresql.org/docs/16/ddl-constraints.html e
+  https://www.postgresql.org/docs/16/sql-altertable.html
+- Decisão: migration 000012_widen_recurring_template_day_of_month (up/down)
+  alargando o CHECK para BETWEEN 1 AND 31. Down migration reverte para
+  1..28 e falha intencionalmente se existir template 29..31 (rollback
+  planejado, registrado no cabeçalho do arquivo). Integridade permanece no
+  banco — não delegada à aplicação.
+- Impacto: custo/eficiência neutros (constraint metadata-only, validação de
+  3 linhas); robustez aumentada (banco e domínio com o mesmo contrato);
+  escalabilidade inalterada.
+
+CÓDIGO (contrato 1..31 + clamp):
+- valueobjects/day_of_month.go: NewDayOfMonth agora 1..31 (snapshot já era).
+  Testes: valid 29/30/31, invalid 0/32/-1.
+- domain/commands create/update_recurring_template_test.go: contrato novo —
+  dia 31 aceito (com asserção de valor), dia 32 rejeitado.
+- dtos/input raw_create/raw_update_recurring_template.go: validação 1..31.
+- Clamp na materialização (espelha o precedente já existente em
+  billing_cycle_resolver, "clamp: due_day=30, fevereiro 2025 → dia 28"):
+  - domain/services/recurring_workflow.go: isClampedLastDay — no último dia
+    do mês, template com dia > lastDay também materializa (ex.: dia 31 em
+    abril materializa em 30/04; em fev/2025 materializa em 28/02).
+  - repositories/postgres/recurring_template_repository.go
+    FindActiveByDayOfMonth: no último dia de mês com lastDay<31, o filtro
+    vira day_of_month>=$1 (idempotência por ref_month em
+    transactions_recurring_materializations impede duplicidade).
+  - Testes de domínio: 31→30/04, 31→28/02/2025, 29→29/02/2024 (bissexto),
+    30→28/02/2025, e negativo (dia 31 não materializa em 29/04).
+- Entry points realinhados a 1..31: shortcut (aceita "todo dia 29...",
+  rejeita 32), ParseRecurrenceDayOfMonth (31 válido; 0/32 inválidos),
+  prompt RecurrenceDayPrompt volta a "(ex.: 5)". Suíte 4.3 atualizada com
+  a nota de clamp.
+
+VALIDAÇÃO:
+- go build ./... OK; go vet agents+transactions OK.
+- go test -race -count=1 ./internal/agents/... ./internal/transactions/...:
+  0 falhas (inclui os 2 tests de command atualizados e os 5 casos de clamp).
+- gofmt limpo; golangci-lint agents+transactions: 0 issues.
+- Zero comentários em Go de produção; sem prefixo _.
+
+PENDENTE (usuário): commit + CI + deploy (a migration 000012 roda no
+deploy via serviço mecontrola_migrate). REVALIDAÇÃO PÓS-DEPLOY:
+1) "todo dia 31 pago 100 de luz no pix" -> confirmação -> "sim" ->
+   template com day_of_month=31 (banco aceita após migration);
+2) "todo dia 31 eu recebo 13874 de salário" -> template dia 31;
+3) materialização real só observável no próximo mês curto (30/09: dia 31
+   materializa em 30; fev/2026: em 28) — registrar como verificação
+   agendada, não bloqueia o production-proof;
+4) revalidar 4.3 (pensão) e dedup 7.2 que seguem pendentes da RODADA 27.

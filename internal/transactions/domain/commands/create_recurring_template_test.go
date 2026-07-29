@@ -59,14 +59,24 @@ func TestNewCreateRecurringTemplate_InvalidDayOfMonth(t *testing.T) {
 	assert.True(t, errors.Is(err, valueobjects.ErrDayOfMonthOutOfRange))
 }
 
-func TestNewCreateRecurringTemplate_DayOfMonthAbove28(t *testing.T) {
+func TestNewCreateRecurringTemplate_DayOfMonthAbove31(t *testing.T) {
 	raw := validCreateRecurringTemplateRaw()
-	raw.DayOfMonth = 29
+	raw.DayOfMonth = 32
 	userID := uuid.New()
 
 	_, err := commands.NewCreateRecurringTemplate(raw, userID)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, valueobjects.ErrDayOfMonthOutOfRange))
+}
+
+func TestNewCreateRecurringTemplate_DayOfMonth31Accepted(t *testing.T) {
+	raw := validCreateRecurringTemplateRaw()
+	raw.DayOfMonth = 31
+	userID := uuid.New()
+
+	cmd, err := commands.NewCreateRecurringTemplate(raw, userID)
+	require.NoError(t, err)
+	assert.Equal(t, 31, cmd.DayOfMonth.Value())
 }
 
 func TestNewCreateRecurringTemplate_InvalidFrequency(t *testing.T) {

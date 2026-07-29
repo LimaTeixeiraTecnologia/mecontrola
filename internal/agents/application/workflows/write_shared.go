@@ -227,7 +227,7 @@ func ParseRecurrenceDayOfMonth(text string) int {
 		return 0
 	}
 	day, err := strconv.Atoi(match[1])
-	if err != nil || day < 1 || day > 28 {
+	if err != nil || day < 1 || day > 31 {
 		return 0
 	}
 	return day

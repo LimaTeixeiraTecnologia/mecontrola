@@ -47,7 +47,7 @@ func TestParseCreateRecurrenceShortcut(t *testing.T) {
 		{name: "todo mes sem acento despesa sem dia", input: "todo mes pago 100 de luz", wantOK: true, wantDay: 0, wantAmt: 10000, wantDsc: "luz", wantDir: "outcome"},
 		{name: "todo mes sem verbo nao dispara", input: "todo mês tem aluguel de 1500", wantOK: false},
 		{name: "cartao nao dispara", input: "todo dia 5 pago 300 de streaming no cartão", wantOK: false},
-		{name: "dia 29 fora do invariante 1..28 nao dispara", input: "todo dia 29 pago 100 de luz", wantOK: false},
+		{name: "dia 29 dispara e clamp materializa no ultimo dia", input: "todo dia 29 pago 100 de luz", wantOK: true, wantDay: 29, wantAmt: 10000, wantDsc: "luz", wantDir: "outcome"},
 		{name: "dia invalido nao dispara", input: "todo dia 32 pago 100 de luz", wantOK: false},
 		{name: "sem verbo nao dispara", input: "todo dia 5 tem aluguel de 1500", wantOK: false},
 		{name: "despesa avulsa nao dispara", input: "gastei 30 no mercado", wantOK: false},

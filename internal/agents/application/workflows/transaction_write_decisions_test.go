@@ -194,13 +194,13 @@ func TestDecideTransactionSlotResume_RecurrenceDayInvalido_Reprompt(t *testing.T
 }
 
 func TestParseRecurrenceDayOfMonth(t *testing.T) {
-	valid := map[string]int{"5": 5, "dia 5": 5, "Dia 28": 28, "todo dia 10": 10, " 7 ": 7}
+	valid := map[string]int{"5": 5, "dia 5": 5, "Dia 31": 31, "todo dia 10": 10, " 7 ": 7}
 	for text, want := range valid {
 		if got := ParseRecurrenceDayOfMonth(text); got != want {
 			t.Fatalf("ParseRecurrenceDayOfMonth(%q) = %d; want %d", text, got, want)
 		}
 	}
-	for _, text := range []string{"0", "29", "30", "31", "32", "-1", "abc", "", "5 de agosto", "55"} {
+	for _, text := range []string{"0", "32", "-1", "abc", "", "5 de agosto", "55"} {
 		if got := ParseRecurrenceDayOfMonth(text); got != 0 {
 			t.Fatalf("ParseRecurrenceDayOfMonth(%q) = %d; want 0", text, got)
 		}

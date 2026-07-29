@@ -13,10 +13,10 @@ type DayOfMonth struct {
 }
 
 func NewDayOfMonth(day int) (DayOfMonth, error) {
-	if day < 1 || day > 28 {
-		return DayOfMonth{}, fmt.Errorf("transactions: %d: %w (1..28)", day, ErrDayOfMonthOutOfRange)
+	if day < 1 || day > 31 {
+		return DayOfMonth{}, fmt.Errorf("transactions: %d: %w (1..31)", day, ErrDayOfMonthOutOfRange)
 	}
-	return DayOfMonth{value: day, max: 28}, nil
+	return DayOfMonth{value: day, max: 31}, nil
 }
 
 func NewDayOfMonthSnapshot(day int) (DayOfMonth, error) {

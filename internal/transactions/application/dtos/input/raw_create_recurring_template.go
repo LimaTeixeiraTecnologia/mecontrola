@@ -41,7 +41,7 @@ func (i *RawCreateRecurringTemplate) Validate() error {
 	if i.Frequency == "" {
 		errs = append(errs, ErrInputFrequencyRequired)
 	}
-	if i.DayOfMonth < 1 || i.DayOfMonth > 28 {
+	if i.DayOfMonth < 1 || i.DayOfMonth > 31 {
 		errs = append(errs, ErrInputDayOfMonthOutOfRange)
 	}
 	if i.StartedAt == "" {

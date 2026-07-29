@@ -71,14 +71,24 @@ func TestNewUpdateRecurringTemplate_InvalidDayOfMonth(t *testing.T) {
 	assert.True(t, errors.Is(err, valueobjects.ErrDayOfMonthOutOfRange))
 }
 
-func TestNewUpdateRecurringTemplate_DayOfMonthAbove28(t *testing.T) {
+func TestNewUpdateRecurringTemplate_DayOfMonthAbove31(t *testing.T) {
 	raw := validUpdateRecurringTemplateRaw()
-	raw.DayOfMonth = 29
+	raw.DayOfMonth = 32
 	userID := uuid.New()
 
 	_, err := commands.NewUpdateRecurringTemplate(raw, userID)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, valueobjects.ErrDayOfMonthOutOfRange))
+}
+
+func TestNewUpdateRecurringTemplate_DayOfMonth31Accepted(t *testing.T) {
+	raw := validUpdateRecurringTemplateRaw()
+	raw.DayOfMonth = 31
+	userID := uuid.New()
+
+	cmd, err := commands.NewUpdateRecurringTemplate(raw, userID)
+	require.NoError(t, err)
+	assert.Equal(t, 31, cmd.DayOfMonth.Value())
 }
 
 func TestNewUpdateRecurringTemplate_InvalidFrequency(t *testing.T) {

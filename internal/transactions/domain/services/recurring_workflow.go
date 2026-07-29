@@ -20,6 +20,11 @@ type MaterializeDecision struct {
 
 type RecurringWorkflow struct{}
 
+func isClampedLastDay(today time.Time, templateDay int) bool {
+	lastDay := time.Date(today.Year(), today.Month()+1, 0, 0, 0, 0, 0, today.Location()).Day()
+	return today.Day() == lastDay && templateDay > lastDay
+}
+
 func (w RecurringWorkflow) DecideMaterializeForDay(
 	template entities.RecurringTemplate,
 	today time.Time,
@@ -40,7 +45,7 @@ func (w RecurringWorkflow) DecideMaterializeForDay(
 	}
 
 	dayInLoc := today.In(loc).Day()
-	if dayInLoc != template.DayOfMonth().Value() {
+	if dayInLoc != template.DayOfMonth().Value() && !isClampedLastDay(today.In(loc), template.DayOfMonth().Value()) {
 		return MaterializeDecision{ShouldMaterialize: false}
 	}
 

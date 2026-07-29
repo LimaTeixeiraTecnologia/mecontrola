@@ -86,7 +86,7 @@ func parseCreateRecurrenceShortcut(message string, handle tool.ToolHandle) (map[
 	dayOfMonth := 0
 	if match[1] != "" {
 		parsedDay, err := strconv.Atoi(match[1])
-		if err != nil || parsedDay < 1 || parsedDay > 28 {
+		if err != nil || parsedDay < 1 || parsedDay > 31 {
 			return nil, false
 		}
 		dayOfMonth = parsedDay

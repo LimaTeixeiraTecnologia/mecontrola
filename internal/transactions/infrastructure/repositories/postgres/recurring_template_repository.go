@@ -285,6 +285,11 @@ func (r *recurringTemplateRepository) FindActiveByDayOfMonth(ctx context.Context
 	ctx, span := r.o11y.Tracer().Start(ctx, "transactions.repository.recurring_template.find_active_by_day_of_month")
 	defer span.End()
 
+	dayFilter := "day_of_month=$1"
+	if lastDay := time.Date(asOf.Year(), asOf.Month()+1, 0, 0, 0, 0, 0, asOf.Location()).Day(); day == lastDay && lastDay < 31 {
+		dayFilter = "day_of_month>=$1"
+	}
+
 	base := `
 		SELECT id, user_id, direction, payment_method, card_id, amount_cents, description,
 		       category_id, subcategory_id, category_name_snapshot, subcategory_name_snapshot,
@@ -295,7 +300,7 @@ func (r *recurringTemplateRepository) FindActiveByDayOfMonth(ctx context.Context
 		       frequency, day_of_month, installments_total, started_at, ended_at,
 		       version, deleted_at, created_at, updated_at
 		  FROM mecontrola.transactions_recurring_templates
-		 WHERE day_of_month=$1
+		 WHERE ` + dayFilter + `
 		   AND deleted_at IS NULL
 		   AND started_at <= $2
 		   AND (ended_at IS NULL OR ended_at >= $2)

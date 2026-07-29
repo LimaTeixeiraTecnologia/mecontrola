@@ -108,6 +108,45 @@ func TestRecurringWorkflow_DecideMaterializeForDay(t *testing.T) {
 			today:           time.Date(2023, 12, 15, 12, 0, 0, 0, time.UTC),
 			wantMaterialize: false,
 		},
+		{
+			name:              "clamp — dia 31 em mês de 30 dias materializa no dia 30",
+			paymentMethod:     valueobjects.PaymentMethodPix,
+			dayOfMonth:        31,
+			today:             time.Date(2024, 4, 30, 12, 0, 0, 0, time.UTC),
+			wantMaterialize:   true,
+			wantAsTransaction: true,
+		},
+		{
+			name:              "clamp — dia 31 em fevereiro não bissexto materializa no dia 28",
+			paymentMethod:     valueobjects.PaymentMethodPix,
+			dayOfMonth:        31,
+			today:             time.Date(2025, 2, 28, 12, 0, 0, 0, time.UTC),
+			wantMaterialize:   true,
+			wantAsTransaction: true,
+		},
+		{
+			name:              "clamp — dia 29 em fevereiro bissexto materializa no dia 29",
+			paymentMethod:     valueobjects.PaymentMethodPix,
+			dayOfMonth:        29,
+			today:             time.Date(2024, 2, 29, 12, 0, 0, 0, time.UTC),
+			wantMaterialize:   true,
+			wantAsTransaction: true,
+		},
+		{
+			name:              "clamp — dia 30 em fevereiro não bissexto materializa no dia 28",
+			paymentMethod:     valueobjects.PaymentMethodPix,
+			dayOfMonth:        30,
+			today:             time.Date(2025, 2, 28, 12, 0, 0, 0, time.UTC),
+			wantMaterialize:   true,
+			wantAsTransaction: true,
+		},
+		{
+			name:            "clamp — dia 31 não materializa antes do último dia",
+			paymentMethod:   valueobjects.PaymentMethodPix,
+			dayOfMonth:      31,
+			today:           time.Date(2024, 4, 29, 12, 0, 0, 0, time.UTC),
+			wantMaterialize: false,
+		},
 	}
 
 	for _, tc := range tests {

@@ -17,10 +17,12 @@ func TestNewDayOfMonth(t *testing.T) {
 		wantErr error
 	}{
 		{name: "valid min", day: 1},
-		{name: "valid max", day: 28},
+		{name: "valid max", day: 31},
 		{name: "valid mid", day: 15},
+		{name: "valid 29", day: 29},
+		{name: "valid 30", day: 30},
 		{name: "invalid zero", day: 0, wantErr: valueobjects.ErrDayOfMonthOutOfRange},
-		{name: "invalid 29", day: 29, wantErr: valueobjects.ErrDayOfMonthOutOfRange},
+		{name: "invalid 32", day: 32, wantErr: valueobjects.ErrDayOfMonthOutOfRange},
 		{name: "invalid negative", day: -1, wantErr: valueobjects.ErrDayOfMonthOutOfRange},
 	}
 	for _, tc := range cases {
