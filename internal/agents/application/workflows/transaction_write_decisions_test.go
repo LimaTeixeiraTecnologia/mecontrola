@@ -99,6 +99,36 @@ func TestDecideTransactionInitialAwaiting_MapDispatchByOperation(t *testing.T) {
 			args: initialAwaitingArgs{EditCandidates: 1},
 			want: TransactionAwaitingConfirmation,
 		},
+		{
+			name: "recorrencia completa vai para confirmacao",
+			kind: TransactionOpCreateRecurrence,
+			args: initialAwaitingArgs{CategoryAwaiting: TransactionAwaitingConfirmation, PaymentMethod: "pix", RecurrenceDay: 5},
+			want: TransactionAwaitingConfirmation,
+		},
+		{
+			name: "recorrencia sem dia pergunta o dia",
+			kind: TransactionOpCreateRecurrence,
+			args: initialAwaitingArgs{CategoryAwaiting: TransactionAwaitingConfirmation, PaymentMethod: "pix"},
+			want: TransactionAwaitingRecurrenceDay,
+		},
+		{
+			name: "recorrencia com dia invalido pergunta o dia",
+			kind: TransactionOpCreateRecurrence,
+			args: initialAwaitingArgs{CategoryAwaiting: TransactionAwaitingConfirmation, PaymentMethod: "pix", RecurrenceDay: 32},
+			want: TransactionAwaitingRecurrenceDay,
+		},
+		{
+			name: "recorrencia sem pagamento pergunta pagamento antes do dia",
+			kind: TransactionOpCreateRecurrence,
+			args: initialAwaitingArgs{CategoryAwaiting: TransactionAwaitingConfirmation},
+			want: TransactionAwaitingPaymentMethod,
+		},
+		{
+			name: "recorrencia sem categoria pergunta categoria primeiro",
+			kind: TransactionOpCreateRecurrence,
+			args: initialAwaitingArgs{CategoryAwaiting: TransactionAwaitingCategory},
+			want: TransactionAwaitingCategory,
+		},
 	}
 
 	for _, scenario := range scenarios {
@@ -140,6 +170,40 @@ func TestDecideTransactionSlotResume_FillPaymentMethod(t *testing.T) {
 	decision := DecideTransactionSlotResume(state, "pix", time.Now().UTC())
 	if decision.Action != TransactionSlotActionFill || decision.FilledValue != "pix" {
 		t.Fatalf("expected fill pix, got %+v", decision)
+	}
+}
+
+func TestDecideTransactionSlotResume_FillRecurrenceDay(t *testing.T) {
+	state := TransactionWriteState{SuspendedAt: time.Now().UTC(), Awaiting: TransactionAwaitingRecurrenceDay}
+	for _, text := range []string{"5", "dia 5", "todo dia 5"} {
+		decision := DecideTransactionSlotResume(state, text, time.Now().UTC())
+		if decision.Action != TransactionSlotActionFill || decision.FilledValue != "5" {
+			t.Fatalf("expected fill 5 for %q, got %+v", text, decision)
+		}
+	}
+}
+
+func TestDecideTransactionSlotResume_RecurrenceDayInvalido_Reprompt(t *testing.T) {
+	state := TransactionWriteState{SuspendedAt: time.Now().UTC(), Awaiting: TransactionAwaitingRecurrenceDay}
+	for _, text := range []string{"32", "0", "abc", ""} {
+		decision := DecideTransactionSlotResume(state, text, time.Now().UTC())
+		if decision.Action != TransactionSlotActionReprompt {
+			t.Fatalf("expected reprompt for %q, got %+v", text, decision)
+		}
+	}
+}
+
+func TestParseRecurrenceDayOfMonth(t *testing.T) {
+	valid := map[string]int{"5": 5, "dia 5": 5, "Dia 31": 31, "todo dia 10": 10, " 7 ": 7}
+	for text, want := range valid {
+		if got := ParseRecurrenceDayOfMonth(text); got != want {
+			t.Fatalf("ParseRecurrenceDayOfMonth(%q) = %d; want %d", text, got, want)
+		}
+	}
+	for _, text := range []string{"0", "32", "-1", "abc", "", "5 de agosto", "55"} {
+		if got := ParseRecurrenceDayOfMonth(text); got != 0 {
+			t.Fatalf("ParseRecurrenceDayOfMonth(%q) = %d; want 0", text, got)
+		}
 	}
 }
 

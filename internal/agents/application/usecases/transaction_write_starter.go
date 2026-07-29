@@ -156,6 +156,9 @@ func (uc *TransactionWriteStarter) CreateRecurrence(ctx context.Context, cmd Cre
 	}
 
 	cmd.PaymentMethod = workflows.DecidePaymentMethodFromCard(cmd.PaymentMethod, cmd.CardID != nil)
+	if cmd.Direction == registerDirectionIncome && cmd.PaymentMethod == "" {
+		cmd.PaymentMethod = registerIncomePaymentMethod
+	}
 
 	state := workflows.TransactionWriteState{
 		Status:               workflows.TransactionWriteStatusActive,

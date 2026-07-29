@@ -1905,6 +1905,9 @@ func wrapStepWithMessages(
 		if err == nil && out.Status == workflow.StepStatusSuspended && out.Suspend != nil && out.Suspend.Prompt != "" {
 			appendOnboardingMsg(ctx, threads, messages, out.State, memory.RoleAssistant, out.Suspend.Prompt)
 		}
+		if err == nil && out.Status == workflow.StepStatusCompleted && state.FinalMessage == "" && out.State.FinalMessage != "" {
+			appendOnboardingMsg(ctx, threads, messages, out.State, memory.RoleAssistant, out.State.FinalMessage)
+		}
 		return out, err
 	}
 }

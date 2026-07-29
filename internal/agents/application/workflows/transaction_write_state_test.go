@@ -42,6 +42,8 @@ func TestTransactionAwaitingSlot_RoundTrip(t *testing.T) {
 		TransactionAwaitingDate,
 		TransactionAwaitingEditCandidate,
 		TransactionAwaitingConfirmation,
+		TransactionAwaitingEditSearch,
+		TransactionAwaitingRecurrenceDay,
 	}
 	for _, v := range values {
 		if !v.IsValid() {

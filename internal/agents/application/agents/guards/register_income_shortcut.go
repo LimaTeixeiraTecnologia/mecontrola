@@ -48,8 +48,7 @@ func (g *registerIncomeShortcutGuard) Inspect(ctx context.Context, in agent.Requ
 	}
 	raw, verbatim, err := g.handle.Invoke(ctx, argsJSON)
 	if err != nil {
-		logShortcutInvokeError(ctx, g.Name(), err)
-		return GuardDecision{}
+		return GuardDecision{InvokeErr: err}
 	}
 	content := registerIncomeShortcutContent(raw, verbatim)
 	return GuardDecision{

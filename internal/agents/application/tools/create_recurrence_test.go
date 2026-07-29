@@ -95,6 +95,37 @@ func TestBuildCreateRecurrenceTool_InvalidUserID(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestBuildCreateRecurrenceTool_MissingPaymentMethod_StillInvokes(t *testing.T) {
+	registrar := &fakeRecurrenceRegistrar{result: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify, Message: "Como você pagou? (pix, débito, crédito, dinheiro...) 💳"}}
+
+	handle := BuildCreateRecurrenceTool(registrar, imocks.NewCardManager(t))
+	in := recurrenceInput()
+	in.PaymentMethod = ""
+	argsJSON, _ := json.Marshal(in)
+	out, verbatimText, err := handle.Invoke(identityCtx("wamid-recur", 1), argsJSON)
+	require.NoError(t, err)
+	assert.True(t, registrar.called)
+	assert.Empty(t, registrar.lastAt.PaymentMethod)
+	assert.NotEmpty(t, verbatimText)
+
+	var result CreateRecurrenceOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Equal(t, agent.ToolOutcomeClarify.String(), result.Outcome)
+}
+
+func TestBuildCreateRecurrenceTool_MissingDayOfMonth_StillInvokes(t *testing.T) {
+	registrar := &fakeRecurrenceRegistrar{result: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify, Message: "Em qual dia do mês ele se repete? 📅 (ex.: 5)"}}
+
+	handle := BuildCreateRecurrenceTool(registrar, imocks.NewCardManager(t))
+	in := recurrenceInput()
+	in.DayOfMonth = 0
+	argsJSON, _ := json.Marshal(in)
+	_, _, err := handle.Invoke(identityCtx("wamid-recur", 1), argsJSON)
+	require.NoError(t, err)
+	assert.True(t, registrar.called)
+	assert.Equal(t, 0, registrar.lastAt.DayOfMonth)
+}
+
 func TestBuildCreateRecurrenceTool_RegistrarError(t *testing.T) {
 	registrar := &fakeRecurrenceRegistrar{err: errors.New("start error")}
 

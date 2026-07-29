@@ -67,8 +67,7 @@ func (g *cardExpenseShortcutGuard) Inspect(ctx context.Context, in agent.Request
 		}
 		resolveRaw, _, err := g.resolveCard.Invoke(ctx, resolveArgsJSON)
 		if err != nil {
-			logShortcutInvokeError(ctx, g.Name(), err)
-			return GuardDecision{}
+			return GuardDecision{InvokeErr: err}
 		}
 		toolCalls = append(toolCalls, agent.ToolCallRecord{
 			Tool:          g.resolveCard.ID(),
@@ -85,8 +84,7 @@ func (g *cardExpenseShortcutGuard) Inspect(ctx context.Context, in agent.Request
 	}
 	raw, verbatim, err := g.registerExpense.Invoke(ctx, argsJSON)
 	if err != nil {
-		logShortcutInvokeError(ctx, g.Name(), err)
-		return GuardDecision{}
+		return GuardDecision{InvokeErr: err}
 	}
 	toolCalls = append(toolCalls, agent.ToolCallRecord{
 		Tool:          g.registerExpense.ID(),

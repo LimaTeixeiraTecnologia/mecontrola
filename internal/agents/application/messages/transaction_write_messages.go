@@ -121,6 +121,10 @@ func DatePrompt() string {
 	return "Qual foi a data do lançamento?"
 }
 
+func RecurrenceDayPrompt() string {
+	return "Em qual dia do mês ele se repete? 📅 (ex.: 5)"
+}
+
 func ActiveWriteExists() string {
 	return "Ainda tenho um lançamento em aberto aguardando você. Me responda para concluí-lo ou envie \"cancelar\" para descartá-lo, aí seguimos com o próximo. 🙂"
 }

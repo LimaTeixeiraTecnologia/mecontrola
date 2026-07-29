@@ -48,6 +48,9 @@ func WithGuardChain(a agent.Agent, o11y observability.Observability, pre []guard
 func (g *guardChainAgent) Execute(ctx context.Context, in agent.Request) (agent.Result, error) {
 	for _, guard := range g.pre {
 		decision := guard.Inspect(ctx, in)
+		if decision.InvokeErr != nil {
+			g.logGuardInvokeError(ctx, in.AgentID, guard.Name(), decision.InvokeErr)
+		}
 		if decision.Handled {
 			g.recordDecision(ctx, in.AgentID, guard.Name(), guardDecisionHandled)
 			return decision.Result, nil
@@ -86,6 +89,17 @@ func truncateGuardEvidence(content string, maxRunes int) string {
 		return string(runes)
 	}
 	return string(runes[:maxRunes])
+}
+
+func (g *guardChainAgent) logGuardInvokeError(ctx context.Context, agentID, guardName string, err error) {
+	if g.o11y == nil {
+		return
+	}
+	g.o11y.Logger().Warn(ctx, "agents.guards: invoke do shortcut falhou; delegando ao llm",
+		observability.String("agent_id", agentID),
+		observability.String("guard", guardName),
+		observability.Error(err),
+	)
 }
 
 func (g *guardChainAgent) recordDecision(ctx context.Context, agentID, guardName, decision string) {

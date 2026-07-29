@@ -55,7 +55,7 @@ func BuildCreateRecurrenceTool(registrar recurrenceRegistrar, cards interfaces.C
 				"dayOfMonth":    map[string]any{"type": "integer"},
 				"startedAt":     map[string]any{"type": "string"},
 			},
-			"required":             []string{"direction", "paymentMethod", "amountCents", "description", "frequency", "dayOfMonth"},
+			"required":             []string{"direction", "amountCents", "description", "frequency"},
 			"additionalProperties": false,
 		},
 	}
@@ -75,7 +75,7 @@ func BuildCreateRecurrenceTool(registrar recurrenceRegistrar, cards interfaces.C
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewVerbatimTool("create_recurrence", "Solicita a criação de um template de lançamento recorrente; a persistência só ocorre após confirmação explícita do usuário.", in, out, buildCreateRecurrenceExec(registrar, cards), extractCreateRecurrenceVerbatim)
+	return tool.NewVerbatimTool("create_recurrence", "Solicita a criação de um template de lançamento recorrente; a persistência só ocorre após confirmação explícita do usuário. Preencha paymentMethod e dayOfMonth apenas quando o usuário informar; se ausentes, o fluxo pergunta.", in, out, buildCreateRecurrenceExec(registrar, cards), extractCreateRecurrenceVerbatim)
 }
 
 func extractCreateRecurrenceVerbatim(o CreateRecurrenceOutput) (string, bool) {

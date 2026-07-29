@@ -120,6 +120,7 @@ func handleTransactionInitial(ctx context.Context, state TransactionWriteState, 
 			CategoryAwaiting: categoryAwaitingFromCandidates(state.Candidates),
 			PaymentMethod:    state.PaymentMethod,
 			HasCard:          state.CardID != nil,
+			RecurrenceDay:    state.RecurrenceDayOfMonth,
 		})
 	}
 
@@ -442,6 +443,7 @@ func promoteTransactionCategoryToConfirmation(state TransactionWriteState, candi
 		CategoryAwaiting: TransactionAwaitingConfirmation,
 		PaymentMethod:    state.PaymentMethod,
 		HasCard:          state.CardID != nil,
+		RecurrenceDay:    state.RecurrenceDayOfMonth,
 	})
 	state.Awaiting = next
 
@@ -485,9 +487,7 @@ func handleTransactionCardResume(ctx context.Context, state TransactionWriteStat
 			cardUUID, parseErr := uuid.Parse(card.ID)
 			if parseErr == nil {
 				state.CardID = &cardUUID
-				state.RepromptCount = 0
-				state.Awaiting = TransactionAwaitingConfirmation
-				return suspendTransaction(state, buildTransactionConfirmSummary(state))
+				return advanceTransactionAfterSlotFill(state)
 			}
 		}
 	}
@@ -527,6 +527,11 @@ func handleTransactionSlotResume(ctx context.Context, state TransactionWriteStat
 		if decision.Slot == TransactionAwaitingDate && decision.FilledValue != "" {
 			state.OccurredAt = decision.FilledValue
 		}
+		if decision.Slot == TransactionAwaitingRecurrenceDay && decision.FilledValue != "" {
+			if day, convErr := strconv.Atoi(decision.FilledValue); convErr == nil {
+				state.RecurrenceDayOfMonth = day
+			}
+		}
 		return advanceTransactionAfterSlotFill(state)
 
 	default:
@@ -556,6 +561,7 @@ func advanceTransactionAfterSlotFill(state TransactionWriteState) (workflow.Step
 		CategoryAwaiting: TransactionAwaitingConfirmation,
 		PaymentMethod:    state.PaymentMethod,
 		HasCard:          state.CardID != nil,
+		RecurrenceDay:    state.RecurrenceDayOfMonth,
 	})
 	state.Awaiting = next
 	if next == TransactionAwaitingConfirmation {
@@ -1075,6 +1081,8 @@ func buildTransactionSlotPrompt(state TransactionWriteState) string {
 		return messages.CardPrompt()
 	case TransactionAwaitingDate:
 		return messages.DatePrompt()
+	case TransactionAwaitingRecurrenceDay:
+		return messages.RecurrenceDayPrompt()
 	case TransactionAwaitingEditCandidate:
 		return buildEditCandidatesPrompt(state.EditCandidates)
 	case TransactionAwaitingConfirmation:

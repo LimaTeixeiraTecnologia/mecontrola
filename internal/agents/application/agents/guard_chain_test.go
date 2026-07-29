@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -93,6 +94,30 @@ func (s *GuardChainAgentSuite) TestExecute_PreGuardOrder_FirstHandledWins() {
 	s.Equal("primeiro", output.Content)
 	s.Equal(1, first.inspects)
 	s.Equal(0, second.inspects, "guard apos o primeiro que tratou nao deve ser inspecionado")
+}
+
+func (s *GuardChainAgentSuite) TestExecute_PreGuardInvokeError_LogsAndDelegates() {
+	underlying := &stubGuardChainUnderlyingAgent{result: agent.Result{Content: "resposta do llm"}}
+	pre := &stubPreGuard{name: "pre-err", decision: guards.GuardDecision{InvokeErr: errors.New("schema validation")}}
+
+	built := WithGuardChain(underlying, fake.NewProvider(), []guards.PreGuard{pre}, nil)
+	output, err := built.Execute(s.ctx, agent.Request{AgentID: "agent-1"})
+
+	s.NoError(err)
+	s.True(underlying.executeCalled, "erro de invoke no shortcut deve delegar ao LLM")
+	s.Equal("resposta do llm", output.Content)
+}
+
+func (s *GuardChainAgentSuite) TestExecute_PreGuardInvokeError_NilObservability_NoPanic() {
+	underlying := &stubGuardChainUnderlyingAgent{result: agent.Result{Content: "resposta do llm"}}
+	pre := &stubPreGuard{name: "pre-err", decision: guards.GuardDecision{InvokeErr: errors.New("schema validation")}}
+
+	built := WithGuardChain(underlying, nil, []guards.PreGuard{pre}, nil)
+	output, err := built.Execute(s.ctx, agent.Request{AgentID: "agent-1"})
+
+	s.NoError(err)
+	s.True(underlying.executeCalled)
+	s.Equal("resposta do llm", output.Content)
 }
 
 func (s *GuardChainAgentSuite) TestExecute_NoPreGuardHandles_DelegatesToUnderlying() {

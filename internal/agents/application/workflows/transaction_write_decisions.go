@@ -36,6 +36,7 @@ type initialAwaitingArgs struct {
 	HasCard          bool
 	HasEditCandidate bool
 	EditCandidates   int
+	RecurrenceDay    int
 }
 
 type decideInitialAwaitingFn func(initialAwaitingArgs) TransactionAwaitingSlot
@@ -43,7 +44,7 @@ type decideInitialAwaitingFn func(initialAwaitingArgs) TransactionAwaitingSlot
 var initialAwaitingByOperation = map[TransactionOperationKind]decideInitialAwaitingFn{
 	TransactionOpRegisterExpense:  decideInitialAwaitingRegisterExpense,
 	TransactionOpRegisterIncome:   decideInitialAwaitingRegisterIncome,
-	TransactionOpCreateRecurrence: decideInitialAwaitingRegisterExpense,
+	TransactionOpCreateRecurrence: decideInitialAwaitingCreateRecurrence,
 	TransactionOpEditEntry:        decideInitialAwaitingEditEntry,
 }
 
@@ -56,6 +57,22 @@ func decideInitialAwaitingRegisterExpense(args initialAwaitingArgs) TransactionA
 	}
 	if args.PaymentMethod == transactionCreditCardCode && !args.HasCard {
 		return TransactionAwaitingCard
+	}
+	return TransactionAwaitingConfirmation
+}
+
+func decideInitialAwaitingCreateRecurrence(args initialAwaitingArgs) TransactionAwaitingSlot {
+	if args.CategoryAwaiting == TransactionAwaitingCategory {
+		return TransactionAwaitingCategory
+	}
+	if args.PaymentMethod == "" {
+		return TransactionAwaitingPaymentMethod
+	}
+	if args.PaymentMethod == transactionCreditCardCode && !args.HasCard {
+		return TransactionAwaitingCard
+	}
+	if args.RecurrenceDay < 1 || args.RecurrenceDay > 31 {
+		return TransactionAwaitingRecurrenceDay
 	}
 	return TransactionAwaitingConfirmation
 }
@@ -142,6 +159,10 @@ func DecideTransactionSlotResume(state TransactionWriteState, text string, now t
 		}
 	case TransactionAwaitingCard:
 		return TransactionSlotDecision{Action: TransactionSlotActionFill, Slot: TransactionAwaitingCard, FilledValue: trimmed}
+	case TransactionAwaitingRecurrenceDay:
+		if day := ParseRecurrenceDayOfMonth(trimmed); day > 0 {
+			return TransactionSlotDecision{Action: TransactionSlotActionFill, Slot: TransactionAwaitingRecurrenceDay, FilledValue: strconv.Itoa(day)}
+		}
 	}
 
 	if state.RepromptCount >= transactionMaxReprompts {

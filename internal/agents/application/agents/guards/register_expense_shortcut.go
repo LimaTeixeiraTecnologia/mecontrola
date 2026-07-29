@@ -88,8 +88,7 @@ func (g *registerExpenseShortcutGuard) Inspect(ctx context.Context, in agent.Req
 	}
 	raw, verbatim, err := g.handle.Invoke(ctx, argsJSON)
 	if err != nil {
-		logShortcutInvokeError(ctx, g.Name(), err)
-		return GuardDecision{}
+		return GuardDecision{InvokeErr: err}
 	}
 	return GuardDecision{
 		Handled: true,

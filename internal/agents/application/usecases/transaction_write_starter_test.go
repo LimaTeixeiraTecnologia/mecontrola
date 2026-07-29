@@ -143,6 +143,65 @@ func (s *TransactionWriteStarterSuite) TestRegisterIncome_UsesFixedPaymentMethod
 	s.Equal(registerIncomePaymentMethod, s.engine.lastState.PaymentMethod)
 }
 
+func (s *TransactionWriteStarterSuite) TestCreateRecurrence_IncomeWithoutPayment_DefaultsFixedPaymentMethod() {
+	s.categories.EXPECT().
+		ResolveForWrite(mock.Anything, mock.Anything).
+		Return(interfaces.CategoryWriteDecision{
+			RootCategoryID:  s.catRootID,
+			SubcategoryID:   s.catSubID,
+			RootSlug:        "entradas",
+			SubcategorySlug: "salario",
+		}, nil).Once()
+
+	result, err := s.uc.CreateRecurrence(s.ctx, CreateRecurrenceCommand{
+		UserID:        s.userID,
+		ThreadID:      "thr-010",
+		WAMID:         "wamid-010",
+		Direction:     registerDirectionIncome,
+		AmountCents:   1387440,
+		Description:   "salário",
+		CategoryID:    s.catRootID,
+		SubcategoryID: s.catSubID,
+		Frequency:     "monthly",
+		DayOfMonth:    5,
+	})
+
+	s.Require().NoError(err)
+	s.Equal(agent.ToolOutcomeClarify, result.Outcome)
+	s.Equal(workflows.TransactionOpCreateRecurrence, s.engine.lastState.OperationKind)
+	s.Equal(registerIncomePaymentMethod, s.engine.lastState.PaymentMethod)
+	s.Equal(5, s.engine.lastState.RecurrenceDayOfMonth)
+}
+
+func (s *TransactionWriteStarterSuite) TestCreateRecurrence_ExpenseWithoutPayment_LeavesEmptyForWorkflow() {
+	s.categories.EXPECT().
+		ResolveForWrite(mock.Anything, mock.Anything).
+		Return(interfaces.CategoryWriteDecision{
+			RootCategoryID:  s.catRootID,
+			SubcategoryID:   s.catSubID,
+			RootSlug:        "custo-fixo",
+			SubcategorySlug: "aluguel",
+		}, nil).Once()
+
+	result, err := s.uc.CreateRecurrence(s.ctx, CreateRecurrenceCommand{
+		UserID:        s.userID,
+		ThreadID:      "thr-011",
+		WAMID:         "wamid-011",
+		Direction:     "outcome",
+		AmountCents:   150000,
+		Description:   "aluguel",
+		CategoryID:    s.catRootID,
+		SubcategoryID: s.catSubID,
+		Frequency:     "monthly",
+		DayOfMonth:    5,
+	})
+
+	s.Require().NoError(err)
+	s.Equal(agent.ToolOutcomeClarify, result.Outcome)
+	s.Equal(workflows.TransactionOpCreateRecurrence, s.engine.lastState.OperationKind)
+	s.Empty(s.engine.lastState.PaymentMethod)
+}
+
 func (s *TransactionWriteStarterSuite) TestRegisterExpense_ActiveRunAlreadyExists() {
 	s.categories.EXPECT().
 		ResolveForWrite(mock.Anything, mock.Anything).

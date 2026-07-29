@@ -23,18 +23,20 @@ Todas as queries abaixo usam `'<USER_ID>'` — substitua pelo id resolvido.
 
 ## Bloco 1 — Onboarding (banco zerado)
 
-### 1.1 Fluxo completo informando cartão e recorrência
+### 1.1 Fluxo completo informando cartão (fluxo REAL do onboarding)
+
+O onboarding NÃO tem etapa de recorrência de despesas — a pergunta de recorrência do onboarding é sobre repetir o **orçamento** todo mês, não sobre criar templates de lançamento. Templates de recorrência são criados depois, pelo agente principal (cenários 4.x).
 
 | # | Você envia | Bot responde (esperado) |
 |---|-----------|------------------------|
 | 1 | `oi` | Boas-vindas + pergunta do nome de tratamento |
-| 2 | `Jailton` | Pergunta do orçamento mensal |
-| 3 | `4000` | Pergunta sobre cartões de crédito |
-| 4 | `nubank vencimento dia 10` | Confirmação do cartão (variável) |
-| 5 | `sim` | Proposta de distribuição do orçamento por categoria |
-| 6 | `sim` | Pergunta sobre despesas recorrentes |
-| 7 | `aluguel 1500 dia 5` | Confirmação da recorrência (variável) |
-| 8 | `sim` | Resumo final + onboarding concluído |
+| 2 | `Jailton` | Pergunta do objetivo financeiro |
+| 3 | `economizar para uma viagem` | Pergunta do orçamento mensal |
+| 4 | `4000` | Proposta de distribuição do orçamento por categoria |
+| 5 | `sim` | Pergunta: repetir o orçamento automaticamente todo mês? |
+| 6 | `sim` | Pergunta sobre cartões de crédito |
+| 7 | `nubank vencimento dia 10` | "💳 Cartão registrado com sucesso ✅ Quer registrar algum outro?" |
+| 8 | `não` | **Resumo final de onboarding** (objetivo, orçamento, distribuição, cartões, recorrência do orçamento) |
 
 Checks:
 
@@ -43,10 +45,10 @@ SELECT id, whatsapp_number, display_name, status FROM mecontrola.users WHERE wha
 SELECT competence, total_cents, state FROM mecontrola.budgets WHERE user_id='<USER_ID>';
 SELECT root_slug, planned_cents FROM mecontrola.budgets_allocations WHERE budget_id IN (SELECT id FROM mecontrola.budgets WHERE user_id='<USER_ID>');
 SELECT nickname, due_day, closing_day FROM mecontrola.cards WHERE user_id='<USER_ID>';
-SELECT description, amount_cents, day_of_month, frequency FROM mecontrola.transactions_recurring_templates WHERE user_id='<USER_ID>';
+SELECT role, left(content,80) FROM mecontrola.platform_messages WHERE resource_id='<USER_ID>' ORDER BY created_at DESC LIMIT 3;
 ```
 
-PASS: usuário ACTIVE; budget 400000 cents com alocações somando o total; cartão nubank due_day=10; template aluguel 150000 dia 5. FAIL: loop de etapa, dado errado, onboarding concluído sem dados, cartão criado sem confirmação.
+PASS: usuário ACTIVE; budget 400000 cents com alocações somando o total; cartão nubank due_day=10; **resumo final presente em platform_messages como role=assistant** (fix RODADA 25 — antes a FinalMessage não era persistida); NENHUM template em transactions_recurring_templates neste ponto. FAIL: loop de etapa, dado errado, onboarding concluído sem dados, resumo final ausente.
 
 ---
 
@@ -210,7 +212,7 @@ WHERE user_id='<USER_ID>' AND direction=1 ORDER BY created_at DESC LIMIT 1;
 
 | # | Você envia | Bot responde (esperado) |
 |---|-----------|------------------------|
-| 1 | `todo dia 5 eu recebo R$ 13.874,40 de salário` | Confirmação de **recorrência**: **R$ 13.874,40**, dia 5, salário — NUNCA R$ 5,00 |
+| 1 | `todo dia 5 eu recebo R$ 13.874,40 de salário` | Confirmação de **recorrência** DIRETA: **R$ 13.874,40**, dia 5, salário — NUNCA R$ 5,00; NÃO pergunta forma de pagamento (income usa pix default) |
 | 2 | `sim` | Confirmação de recorrência criada |
 
 Check:
@@ -220,17 +222,46 @@ SELECT description, amount_cents, day_of_month, direction FROM mecontrola.transa
 WHERE user_id='<USER_ID>' ORDER BY created_at DESC LIMIT 1;
 ```
 
-PASS: 1387440 cents, dia 5, income, resolução determinística. FAIL: R$ 5,00; lançamento avulso; pergunta de valor.
+PASS: 1387440 cents, dia 5, income, resolução determinística, payment_method='pix' (default de income). FAIL: R$ 5,00; lançamento avulso; pergunta de valor ou de pagamento.
 
-### 4.3 Receita recorrente sem dia ("todo mês" — caminho LLM protegido)
+### 4.3 Receita recorrente sem dia ("todo mês" — slot determinístico recurrence_day)
 
 | # | Você envia | Bot responde (esperado) |
 |---|-----------|------------------------|
-| 1 | `todo mês eu recebo 800 de pensão` | Pergunta o dia do mês (NÃO confirma lançamento avulso) |
+| 1 | `todo mês eu recebo 800 de pensão` | Pergunta o dia do mês: "Em qual dia do mês ele se repete? 📅 (ex.: 5)" (slot determinístico; NÃO confirma lançamento avulso) |
 | 2 | `dia 10` | Confirmação de recorrência: R$ 800,00, dia 10 |
 | 3 | `sim` | Recorrência criada |
 
-PASS: template 80000 dia 10. FAIL: lançamento avulso de R$ 800 em `transactions`.
+PASS: template 80000 dia 10. FAIL: lançamento avulso de R$ 800 em `transactions`; dia assumido sem perguntar; reprompt infinito ao responder `dia 10`.
+
+### 4.4 Despesa recorrente com pagamento na frase (aluguel — 1ª criação)
+
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `todo dia 5 pago 1500 de aluguel no pix` | Confirmação de recorrência: R$ 1.500,00, Custo Fixo > Aluguel, dia 5, pix |
+| 2 | `sim` | Recorrência criada |
+
+```sql
+SELECT description, amount_cents, day_of_month, direction, payment_method FROM mecontrola.transactions_recurring_templates
+WHERE user_id='<USER_ID>' AND description ILIKE '%aluguel%' AND deleted_at IS NULL;
+```
+
+PASS: 1 template, 150000 cents, dia 5, expense, pix. FAIL: "Não consegui registrar"; lançamento avulso; template sem dia.
+
+### 4.5 Despesa recorrente SEM pagamento na frase (novo caminho pós-fix)
+
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `todo dia 10 pago 200 de internet` | Pergunta a forma de pagamento (slot; NÃO falha com "Não consegui registrar") |
+| 2 | `pix` | Confirmação de recorrência: R$ 200,00, dia 10, pix |
+| 3 | `sim` | Recorrência criada |
+
+```sql
+SELECT description, amount_cents, day_of_month, payment_method FROM mecontrola.transactions_recurring_templates
+WHERE user_id='<USER_ID>' AND description ILIKE '%internet%' AND deleted_at IS NULL;
+```
+
+PASS: 20000 cents, dia 10, pix. FAIL: invoke da tool falhar por `paymentMethod` obrigatório; fallback "Não consegui registrar. Tente novamente em breve."
 
 ---
 
@@ -372,7 +403,7 @@ PASS: a pergunta não quebra o fluxo; retoma corretamente. FAIL: perdeu o fluxo 
 
 | # | Você envia | Bot responde (esperado) |
 |---|-----------|------------------------|
-| 1 | `quais são minhas recorrências?` | Lista: aluguel (onboarding), salário, pensão — valores/dias corretos, sem alucinação |
+| 1 | `quais são minhas recorrências?` | Lista: aluguel (4.4), salário (4.2), pensão (4.3), internet (4.5) — valores/dias corretos, sem alucinação |
 
 ### 7.2 Dedup — criar a mesma recorrência 2x (fix B-23)
 
@@ -496,6 +527,8 @@ Esperado: consumer ignora com outcome=deduplicated (métrica `agents_whatsapp_in
 | 4.1 Receita avulsa | | | |
 | 4.2 Salário recorrente (caso R$ 5) | | | |
 | 4.3 "Todo mês" sem dia | | | |
+| 4.4 Aluguel recorrente (com pix) | | | |
+| 4.5 Internet recorrente (sem pix) | | | |
 | 5.1 Correção com desambiguação | | | |
 | 5.2 "O valor certo é X" | | | |
 | 5.3 Edição inexistente | | | |

@@ -74,6 +74,7 @@ const (
 	TransactionAwaitingEditCandidate
 	TransactionAwaitingConfirmation
 	TransactionAwaitingEditSearch
+	TransactionAwaitingRecurrenceDay
 )
 
 func (a TransactionAwaitingSlot) String() string {
@@ -92,13 +93,15 @@ func (a TransactionAwaitingSlot) String() string {
 		return "confirmation"
 	case TransactionAwaitingEditSearch:
 		return "edit_search"
+	case TransactionAwaitingRecurrenceDay:
+		return "recurrence_day"
 	default:
 		return "unknown"
 	}
 }
 
 func (a TransactionAwaitingSlot) IsValid() bool {
-	return a >= TransactionAwaitingCategory && a <= TransactionAwaitingEditSearch
+	return a >= TransactionAwaitingCategory && a <= TransactionAwaitingRecurrenceDay
 }
 
 func ParseTransactionAwaitingSlot(s string) (TransactionAwaitingSlot, error) {
@@ -117,6 +120,8 @@ func ParseTransactionAwaitingSlot(s string) (TransactionAwaitingSlot, error) {
 		return TransactionAwaitingConfirmation, nil
 	case "edit_search":
 		return TransactionAwaitingEditSearch, nil
+	case "recurrence_day":
+		return TransactionAwaitingRecurrenceDay, nil
 	default:
 		return 0, fmt.Errorf("%w: %q", errInvalidTransactionAwaitingSlot, s)
 	}

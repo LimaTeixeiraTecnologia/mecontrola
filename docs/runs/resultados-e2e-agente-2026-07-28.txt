@@ -2529,3 +2529,294 @@ REVALIDAÇÃO PÓS-DEPLOY: repetir a frase exata do incidente e
 confirmar fluxo de recorrência; repetir "todo dia 5 pago 1500 de
 aluguel no pix" e confirmar que o dedup bloqueia com a mensagem
 amigável (sem 3º template).
+
+================================================================================
+RODADA 24 — 2026-07-29 ~20:15 UTC — VALIDAÇÃO PÓS-WIPE CASO A CASO (PRODUÇÃO)
+================================================================================
+
+CONTEXTO: usuário apagou TODO o banco, fez deploy do run 30485218565
+(sha 7959ec5, contém os 4 fixes B-23) e executou a suíte
+docs/runs/suite-production-proof-2026-07-29.md desde o onboarding.
+Análise obrigatória via ssh mecontrola-vps: banco (psql), logs
+(Loki + docker service logs), tracing (labels OTel) e métricas
+(Prometheus via Grafana proxy).
+
+USUÁRIO NOVO: 6dcadf6d-485d-4d91-a071-8e1303c6545e (+5511986896322,
+ACTIVE, criado 19:48:38 UTC). O antigo 9bbbbbcd-... foi apagado no wipe.
+
+--------------------------------------------------------------------------------
+VEREDITO GERAL: 14 cenários PASS / 3 FAIL reais / 13 não executados
+--------------------------------------------------------------------------------
+
+PASS (com evidência em banco):
+- Onboarding: usuário ACTIVE; 13 budgets mensais 2026-07..2027-07 de
+  1.387.440 cents (input do usuário R$ 13.874,40) + 65 allocations
+  somando 18.036.720 ✅; cartões XP (due 1/closing 24) e Nubank
+  (due 15/closing 8 — cenário 3.4 mudou vencimento 1→15 com
+  confirmação ✅).
+- 13 transações conferidas 1:1 contra as mensagens: farmácia 45→50
+  (edição 5.2 ✅), almoço 30 vale ✅, dentista 35 débito ✅, padaria
+  20 dinheiro ✅, crédito 45 Aulas Particulares + 45 Certificações
+  (3.1 duas vezes), crédito 50 Beleza (3.2 — bot perguntou
+  "Qual cartão foi utilizado?" COM a palavra "cartão" ✅), eletrônico
+  600 3x, freelance 500 income ✅, uber 30→35 ✅, lanche 25 com
+  occurred_at 2026-07-28 ✅, café 15.
+- 3.3 parcelamento: transactions_card_invoice_items tem 3 itens de
+  20.000 cents em ref_months 2026-08/2026-09/2026-10 consecutivos ✅;
+  fatura nubank consultada = R$ 340 (só 1 parcela de 200, não 600) ✅.
+- 4.1 recorrência aluguel: template 2dc23397-5551-494a-8085-854fa96858a3
+  EXISTE (150.000 cents, dia 5, freq monthly, direction=outcome,
+  payment=pix, sem deleted_at, criado 20:05:47 UTC). A afirmação
+  "não tem nada no banco" é FALSA — provavelmente consultou com o
+  user_id ANTIGO (apagado no wipe) ou tabela errada.
+- Consultas: "quanto gastei hoje?" = R$ 2.410,00 (soma conferida item
+  a item: EXATO ✅); "quanto gastei ontem?" = R$ 25,00 ✅; decimais
+  corretas em todos os valores.
+- Cancelamentos/recusas (2.3, 2.4, 2.5, 2.6): ZERO linhas residuais
+  no banco ✅; "talvez" 1x → reprompt, 2x → cancela (documentado).
+- 7.1 "quais são minhas recorrências?" respondeu "nenhuma" quando
+  não havia template ✅.
+
+FAIL REAIS (causa raiz confirmada com evidência):
+
+F1) 4.2 "todo dia 5 eu recebo R$ 13.874,40 de salário" →
+    "Não consegui registrar. Tente novamente em breve."
+    CADEIA COMPLETA (evidência docker logs worker-1 20:01:39.010Z):
+    1. create_recurrence_shortcut CASOU com a frase (regex validado
+       localmente: captura dia=5, verbo=recebo, 13.874,40, salário)
+       mas invocou a tool SEM paymentMethod;
+    2. schema strict da tool exige paymentMethod (required) →
+       Invoke falhou: "tool.invoke: schema validation: missing
+       property 'paymentMethod'" → guard delegou ao LLM
+       (slog.WarnContext — visível SÓ em docker logs, não no Loki);
+    3. LLM fabricou pergunta de categoria em texto livre (sem tool);
+    4. usuário respondeu "salário" → LLM fabricou "Prontinho! ✅"
+       SEM write tool → guard success_without_tool forçou o fallback
+       "Não consegui registrar..." (run a9fa1654 failed/usecaseError,
+       platform_runs 20:01:50).
+    NADA persistido (sem tx, sem template) — correto do ponto de
+    vista de integridade, mas a frase canônica falhou.
+
+F2) 4.3 "todo mês eu recebo 800 de pensão" → mesmo fallback.
+    CAUSA: regex do shortcut exige "todo dia N" — "todo mês" não
+    casa (e não tem dia). LLM fabricou "Posso registrar?" SEM tool →
+    guard confirmation_without_tool forçou o fallback
+    (run 51eac715 failed/usecaseError, 20:02:01).
+
+F3) Onboarding: "não" (19:50:21, em "quer registrar outro cartão?")
+    ficou SEM RESPOSTA. workflow_runs mostra onboarding-workflow
+    succeeded às 19:50:22 — o workflow concluiu mas nenhuma mensagem
+    assistant foi persistida/enviada (platform_messages: próxima
+    mensagem é do usuário 33s depois). Falta a mensagem de
+    encerramento do onboarding no ramo "não quero outro cartão".
+
+OBSERVAÇÕES (não são falha de escrita, mas gaps):
+- O1) 6.3: "que dia é hoje?" no meio da pergunta de categoria foi
+      consumida como input do passo suspenso (workflow seguiu com
+      Supermercado) em vez de responder a data. Comportamento do
+      resume por merge-patch — precisa de decisão de produto.
+- O2) Onboarding cadastrou cartões SEM confirmação intermediária
+      ("Nubank e vencimento dia 1" → "💳 Cartão registrado com
+      sucesso ✅" direto). Verificar se é o desenho do
+      onboarding_workflow.go (provável) — se for, documentar.
+- O3) Métricas: agent_guard_decisions_total OK (430 pass / 6.5 handled
+      em 4h), MAS sum by(status)(increase(agent_runs_total[3h]))
+      retornou failed=0 apesar de 2 runs failed no banco, e a query
+      instantânea agent_runs_total voltou vazia (possível expiração
+      de série no exporter OTel). Gap de observabilidade a verificar.
+- O4) slog.WarnContext dos shortcuts (Fix D) NÃO chega ao Loki —
+      só stdout do container. Loki ingere via OTel logger. Para
+      visibilidade em Grafana, trocar por observability.Logger ou
+      configurar scrape de stdout.
+- O5) Minha suíte (suite-production-proof-2026-07-29.md) assumiu uma
+      etapa de recorrência no onboarding que NÃO existe — corrigir a
+      suíte: o "aluguel 1500 dia 5" pós-onboarding cai no agente
+      principal como despesa avulsa (comportamento correto para a
+      frase sem "todo dia").
+
+NÃO EXECUTADOS (sem mensagens no banco): 5.3, 5.4, 5.5, 5.6, 7.3,
+7.4, 7.5, 8.1, 8.2, 9.1, 9.2, 9.3 — "fiz todos" foi parcial.
+
+MÉTRICAS/TRACING: 2 runs failed (4.2/4.3) com outcome usecaseError
+e spans agents.runtime.tool_call_failure gravados (trace_ids
+9f664153... e 950a9f56...). Guards anti-fabricação funcionaram
+como projetado (0 falso positivo de escrita: nenhum lançamento
+fabricado persistiu).
+
+PRÓXIMOS FIXES PROPOSTOS (ordem de prioridade):
+P1) create_recurrence_shortcut: quando paymentMethod ausente, NÃO
+    invocar a tool — delegar ao LLM já com contexto OU iniciar o
+    fluxo de confirmação perguntando a forma de pagamento (o schema
+    strict não aceita chamada parcial). Cobrir "todo dia 5 eu recebo
+    R$ 13.874,40 de salário" end-to-end.
+P2) Onboarding: enviar mensagem de encerramento quando usuário
+    responde "não" a "quer registrar outro cartão?".
+P3) Observabilidade: roteador dos logs de guard para o Loki
+    (observability.Logger no lugar de slog ou scrape stdout) e
+    investigar agent_runs_total failed=0.
+P4) Suíte: corrigir premissa do onboarding + adicionar casos
+    "todo mês ... de pensão" (sem dia) e recorrência de income sem
+    paymentMethod.
+
+================================================================================
+RODADA 25 — 2026-07-29 ~21:30 UTC — FIXES P1/P2 + CORREÇÃO DO F3 (FALSO POSITIVO)
+================================================================================
+
+CORREÇÃO DA RODADA 24 — F3 ERA FALSO POSITIVO:
+A afirmação "onboarding 'não' ficou sem resposta" estava ERRADA. Evidência:
+- platform_messages não registra a FinalMessage POR DESIGN (o wrapper do
+  workflow só persiste prompts de suspensão; a mensagem final é enviada
+  pelo consumer via gateway);
+- log "card.list.served" às 19:50:2x prova que o step-conclusion executou
+  (ele monta a FinalMessage chamando ListCards);
+- métrica agents_whatsapp_inbound_total na janela [10m] @19:51:30Z mostra
+  APENAS outcome=success (11.5) — zero no_reply (que dispararia se a
+  FinalMessage estivesse vazia) e zero send_error;
+- workflow_runs: onboarding-workflow succeeded às 19:50:22.
+Conclusão: a mensagem de conclusão FOI enviada. O gap real era só de
+memória/auditoria: a FinalMessage não era persistida em platform_messages,
+ficando fora do histórico Recent() do agente.
+
+FIXES IMPLEMENTADOS (skills: go-implementation etapas 1-5 + R0-R7;
+design-patterns-mandatory: decisão "não aplicar padrão" — mudança localizada;
+domain-modeling-production: apenas princípios DMMF, sem alteração de
+semântica de domínio):
+
+P1) Recorrência sem forma de pagamento (causa raiz do FAIL 4.2):
+- internal/agents/application/tools/create_recurrence.go:
+  "paymentMethod" removido do required do schema strict + descrição da
+  tool orientando preencher só quando o usuário informar (o fluxo pergunta).
+  Antes: o shortcut casava a frase, a validação de schema rejeitava
+  ("missing property 'paymentMethod'") e o LLM fabricava o restante.
+- internal/agents/application/usecases/transaction_write_starter.go
+  (CreateRecurrence): direction=income sem paymentMethod -> default
+  registerIncomePaymentMethod ("pix"), mesma decisão de produto já
+  existente em RegisterIncome. Expense sem paymentMethod segue com ""
+  e o workflow pergunta via TransactionAwaitingPaymentMethod (já
+  existente: TransactionOpCreateRecurrence usa
+  decideInitialAwaitingRegisterExpense).
+- Testes novos:
+  tools/create_recurrence_test.go:
+  TestBuildCreateRecurrenceTool_MissingPaymentMethod_StillInvokes;
+  usecases/transaction_write_starter_test.go:
+  TestCreateRecurrence_IncomeWithoutPayment_DefaultsFixedPaymentMethod
+  (caso exato da produção: 1.387.440 cents, dia 5, salário) e
+  TestCreateRecurrence_ExpenseWithoutPayment_LeavesEmptyForWorkflow.
+
+P2) FinalMessage do onboarding persistida na memória:
+- internal/agents/application/workflows/onboarding_workflow.go
+  (wrapStepWithMessages): ao concluir step com FinalMessage nova, faz
+  append como mensagem assistant em platform_messages (mesmo padrão
+  best-effort já usado para prompts de suspensão).
+- Teste novo: TestWrapStepWithMessages_AppendsFinalMessageOnCompletion.
+
+VALIDAÇÃO (boundary profile — usecase-write + workflow):
+- go build ./... OK; go vet ./internal/agents/... OK.
+- go test -race -count=1 ./internal/agents/...: todos os pacotes ok,
+  0 falhas (inclui tools, usecases, workflows, guards, consumers).
+- gofmt limpo nos 6 arquivos tocados; golangci-lint nos 3 pacotes
+  alterados: 0 issues.
+- Zero comentários adicionados (R zero-comments); sem identificadores
+  com prefixo _ (R5.26).
+
+PENDENTE (usuário): commit + CI + deploy. REVALIDAÇÃO PÓS-DEPLOY:
+1) "todo dia 5 eu recebo R$ 13.874,40 de salário" -> deve abrir
+   confirmação da recorrência (payment pix default income) e persistir
+   template após "sim";
+2) "todo dia 5 pago 1500 de aluguel" (sem "no pix") -> workflow deve
+   PERGUNTAR a forma de pagamento em vez de cair no LLM;
+3) refazer onboarding até o fim e confirmar que a mensagem de conclusão
+   aparece em platform_messages (role=assistant);
+4) P3 (observabilidade: logs de guard no Loki + agent_runs_total
+   failed=0) e P4 (corrigir premissa da suíte + casos "todo mês")
+   continuam abertos.
+
+================================================================================
+RODADA 26 — 2026-07-29 ~22h UTC — P3 (observabilidade) + P4 (slot
+recurrence_day + correção da suíte). Validação local completa; deploy/revalidação
+pendentes do usuário.
+================================================================================
+
+P3) Observabilidade de guards:
+- Métrica REFUTADA: a suspeita "agent_runs_total failed=0 seria bug" era
+  falsa. Evidência: sum by(status)(agent_runs_total) @20:10Z retornou
+  failed=2 — o "failed=0" observado antes era artefato de increase()
+  (salto de criação 0->1 invisível) + expiração de série ociosa no
+  Prometheus. Não há bug de métrica.
+- Logs de invoke-error de guard agora visíveis no Loki:
+  guards/types.go: GuardDecision ganhou campo InvokeErr error;
+  os 9 sites em 8 shortcuts (card_expense tem 2) retornam
+  GuardDecision{InvokeErr: err} em vez de logar localmente;
+  guard_chain.go: logGuardInvokeError loga via o11y.Logger().Warn
+  (nil-safe) no loop de pre-guards. logShortcutInvokeError e o import
+  slog solto foram removidos dos shortcuts.
+- Testes novos em guard_chain_test.go: delega ao LLM quando InvokeErr
+  presente; chain com o11y nil não panica.
+
+P4) Slot determinístico recurrence_day + dayOfMonth opcional:
+- transaction_write_state.go: TransactionAwaitingRecurrenceDay adicionado
+  NO FIM do iota (retrocompatível — Awaiting persiste como int);
+  String/Parse/IsValid cobrem "recurrence_day".
+- transaction_write_decisions.go: initialAwaitingArgs ganhou RecurrenceDay;
+  novo decideInitialAwaitingCreateRecurrence (ordem: categoria ->
+  pagamento -> cartão -> dia 1-31 -> confirmação);
+  TransactionOpCreateRecurrence passa a usá-lo; DecideTransactionSlotResume
+  preenche o dia via ParseRecurrenceDayOfMonth + strconv.Itoa; resposta
+  inválida gera reprompt.
+- write_shared.go: novo ParseRecurrenceDayOfMonth (regex
+  ^\s*(?:todo\s+dia|dia)?\s*([0-9]{1,2})\s*$, faixa 1-31).
+- transaction_write_workflow.go: fill aplica state.RecurrenceDayOfMonth;
+  buildTransactionSlotPrompt tem case -> messages.RecurrenceDayPrompt();
+  handleTransactionCardResume agora usa advanceTransactionAfterSlotFill
+  (não pula mais direto para a confirmação após resolver cartão).
+- messages/transaction_write_messages.go: RecurrenceDayPrompt() =
+  "Em qual dia do mês ele se repete? 📅 (ex.: 5)".
+- Persistência: buildRawRecurringForWrite usa state.RecurrenceDayOfMonth,
+  garantido 1-31 pelo slot antes da confirmação; dayOfMonth saiu do
+  required do schema da tool create_recurrence (P1 já tinha removido
+  paymentMethod).
+- Testes novos: decisions (5 cenários de initial awaiting + Fill dia +
+  reprompt inválido + Parse), roundtrip de state com o novo slot,
+  workflow TestRecurrence_SemDia_PerguntaDiaDepoisConfirma (suspende com
+  o prompt -> resume "dia 5" -> confirmação -> "sim" ->
+  CreateRecurringTemplate com DayOfMonth=5).
+
+P4) Suíte corrigida (docs/runs/suite-production-proof-2026-07-29.md):
+- 1.1 reescrito com o fluxo REAL do onboarding (oi -> nome -> objetivo ->
+  orçamento -> distribuição -> repetir orçamento? -> cartões -> "não" ->
+  resumo final persistido em platform_messages como assistant). Removida
+  a premissa falsa de etapa de recorrência de despesas no onboarding;
+  PASS agora exige NENHUM template neste ponto.
+- 4.2: expectativa ajustada — confirmação DIRETA (sem pergunta de
+  pagamento; pix é default de income), nunca R$ 5,00.
+- 4.3: nota atualizada de "caminho LLM protegido" para slot
+  determinístico recurrence_day com o texto exato do prompt.
+- Novo 4.4: "todo dia 5 pago 1500 de aluguel no pix" (despesa recorrente
+  com pagamento — 1ª criação; 7.2 passa a ser a 2ª para o dedup).
+- Novo 4.5: "todo dia 10 pago 200 de internet" (sem pagamento) -> bot
+  pergunta a forma de pagamento -> pix -> confirmação -> template.
+  Valida o novo caminho expense-sem-pagamento pós-P1.
+- 7.1: lista esperada = aluguel (4.4), salário (4.2), pensão (4.3),
+  internet (4.5). Tabela de conferência final ganhou linhas 4.4 e 4.5.
+
+VALIDAÇÃO (boundary profile — usecase-write + workflow):
+- go build ./... OK; go vet ./internal/agents/... OK.
+- go test -race -count=1 ./internal/agents/...: todos os pacotes ok,
+  0 falhas.
+- gofmt: 1 arquivo fora (guard_chain_test.go, trailing space) — corrigido
+  com gofmt -w; re-check limpo.
+- golangci-lint run ./internal/agents/...: 0 issues.
+- Zero comentários adicionados (R zero-comments); sem prefixo _ (R5.26).
+
+PENDENTE (usuário): commit + CI + deploy. REVALIDAÇÃO PÓS-DEPLOY
+(suíte atualizada, nesta ordem):
+1) 1.1 onboarding completo até o resumo final; conferir platform_messages
+   (role=assistant) e NENHUM template criado;
+2) 4.2 "todo dia 5 eu recebo R$ 13.874,40 de salário" -> confirmação
+   direta R$ 13.874,40 dia 5 -> "sim" -> template 1387440/pix;
+3) 4.3 "todo mês eu recebo 800 de pensão" -> pergunta o dia -> "dia 10"
+   -> confirmação -> "sim" -> template 80000 dia 10;
+4) 4.4 "todo dia 5 pago 1500 de aluguel no pix" -> template 150000 dia 5;
+5) 4.5 "todo dia 10 pago 200 de internet" -> pergunta pagamento -> "pix"
+   -> template 20000 dia 10;
+6) 7.2 dedup: repetir a frase do aluguel -> bloqueio amigável, count=1.

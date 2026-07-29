@@ -219,6 +219,20 @@ type PaymentAnswer struct {
 	CardHint string
 }
 
+var reRecurrenceDayOfMonth = regexp.MustCompile(`(?i)^\s*(?:todo\s+dia|dia)?\s*([0-9]{1,2})\s*$`)
+
+func ParseRecurrenceDayOfMonth(text string) int {
+	match := reRecurrenceDayOfMonth.FindStringSubmatch(strings.TrimSpace(text))
+	if len(match) != 2 {
+		return 0
+	}
+	day, err := strconv.Atoi(match[1])
+	if err != nil || day < 1 || day > 31 {
+		return 0
+	}
+	return day
+}
+
 func DecidePaymentAnswer(text string) PaymentAnswer {
 	words := strings.Fields(normalizeText(text))
 	for {

@@ -4498,6 +4498,31 @@ func (s *OnboardingWorkflowSuite) TestWrapStepWithMessages_AppendsInboundOnResum
 	s.Equal(workflow.StepStatusCompleted, out.Status)
 }
 
+func (s *OnboardingWorkflowSuite) TestWrapStepWithMessages_AppendsFinalMessageOnCompletion() {
+	threadPK := uuid.New()
+	s.threadsMock.EXPECT().
+		GetOrCreate(mock.Anything, "user-w", "peer-w").
+		Return(memory.Thread{ID: threadPK, ResourceID: "user-w", ThreadID: "peer-w"}, nil).
+		Once()
+	s.messagesMock.EXPECT().
+		Append(mock.Anything, threadPK, mock.MatchedBy(func(m memory.Message) bool {
+			return m.Role == memory.RoleAssistant && m.Content == "resumo final"
+		})).
+		Return(nil).
+		Once()
+
+	inner := func(_ context.Context, st OnboardingState) (workflow.StepOutput[OnboardingState], error) {
+		st.FinalMessage = "resumo final"
+		return workflow.StepOutput[OnboardingState]{State: st, Status: workflow.StepStatusCompleted}, nil
+	}
+	wrapped := wrapStepWithMessages(inner, s.threadsMock, s.messagesMock)
+
+	state := OnboardingState{UserID: "user-w", PeerID: "peer-w"}
+	out, err := wrapped(s.ctx, state)
+	s.NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+}
+
 func (s *OnboardingWorkflowSuite) TestWrapStepWithMessages_NoPeerID_NoAppend() {
 	inner := func(_ context.Context, st OnboardingState) (workflow.StepOutput[OnboardingState], error) {
 		return workflow.StepOutput[OnboardingState]{

@@ -55,8 +55,7 @@ func (g *queryDayShortcutGuard) Inspect(ctx context.Context, in agent.Request) G
 	}
 	raw, _, err := g.handle.Invoke(ctx, argsJSON)
 	if err != nil {
-		logShortcutInvokeError(ctx, g.Name(), err)
-		return GuardDecision{}
+		return GuardDecision{InvokeErr: err}
 	}
 	content, ok := buildQueryDayContent(raw, kind, dayRef)
 	if !ok {

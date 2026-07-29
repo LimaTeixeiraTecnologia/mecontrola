@@ -704,6 +704,52 @@ func (s *TransactionWriteWorkflowSuite) TestRecurrence_SuspendsWithRecurrenceBlo
 	s.Equal(TransactionWriteStatusCompleted, result.State.Status)
 }
 
+func (s *TransactionWriteWorkflowSuite) TestRecurrence_SemDia_PerguntaDiaDepoisConfirma() {
+	state := TransactionWriteState{
+		Status:        TransactionWriteStatusActive,
+		OperationKind: TransactionOpCreateRecurrence,
+		UserID:        s.userID,
+		ResourceID:    s.userID,
+		ThreadID:      "thr-recurrence-day",
+		MessageID:     "wamid-recurrence-day",
+		AmountCents:   80000,
+		Description:   "pensão",
+		PaymentMethod: "pix",
+		Frequency:     "monthly",
+		Candidates: []PendingCategoryCandidate{{
+			RootCategoryID: uuid.New(),
+			SubcategoryID:  uuid.New(),
+			Path:           "Entradas > Pensão",
+		}},
+	}
+	k := s.key("thr-recurrence-day")
+
+	start, err := s.engine.Start(s.ctx, s.def, k, state)
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSuspended, start.Status)
+	s.Equal(messages.RecurrenceDayPrompt(), start.State.ResponseText)
+	s.Equal(TransactionAwaitingRecurrenceDay, start.State.Awaiting)
+
+	resumed, err := s.engine.Resume(s.ctx, s.def, k, s.resumePayload("dia 5"))
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSuspended, resumed.Status)
+	s.Contains(resumed.State.ResponseText, "Posso configurar?")
+	s.Equal(5, resumed.State.RecurrenceDayOfMonth)
+
+	created := uuid.New()
+	s.ledger.EXPECT().
+		CreateRecurringTemplate(mock.Anything, mock.MatchedBy(func(t ifaces.RawRecurringTemplate) bool {
+			return t.DayOfMonth == 5 && t.AmountCents == 80000
+		})).
+		Return(ifaces.EntryRef{ID: created, Kind: ifaces.EntryKindRecurringTemplate}, nil).
+		Once()
+
+	result, err := s.engine.Resume(s.ctx, s.def, k, s.resumePayload("sim"))
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSucceeded, result.Status)
+	s.Equal(TransactionWriteStatusCompleted, result.State.Status)
+}
+
 func (s *TransactionWriteWorkflowSuite) TestRecurrence_Duplicate_CancelsWithFriendlyMessage() {
 	state := TransactionWriteState{
 		Status:        TransactionWriteStatusActive,
