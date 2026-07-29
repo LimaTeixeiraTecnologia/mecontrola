@@ -2069,3 +2069,19 @@ vet + golangci-lint: 0 issues.
 
 PENDENTE: commit + CI + revalidar em produção: "no cartão eu gastei 35
 e não 30" deve abrir busca/edição (nunca novo registro).
+
+VALIDAÇÃO PÓS-DEPLOY B-21 (run CI 30461932197, 2a8375e8, 2026-07-29
+14:51-14:52 UTC / 11:51-11:52 BRT — "no cartão eu gastei 35 e não 30"):
+- Shortcut determinístico disparou: edit_entry com busca, lista de
+  candidatos 1x (incluiu "R$300 Dívidas e Juros" via termo "cartão" —
+  comportamento correto da busca por termo).
+- Escolha "1" -> confirmação de edição -> "sim" -> "Prontinho,
+  atualizei!" — zero "Posso registrar?", zero falso positivo.
+- DB: MESMA transação 32ac21b3 (almoço) atualizada 3000 -> 3500 cents,
+  version 1 -> 2, updated_at 14:52:07. ZERO transação nova.
+- workflow_runs: 1 run op=3 (edit_entry), tx_status=2 (completed),
+  attempts=0, succeeded.
+- outbox: 3 eventos inbound, todos attempts=0, zero retry, zero erro.
+RESULTADO: B-21 MORTO EM PRODUÇÃO. Fecha a revalidação ponta a ponta
+do fluxo de edição com busca (B-19 + B-21): 0 regressão, 0 falso
+positivo, evidência cruzada DB/outbox/workflow.
