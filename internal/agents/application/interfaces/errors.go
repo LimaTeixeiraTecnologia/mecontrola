@@ -11,4 +11,5 @@ var (
 	ErrBudgetAlreadyActive           = errors.New("agents: orçamento já está ativo")
 	ErrBudgetConflict                = errors.New("agents: orçamento já existe para a competência")
 	ErrCardNotFound                  = errors.New("agents: cartão não encontrado")
+	ErrCardInvoiceNotFound           = errors.New("agents: fatura de cartão não encontrada")
 )

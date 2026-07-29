@@ -193,6 +193,84 @@ func TestQueryCardInvoiceTool_CardNotFound(t *testing.T) {
 	assert.Empty(t, res.ID)
 }
 
+func TestQueryCardInvoiceTool_InvoiceNotFound_ExplicitRefMonth(t *testing.T) {
+	ledger := imocks.NewTransactionsLedger(t)
+	ledger.EXPECT().GetCardInvoice(mock.Anything, testCardID, "2026-01").
+		Return(interfaces.CardInvoice{}, interfaces.ErrCardInvoiceNotFound).Once()
+	cards := imocks.NewCardManager(t)
+	cards.EXPECT().GetCard(mock.Anything, testCardID, testUserID).Return(interfaces.Card{ID: testCardID.String()}, nil).Once()
+
+	h := BuildQueryCardInvoiceTool(ledger, cards)
+	out, verbatimText, err := h.Invoke(identityCtx("w1", 0), mustMarshal(QueryCardInvoiceInput{CardID: testCardID.String(), RefMonth: "2026-01"}))
+	require.NoError(t, err)
+	assert.NotEmpty(t, verbatimText)
+
+	var res QueryCardInvoiceOutput
+	require.NoError(t, json.Unmarshal(out, &res))
+	assert.Equal(t, "clarify", res.Outcome)
+	assert.Contains(t, res.Message, "janeiro de 2026")
+	assert.Empty(t, res.ID)
+}
+
+func TestQueryCardInvoiceTool_InvoiceNotFound_FallsBackToNextMonth(t *testing.T) {
+	loc, locErr := time.LoadLocation("America/Sao_Paulo")
+	require.NoError(t, locErr)
+	current := time.Now().In(loc)
+	currentRefMonth := current.Format("2006-01")
+	nextRefMonth := current.AddDate(0, 1, 0).Format("2006-01")
+
+	ledger := imocks.NewTransactionsLedger(t)
+	ledger.EXPECT().GetCardInvoice(mock.Anything, testCardID, currentRefMonth).
+		Return(interfaces.CardInvoice{}, interfaces.ErrCardInvoiceNotFound).Once()
+	ledger.EXPECT().GetCardInvoice(mock.Anything, testCardID, nextRefMonth).
+		Return(interfaces.CardInvoice{
+			ID:              testInvoiceID,
+			CardID:          testCardID,
+			RefMonth:        nextRefMonth,
+			ItemsTotalCents: 45834,
+		}, nil).Once()
+	cards := imocks.NewCardManager(t)
+	cards.EXPECT().GetCard(mock.Anything, testCardID, testUserID).Return(interfaces.Card{ID: testCardID.String()}, nil).Once()
+
+	h := BuildQueryCardInvoiceTool(ledger, cards)
+	out, _, err := h.Invoke(identityCtx("w1", 0), mustMarshal(QueryCardInvoiceInput{CardID: testCardID.String()}))
+	require.NoError(t, err)
+
+	var res QueryCardInvoiceOutput
+	require.NoError(t, json.Unmarshal(out, &res))
+	assert.Empty(t, res.Outcome)
+	assert.Equal(t, testInvoiceID.String(), res.ID)
+	assert.Equal(t, nextRefMonth, res.RefMonth)
+	assert.Equal(t, int64(45834), res.ItemsTotalCents)
+}
+
+func TestQueryCardInvoiceTool_InvoiceNotFound_NoOpenInvoice(t *testing.T) {
+	loc, locErr := time.LoadLocation("America/Sao_Paulo")
+	require.NoError(t, locErr)
+	current := time.Now().In(loc)
+	currentRefMonth := current.Format("2006-01")
+	nextRefMonth := current.AddDate(0, 1, 0).Format("2006-01")
+
+	ledger := imocks.NewTransactionsLedger(t)
+	ledger.EXPECT().GetCardInvoice(mock.Anything, testCardID, currentRefMonth).
+		Return(interfaces.CardInvoice{}, interfaces.ErrCardInvoiceNotFound).Once()
+	ledger.EXPECT().GetCardInvoice(mock.Anything, testCardID, nextRefMonth).
+		Return(interfaces.CardInvoice{}, interfaces.ErrCardInvoiceNotFound).Once()
+	cards := imocks.NewCardManager(t)
+	cards.EXPECT().GetCard(mock.Anything, testCardID, testUserID).Return(interfaces.Card{ID: testCardID.String()}, nil).Once()
+
+	h := BuildQueryCardInvoiceTool(ledger, cards)
+	out, verbatimText, err := h.Invoke(identityCtx("w1", 0), mustMarshal(QueryCardInvoiceInput{CardID: testCardID.String()}))
+	require.NoError(t, err)
+	assert.NotEmpty(t, verbatimText)
+
+	var res QueryCardInvoiceOutput
+	require.NoError(t, json.Unmarshal(out, &res))
+	assert.Equal(t, "clarify", res.Outcome)
+	assert.Equal(t, cardInvoiceNotFoundClarifyMessage, res.Message)
+	assert.Empty(t, res.ID)
+}
+
 func TestBestPurchaseDayTool_Success(t *testing.T) {
 	cards := imocks.NewCardManager(t)
 	cards.EXPECT().BestPurchaseDay(mock.Anything, "nubank", 10).Return(interfaces.BestPurchaseDay{

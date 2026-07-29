@@ -1528,3 +1528,64 @@ VALIDACAO EM PRODUCAO (apos deploy):
 4. platform_runs: run com ToolCall query_day registrado (outcome routed).
 5. 0 regressao: "quanto gastei esse mes?" (LLM+query_month), registros pix/
    credito, fatura, orcamento — fluxos inalterados.
+
+--------------------------------------------------------------------------------
+RODADA 9 — B-14 VALIDACAO EM PRODUCAO: APROVADA (2026-07-29 08:33-08:35 UTC)
+- "quanto gastei hoje?" (29/07 vazio) → "sem lancamentos" correto.
+- "quanto gastei ontem?" 3x → IDENTICO: R$ 2.198,00 com 17/17 despesas
+  (soma conferida no banco: 219800 cents; inclui credito livro R$ 90).
+  Intermitencia do LLM eliminada: runs de 7-11ms (guard, sem LLM).
+- "quanto recebi ontem?" 3x → IDENTICO: R$ 2.050,00, 6 receitas.
+- 0 regressao: "quanto gastei esse mes?" seguiu fluxo LLM+query_month
+  (3,0s) e respondeu R$ 802,00 = outcome_proj do banco; registro
+  "gastei 178 na farmacia no cartao xp" NAO foi capturado pelo guard
+  (fluxo de cartao normal) e "quanto gastei hoje?" seguinte respondeu
+  R$ 178,00 — leitura pos-escrita consistente.
+- platform_runs: 11/11 succeeded; consultas de dia com outcome routed
+  em <30ms (antes: 1,1-5,2s com improviso do LLM).
+
+================================================================================
+RODADA 10 — B-15: query_card_invoice not-found vira clarify + fallback próximo mês
+================================================================================
+
+INCIDENTE (produção, 2026-07-28 23:40/23:42 UTC): 2 runs failed com
+`tool query_card_invoice: ... transactions: fatura de cartão não encontrada`.
+Causa raiz: refMonth default = mês corrente (2026-07), mas o cartão fecha dia 24
+→ não existe fatura 2026-07; as compras caem em 2026-08 (Nubank R$ 458,34 /
+XP R$ 6.892,00 — consistência itens=total verificada no banco).
+
+CORREÇÃO (sem tocar usecase/repo — contrato GetCardInvoice preservado):
+1. internal/agents/application/interfaces/errors.go — nova sentinela
+   ErrCardInvoiceNotFound (agents), espelhando o padrão ErrCardNotFound.
+2. internal/agents/infrastructure/binding/transactions_ledger_adapter.go —
+   GetCardInvoice mapeia txusecases.ErrCardInvoiceNotFound →
+   agentsifaces.ErrCardInvoiceNotFound (fronteira limpa: agents não importa
+   usecase de transactions no caminho do erro).
+3. internal/agents/application/tools/query_card_invoice.go — helper
+   resolveCardInvoice:
+   - refMonth explícito + not-found → outcome=clarify com
+     "📭 Não encontrei fatura de <mês por extenso> para esse cartão..."
+     (verbatim direto ao usuário, sem 2ª chamada LLM);
+   - refMonth default (mês corrente) + not-found → fallback para o próximo mês
+     (caso real: cartão fechado, fatura vigente é a do mês seguinte);
+   - ambos os meses sem fatura → clarify "nenhuma fatura aberta no momento".
+   Helpers nextRefMonth/describeRefMonth (parse 2006-01, nomes PT-BR).
+4. mecontrola_agent.go (prompt C4) — LLM deve exibir o refMonth retornado;
+   proibido afirmar que a fatura é do mês atual sem conferir o refMonth.
+
+TESTES NOVOS (5):
+- read_tools_test.go: not-found refMonth explícito → clarify c/ mês por extenso;
+  default cai no próximo mês (sequência 2 chamadas, fatura do mês seguinte);
+  ambos os meses sem fatura → clarify cardInvoiceNotFoundClarifyMessage.
+- transactions_ledger_adapter_test.go: repo (nil,nil,nil) → sentinela agents;
+  erro genérico de repo NÃO vira sentinela (anti falso-positivo).
+
+VALIDAÇÃO LOCAL (2026-07-29): gofmt limpo; go build ./...; go vet ./...;
+go vet -tags integration ./...; go test -race -count=1 ./internal/agents/...
+./internal/transactions/... (todos ok); golangci-lint 0 issues (complexidade
+ciclomática do exec resolvida via extração do helper).
+
+VALIDAÇÃO EM PRODUÇÃO (pós-deploy): usuário envia
+"quanto está minha fatura do cartão nubank?" → esperado: fatura de AGOSTO
+(refMonth=2026-08, R$ 458,34) sem run failed; run em platform_runs com
+status de sucesso; mensagem menciona agosto, não julho.

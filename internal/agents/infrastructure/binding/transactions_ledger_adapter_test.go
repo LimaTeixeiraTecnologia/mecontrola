@@ -160,3 +160,33 @@ func (s *TransactionsLedgerAdapterSuite) TestListMonthlyEntries_RepoError() {
 		})
 	}
 }
+
+func (s *TransactionsLedgerAdapterSuite) buildCardInvoiceAdapter(invoiceRepo *txifacemocks.CardInvoiceRepository) agentsifaces.TransactionsLedger {
+	o11y := fake.NewProvider()
+	getCI := txusecases.NewGetCardInvoice(s.factory, uowMocks.NewUnitOfWorkCardInvoiceOutput(s.T()), o11y)
+	s.factory.EXPECT().CardInvoiceRepository(mock.Anything).Return(invoiceRepo).Once()
+	return NewTransactionsLedgerAdapter(nil, nil, nil, nil, nil, nil, nil, getCI, nil, nil, nil, o11y)
+}
+
+func (s *TransactionsLedgerAdapterSuite) TestGetCardInvoice_NotFound_MapsToAgentsSentinel() {
+	rm, _ := valueobjects.NewRefMonth("2026-07")
+	invoiceRepo := txifacemocks.NewCardInvoiceRepository(s.T())
+	invoiceRepo.EXPECT().GetByMonth(mock.Anything, s.userID, mock.Anything, rm).
+		Return((*entities.CardInvoice)(nil), ([]*entities.CardInvoiceItem)(nil), nil).Once()
+
+	adapter := s.buildCardInvoiceAdapter(invoiceRepo)
+	_, err := adapter.GetCardInvoice(s.ctx, uuid.New(), "2026-07")
+	s.ErrorIs(err, agentsifaces.ErrCardInvoiceNotFound)
+}
+
+func (s *TransactionsLedgerAdapterSuite) TestGetCardInvoice_RepoError_DoesNotMapToSentinel() {
+	rm, _ := valueobjects.NewRefMonth("2026-07")
+	invoiceRepo := txifacemocks.NewCardInvoiceRepository(s.T())
+	invoiceRepo.EXPECT().GetByMonth(mock.Anything, s.userID, mock.Anything, rm).
+		Return((*entities.CardInvoice)(nil), ([]*entities.CardInvoiceItem)(nil), errors.New("db error")).Once()
+
+	adapter := s.buildCardInvoiceAdapter(invoiceRepo)
+	_, err := adapter.GetCardInvoice(s.ctx, uuid.New(), "2026-07")
+	s.Error(err)
+	s.False(errors.Is(err, agentsifaces.ErrCardInvoiceNotFound))
+}

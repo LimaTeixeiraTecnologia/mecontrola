@@ -20,6 +20,59 @@ type QueryCardInvoiceInput struct {
 	RefMonth string `json:"refMonth,omitempty"`
 }
 
+const cardInvoiceNotFoundClarifyMessage = "📭 Não encontrei nenhuma fatura aberta para esse cartão no momento. Assim que houver lançamentos no crédito, eu te mostro por aqui. 🙂"
+
+var refMonthNamesPT = [...]string{
+	"janeiro", "fevereiro", "março", "abril", "maio", "junho",
+	"julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+}
+
+func nextRefMonth(refMonth string) (string, error) {
+	t, err := time.Parse("2006-01", refMonth)
+	if err != nil {
+		return "", fmt.Errorf("query_card_invoice: refMonth inválido: %w", err)
+	}
+	return t.AddDate(0, 1, 0).Format("2006-01"), nil
+}
+
+func describeRefMonth(refMonth string) string {
+	t, err := time.Parse("2006-01", refMonth)
+	if err != nil {
+		return refMonth
+	}
+	return fmt.Sprintf("%s de %d", refMonthNamesPT[t.Month()-1], t.Year())
+}
+
+func resolveCardInvoice(ctx context.Context, ledger interfaces.TransactionsLedger, cardID uuid.UUID, in QueryCardInvoiceInput, refMonth string) (interfaces.CardInvoice, QueryCardInvoiceOutput, error) {
+	invoice, err := ledger.GetCardInvoice(ctx, cardID, refMonth)
+	if err == nil {
+		return invoice, QueryCardInvoiceOutput{}, nil
+	}
+	if !errors.Is(err, interfaces.ErrCardInvoiceNotFound) {
+		return interfaces.CardInvoice{}, QueryCardInvoiceOutput{}, fmt.Errorf("query_card_invoice: %w", err)
+	}
+	if in.RefMonth != "" {
+		return interfaces.CardInvoice{}, QueryCardInvoiceOutput{
+			Outcome: agent.ToolOutcomeClarify.String(),
+			Message: fmt.Sprintf("📭 Não encontrei fatura de %s para esse cartão. Quer consultar outro mês?", describeRefMonth(refMonth)),
+		}, nil
+	}
+	next, nextErr := nextRefMonth(refMonth)
+	if nextErr == nil {
+		invoice, err = ledger.GetCardInvoice(ctx, cardID, next)
+	}
+	if nextErr != nil || errors.Is(err, interfaces.ErrCardInvoiceNotFound) {
+		return interfaces.CardInvoice{}, QueryCardInvoiceOutput{
+			Outcome: agent.ToolOutcomeClarify.String(),
+			Message: cardInvoiceNotFoundClarifyMessage,
+		}, nil
+	}
+	if err != nil {
+		return interfaces.CardInvoice{}, QueryCardInvoiceOutput{}, fmt.Errorf("query_card_invoice: %w", err)
+	}
+	return invoice, QueryCardInvoiceOutput{}, nil
+}
+
 type QueryCardInvoiceItemOutput struct {
 	ID               string `json:"id"`
 	RefMonth         string `json:"refMonth"`
@@ -115,9 +168,12 @@ func buildQueryCardInvoiceExec(ledger interfaces.TransactionsLedger, cards inter
 			}
 			refMonth = time.Now().In(loc).Format("2006-01")
 		}
-		invoice, err := ledger.GetCardInvoice(ctx, cardID, refMonth)
+		invoice, clarify, err := resolveCardInvoice(ctx, ledger, cardID, in, refMonth)
 		if err != nil {
-			return QueryCardInvoiceOutput{}, fmt.Errorf("query_card_invoice: %w", err)
+			return QueryCardInvoiceOutput{}, err
+		}
+		if clarify.Outcome != "" {
+			return clarify, nil
 		}
 		items := make([]QueryCardInvoiceItemOutput, len(invoice.Items))
 		for i, item := range invoice.Items {

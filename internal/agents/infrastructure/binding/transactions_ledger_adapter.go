@@ -2,6 +2,7 @@ package binding
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -247,6 +248,9 @@ func (a *transactionsLedgerAdapter) GetCardInvoice(ctx context.Context, cardID u
 	out, err := a.getCardInvoice.Execute(ctx, cardID, refMonth)
 	if err != nil {
 		span.RecordError(err)
+		if errors.Is(err, txusecases.ErrCardInvoiceNotFound) {
+			return agentsifaces.CardInvoice{}, agentsifaces.ErrCardInvoiceNotFound
+		}
 		return agentsifaces.CardInvoice{}, fmt.Errorf("agents/binding/transactions_ledger: obter fatura cartão: %w", err)
 	}
 
