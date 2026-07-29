@@ -293,11 +293,11 @@ WHERE event_type LIKE 'agents.whatsapp.inbound%' ORDER BY created_at DESC LIMIT 
 ```
 
 ```sql
-UPDATE mecontrola.outbox_events SET status=1, attempts=0
+UPDATE mecontrola.outbox_events SET status=1, attempts=0, locked_at=NULL, locked_by=NULL, published_at=NULL
 WHERE id='<ID_DO_EVENTO_JA_PROCESSADO>';
 ```
 
-(status: 1=pending, 2=published — confirmado em `internal/platform/outbox/status.go`)
+(status: 1=pending, 2=processing, 3=published, 4=failed — `internal/platform/outbox/status.go`; o CHECK `outbox_events_published_status_check` exige `published_at=NULL` para voltar a pending)
 
 Esperado: worker consome, consumer registra `agents_whatsapp_inbound_total{outcome="deduplicated"}` (Prometheus) + log "mensagem duplicada ignorada" (Loki), zero mensagem no WhatsApp, zero lançamento novo.
 

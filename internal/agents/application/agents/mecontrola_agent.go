@@ -318,6 +318,9 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 	if registerIncome := findTool(tools, registerIncomeToolID); registerIncome != nil {
 		pre = append(pre, guards.NewRegisterIncomeShortcutGuard(registerIncome))
 	}
+	if createRecurrence := findTool(tools, "create_recurrence"); createRecurrence != nil {
+		pre = append(pre, guards.NewCreateRecurrenceShortcutGuard(createRecurrence))
+	}
 	if queryDay := findTool(tools, "query_day"); queryDay != nil {
 		pre = append(pre, guards.NewQueryDayShortcutGuard(queryDay))
 	}

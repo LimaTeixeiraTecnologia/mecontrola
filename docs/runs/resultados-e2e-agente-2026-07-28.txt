@@ -2249,3 +2249,107 @@ PENDENTE P/ PRÓXIMA RODADA (pós-deploy do usuário):
 6. Executar docs/runs/suite-fogo-real-fluxos-nao-cobertos.md
    (recorrências, budgets, onboarding, parcelas, cartões, edição
    avançada, exclusão).
+
+======================================================================
+RODADA 20 — 2026-07-29 18:00 UTC / 15:00 BRT — VALIDAÇÃO PÓS-DEPLOY
+(run CI 30476759890, sha 80422f82, 12/12 jobs verdes incl. Deploy +
+Healthcheck; migration 000011 aplicada — schema_migrations version=11)
+======================================================================
+
+ITEM 4 — "no vale" DETERMINÍSTICO: PROVADO EM PRODUÇÃO
+- Fogo real 17:57-17:58 UTC (14:57-14:58 BRT): "gastei 30 no almoço
+  no vale" -> confirmação DIRETA "Prazeres > Restaurantes /
+  vale-refeição" (sem LLM, sem pergunta de categoria) -> "sim" ->
+  "Prontinho! ✅".
+- DB: tx 873c09cd criada 17:58:09 — description="almoço",
+  amount_cents=3000, payment_method=9 (vale_refeicao),
+  category_path="Prazeres > Restaurantes", origin_wamid preenchido.
+  Exatamente o comportamento determinístico projetado; a mesma frase
+  que de manhã virou "Custo Fixo > Açougue" via LLM agora resolve
+  certo em 100% das execuções (caminho sem LLM).
+
+ITEM 2 — IDEMPOTÊNCIA POR WAMID: PROVADO EM PRODUÇÃO (cenário F1)
+- Setup: consumer_processed_messages já continha os 2 wamids do
+  fluxo (dedup ativo desde o deploy).
+- Prova: evento inbound do "sim" (019faf06-d507, status=3 published)
+  reenfileirado manualmente (status=1, attempts=0, published_at=NULL
+  — CHECK outbox_events_published_status_check exige published_at
+  nulo; descoberta registrada no doc da suíte).
+- Desfecho às 18:00:09 UTC: evento re-consumido e republicado
+  (status=3, attempts=0, last_error vazio), consumer_processed_
+  messages seguiu com 1 linha para o wamid (insert deu conflito ->
+  skip), ZERO transações novas após 17:58:30, e Prometheus registra
+  agents_whatsapp_inbound_total{outcome="deduplicated"}=1 (worker
+  1adee3e5f21f) ao lado de outcome="success"=2 (as 2 originais).
+- Sem o fix: o "sim" seria reprocessado (mensagem duplicada e/ou
+  efeito colateral repetido). Com o fix: skip silencioso e auditável.
+RESULTADO: F1 VERDE. As 3 ressalvas do ciclo anterior estão
+eliminadas com evidência em produção: idempotência (F1), fallback
+do guard (item 3, validação funcional pendente de ocorrência real —
+caminho coberto por teste unitário), variância de categoria (item 4
+provado acima).
+
+PENDENTE (não bloqueante): confirmação visual do usuário de que
+nenhuma mensagem duplicada chegou no WhatsApp durante a prova F1;
+execução dos blocos A-E da suíte docs/runs/suite-fogo-real-fluxos-
+nao-cobertos.md; alerta mc-agent-guard-false-success-blocked visível
+no Grafana após reload do provisioning.
+
+======================================================================
+RODADA 21 — 2026-07-29 18:04 UTC / 15:04 BRT — Suíte Bloco A
+(recorrências): A1 FALHOU -> diagnóstico + B-22 corrigido
+======================================================================
+
+A1 — "todo dia 5 pago 1500 de aluguel" -> usuário recebeu "Não
+consegui registrar. Tente novamente em breve."
+
+DIAGNÓSTICO (evidência cruzada, sem suposição):
+- platform_runs 69870a8a (18:04:02): status=failed,
+  outcome=usecaseError, campo error = "Vamos cadastrar o seu
+  lançamento recorrente! 📅 Dia 5 💰 R$ 1.500,00 📂 Custo Fixo >
+  Aluguel 🔄 Mensal Posso registrar?" — ou seja, o LLM FABRICOU a
+  pergunta de confirmação SEM chamar a tool create_recurrence
+  (confirmado: nenhum workflow_run de recorrência criado às 18:04;
+  os únicos runs recentes eram transaction-write antigos).
+- Guard confirmation_without_tool (marcador "posso registrar?")
+  bloqueou e forçou a mensagem segura: 0 falso positivo entregue.
+  Se a confirmação fabricada tivesse passado, o usuário responderia
+  "sim" para um fluxo inexistente — pior cenário evitado.
+- Prometheus: agent_guard_decisions_total{guard=
+  "confirmation_without_tool", decision="handled"}=1 — item 6
+  (métrica/alerta) exercitado em produção pela 1ª vez com caso real.
+- Bônus de validação: o usuário recebeu a mensagem segura do guard
+  ("Não consegui registrar. Tente novamente em breve.") e NÃO o
+  fallback genérico ("não consegui concluir agora, pode repetir?") —
+  item 3 (fallback UX) provado em produção por ocorrência real.
+
+CAUSA RAIZ: não existia caminho determinístico para recorrência; a
+frase dependia 100% do LLM rotear para create_recurrence, e ele
+preferiu improvisar o texto de confirmação (padrão visto no
+histórico da thread).
+
+B-22 — FIX: pre-guard determinístico create_recurrence_shortcut
+(guards/create_recurrence_shortcut.go), mesmo padrão dos shortcuts
+register_expense/register_income/edit_entry:
+- Regex "todo dia N <verbo> <valor> <conector> <descrição>";
+  verbos de despesa (gastei/gasto/pago/paguei) -> outcome;
+  recebo/recebi/ganho -> income; frequency=monthly; dayOfMonth 1-31.
+- Reusa splitExpensePaymentSuffix (pagamento no fim: "no pix",
+  "no vale"...), blockers de cartão (crédito/cartão/parcel seguem
+  para o LLM, que precisa resolver cardId) e a confirmação humana
+  obrigatória da tool antes de persistir.
+- Wiring: mecontrola_agent.go (findTool "create_recurrence").
+- Testes: 10 cenários de parse (incl. a frase exata da produção,
+  receita recorrente, pagamento no fim, milhar, dia inválido,
+  não-interceptação de despesa avulsa/edição/pergunta) + 2 de
+  routing. Suite agents completa + build + vet + golangci-lint:
+  0 issues, 0 falhas com -race.
+
+VALIDAÇÃO LOCAL: gofmt limpo; go build ./... + go vet OK;
+go test -race -count=1 ./internal/agents/...: 12 pacotes ok;
+golangci-lint: 0 issues.
+
+PENDENTE: commit + CI + revalidar A1 em produção: "todo dia 5 pago
+1500 de aluguel" deve abrir confirmação de recorrência (dia 5,
+R$ 1.500, aluguel) SEM passar pelo LLM; "sim" deve persistir em
+transactions_recurring_templates; seguir para A2-A4.
