@@ -24,6 +24,12 @@ type CategoryWriteGate000004Suite struct {
 	db  *sqlx.DB
 }
 
+const (
+	latestMigrationVersion                   = uint(11)
+	beforeCategoryWriteGateMigrationVersion  = uint(3)
+	stepsFromLatestToBeforeCategoryWriteGate = -8
+)
+
 func TestCategoryWriteGate000004Suite(t *testing.T) {
 	suite.Run(t, new(CategoryWriteGate000004Suite))
 }
@@ -58,7 +64,7 @@ func (s *CategoryWriteGate000004Suite) TestCategoryWriteGateUpThenDownThenUp() {
 	migrator := s.newMigrator()
 	s.applyUp(migrator)
 
-	s.assertVersion(migrator, 10)
+	s.assertVersion(migrator, latestMigrationVersion)
 
 	s.assertColumnPresent("transactions", "category_kind")
 	s.assertColumnPresent("transactions", "category_path")
@@ -133,8 +139,8 @@ func (s *CategoryWriteGate000004Suite) TestCategoryWriteGateUpThenDownThenUp() {
 
 	s.assertFunctionPresent("mecontrola", "validate_category_write_gate")
 
-	s.Require().NoError(migrator.Steps(-7))
-	s.assertVersion(migrator, 3)
+	s.Require().NoError(migrator.Steps(stepsFromLatestToBeforeCategoryWriteGate))
+	s.assertVersion(migrator, beforeCategoryWriteGateMigrationVersion)
 
 	s.assertColumnMissing("transactions", "category_kind")
 	s.assertColumnMissing("transactions", "category_path")
@@ -208,7 +214,7 @@ func (s *CategoryWriteGate000004Suite) TestCategoryWriteGateUpThenDownThenUp() {
 	s.assertTriggerMissing("mecontrola", "transactions_recurring_templates", "transactions_recurring_templates_category_write_gate_trg")
 
 	s.applyUp(migrator)
-	s.assertVersion(migrator, 10)
+	s.assertVersion(migrator, latestMigrationVersion)
 	s.assertColumnPresent("transactions", "category_kind")
 	s.assertConstraintPresent("transactions_category_fk")
 	s.assertTriggerPresent("mecontrola", "transactions", "transactions_category_write_gate_trg")

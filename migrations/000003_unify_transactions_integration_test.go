@@ -24,6 +24,11 @@ type Unify000003Suite struct {
 	db  *sqlx.DB
 }
 
+const (
+	beforeUnifyMigrationVersion  = uint(2)
+	stepsFromLatestToBeforeUnify = -9
+)
+
 func TestUnify000003Suite(t *testing.T) {
 	suite.Run(t, new(Unify000003Suite))
 }
@@ -58,7 +63,7 @@ func (s *Unify000003Suite) TestUnifyUpThenDownThenUp() {
 	migrator := s.newMigrator()
 	s.applyUp(migrator)
 
-	s.assertVersion(migrator, 10)
+	s.assertVersion(migrator, latestMigrationVersion)
 
 	s.assertColumnPresent("transactions", "card_id")
 	s.assertColumnPresent("transactions", "installments_total")
@@ -83,8 +88,8 @@ func (s *Unify000003Suite) TestUnifyUpThenDownThenUp() {
 
 	s.assertCompletenessCheckRejectsPartialCard()
 
-	s.Require().NoError(migrator.Steps(-8))
-	s.assertVersion(migrator, 2)
+	s.Require().NoError(migrator.Steps(stepsFromLatestToBeforeUnify))
+	s.assertVersion(migrator, beforeUnifyMigrationVersion)
 
 	s.assertColumnMissing("transactions", "card_id")
 	s.assertColumnMissing("transactions", "installments_total")
@@ -99,7 +104,7 @@ func (s *Unify000003Suite) TestUnifyUpThenDownThenUp() {
 	s.assertColumnPresent("transactions_recurring_materializations", "materialized_purchase_id")
 
 	s.applyUp(migrator)
-	s.assertVersion(migrator, 10)
+	s.assertVersion(migrator, latestMigrationVersion)
 	s.assertColumnPresent("transactions", "card_id")
 	s.assertColumnPresent("transactions_card_invoice_items", "transaction_id")
 	s.assertTableMissing("mecontrola.transactions_card_purchases")
