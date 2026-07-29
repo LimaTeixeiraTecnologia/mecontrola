@@ -72,6 +72,11 @@ func parseEditEntryCorrectionShortcut(message string, handle tool.ToolHandle) (m
 	if normalized == "" {
 		return nil, false
 	}
+
+	if match := editEntryTwoAmountsGasteiRe.FindStringSubmatch(message); len(match) == 4 {
+		return buildEditEntryCorrectionArgs(match[1], match[2], match[3], handle)
+	}
+
 	for _, blocker := range editEntryShortcutBlockers {
 		if strings.Contains(normalized, blocker) {
 			return nil, false
@@ -79,9 +84,6 @@ func parseEditEntryCorrectionShortcut(message string, handle tool.ToolHandle) (m
 	}
 
 	if match := editEntryTwoAmountsLancamentoRe.FindStringSubmatch(message); len(match) == 4 {
-		return buildEditEntryCorrectionArgs(match[1], match[2], match[3], handle)
-	}
-	if match := editEntryTwoAmountsGasteiRe.FindStringSubmatch(message); len(match) == 4 {
 		return buildEditEntryCorrectionArgs(match[1], match[2], match[3], handle)
 	}
 	if match := editEntryNewValueOnlyRe.FindStringSubmatch(message); len(match) == 3 {

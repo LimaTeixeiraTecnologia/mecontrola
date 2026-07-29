@@ -2014,3 +2014,58 @@ exata da produção.
 
 PENDENTE: deploy (prod.env muda env do worker -> recreate) + revalidação
 em produção das frases do Passo 2.
+
+VALIDAÇÃO PÓS-DEPLOY B-20 (run CI 30459176569, fb443db3, 2026-07-29
+14:25 UTC / 11:25 BRT — "gastei 30 no almoço no vale" -> "sim"):
+- Outbox: 2 eventos inbound, attempts=0, zero retry, zero last_error
+  (antes: attempts=1 + context deadline exceeded).
+- platform_messages: cada texto do usuário 1x, cada resposta 1x
+  (antes: tudo 2x).
+- transactions: 1 única transação (almoço R$30,00, vale-refeição).
+- workflow_runs: 1 run succeeded, attempts=0, 7s ponta a ponta.
+- Tempo: 2 traces (1 por mensagem), 3.9s e 1.1s — sem handle duplicado.
+- Categoria correta: Prazeres > Restaurantes (a anomalia de Custo Fixo
+  da manhã não se repetiu).
+- Workers worker-1 e worker-2 com OUTBOX_DISPATCHER_HANDLER_TIMEOUT=90s
+  confirmado via docker service inspect; imagem digest 520025714512
+  saudável nas 4 réplicas (2 server + 2 worker).
+RESULTADO: B-20 MORTO EM PRODUÇÃO. 0 duplicação, 0 retry, 0 falso
+sucesso, 0 regressão.
+
+======================================================================
+RODADA 18 (2026-07-29) — B-21 CORREÇÃO COM "CARTÃO" CAIU EM REGISTRO
+======================================================================
+
+INCIDENTE (11:29 BRT / 14:29 UTC): "no cartão eu gastei 35 e não 30"
+recebeu proposta de NOVO registro (R$35 crédito, Posso registrar?) em
+vez do fluxo de edição. Fail-safe funcionou: usuário cancelou, workflow
+cancelado (tx_status=3), ZERO transação criada (evidência DB).
+
+CAUSA RAIZ (código + teste, sem hipótese): o pre-guard determinístico
+edit_entry_correction_shortcut tem blocker "cartão"/"cartao"
+(edit_entry_correction_shortcut.go:21) avaliado ANTES de qualquer
+regex. O blocker existe para não sequestrar correções da ENTIDADE
+cartão ("Corrige o cartão nubank, o vencimento certo é 10 e não 5"),
+mas bloqueava também correções de LANÇAMENTO que só mencionam a forma
+de pagamento. Sem o shortcut, a frase caiu no LLM, que chamou
+register_expense (workflow 08ab5dad op=1) em vez de edit_entry.
+
+FIX (mínimo, sem afrouxar proteção): o padrão com verbo de gasto
+editEntryTwoAmountsGasteiRe ("n[o/a] <desc> (eu) gastei X e não Y")
+passa a ser avaliado ANTES dos blockers — esse padrão é
+inequivocamente correção de lançamento (dois valores + "e não" +
+"gastei"); entidade cartão nunca tem "gastei" nesse formato. Os demais
+padrões (lançamento...valor certo / mudar valor para) continuam
+protegidos pelos blockers. Comportamento novo: desc="cartão",
+amountCents=3500, searchAmountCents=3000 -> edit_entry -> busca de
+candidatos (sempre com confirmação antes de escrever).
+
+TESTES (verde): caso novo com a frase exata da produção
+("no cartão eu gastei 35 e não 30" -> dispara, desc=cartão,
+amt=3500, search=3000); "Corrige o cartão nubank, o vencimento certo
+é 10 e não 5" e "no cartão nubank o vencimento certo é 10 e não 5"
+seguem SEM disparar. Suíte guards + internal/agents completa + build +
+vet + golangci-lint: 0 issues.
+
+PENDENTE: commit + CI + revalidar em produção: "no cartão eu gastei 35
+e não 30" deve abrir busca/edição (nunca novo registro).
