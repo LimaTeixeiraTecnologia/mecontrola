@@ -5,6 +5,7 @@ package postgres_test
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,12 +52,13 @@ func (s *UserIdentityRepositoryIntegrationSuite) newRepo() interfaces.UserIdenti
 
 func (s *UserIdentityRepositoryIntegrationSuite) seedUser() uuid.UUID {
 	id := uuid.New()
+	whatsappNumber := "+55" + strings.ReplaceAll(id.String(), "-", "")[:13]
 	_, err := s.db.ExecContext(
 		s.ctx,
 		`INSERT INTO users (id, whatsapp_number, status, created_at, updated_at, deleted_at)
 		 VALUES ($1, $2, 'ACTIVE', now(), now(), NULL)`,
 		id,
-		"+5511900000"+id.String()[:4],
+		whatsappNumber,
 	)
 	s.Require().NoError(err)
 	return id
