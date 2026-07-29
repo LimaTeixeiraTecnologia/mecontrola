@@ -1055,7 +1055,7 @@ func (s *ConfigSuite) TestLoadConfig() {
 				s.Equal(true, cfg.OutboxConfig.DispatcherEnabled)
 				s.Equal(500*time.Millisecond, cfg.OutboxConfig.DispatcherTickInterval)
 				s.Equal(50, cfg.OutboxConfig.DispatcherBatchSize)
-				s.Equal(10*time.Second, cfg.OutboxConfig.DispatcherHandlerTimeout)
+				s.Equal(90*time.Second, cfg.OutboxConfig.DispatcherHandlerTimeout)
 				s.Equal(3, cfg.OutboxConfig.RetryMaxAttempts)
 				s.Equal(2*time.Second, cfg.OutboxConfig.RetryBaseBackoff)
 				s.Equal(5*time.Minute, cfg.OutboxConfig.RetryMaxBackoff)

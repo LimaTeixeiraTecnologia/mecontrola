@@ -90,6 +90,34 @@ func (s *SuccessWithoutToolGuardSuite) TestInspect() {
 				s.False(decision.Handled)
 			},
 		},
+		{
+			name: "formato real de sucesso prontinho sem write-tool -> fallback + Failed",
+			args: args{out: agent.Result{Content: "Prontinho! ✅\n\nVocê está no controle da sua grana! 💪 💚"}},
+			expect: func(decision GuardDecision) {
+				s.True(decision.Handled)
+				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
+			},
+		},
+		{
+			name: "formato real de sucesso boa noticia sem write-tool -> fallback + Failed",
+			args: args{out: agent.Result{Content: "Boa notícia! 🎉\n\nSeu esforço está dando resultado! 💪 💚"}},
+			expect: func(decision GuardDecision) {
+				s.True(decision.Handled)
+				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
+			},
+		},
+		{
+			name: "prontinho com write-tool bem-sucedida -> nao trata",
+			args: args{out: agent.Result{
+				Content: "Prontinho! ✅",
+				ToolCalls: []agent.ToolCallRecord{
+					{Tool: "register_expense", Outcome: agent.ToolCallOutcomeSuccess, Content: `{"outcome":"routed"}`},
+				},
+			}},
+			expect: func(decision GuardDecision) {
+				s.False(decision.Handled)
+			},
+		},
 	}
 
 	for _, scenario := range scenarios {

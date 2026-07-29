@@ -750,7 +750,7 @@ func (l *configLoader) setOutboxDefaults() {
 	l.v.SetDefault("OUTBOX_DISPATCHER_ENABLED", true)
 	l.v.SetDefault("OUTBOX_DISPATCHER_TICK_INTERVAL", 500*time.Millisecond)
 	l.v.SetDefault("OUTBOX_DISPATCHER_BATCH_SIZE", 50)
-	l.v.SetDefault("OUTBOX_DISPATCHER_HANDLER_TIMEOUT", 10*time.Second)
+	l.v.SetDefault("OUTBOX_DISPATCHER_HANDLER_TIMEOUT", 90*time.Second)
 	l.v.SetDefault("OUTBOX_RETRY_MAX_ATTEMPTS", 3)
 	l.v.SetDefault("OUTBOX_RETRY_BASE_BACKOFF", 2*time.Second)
 	l.v.SetDefault("OUTBOX_RETRY_MAX_BACKOFF", 5*time.Minute)

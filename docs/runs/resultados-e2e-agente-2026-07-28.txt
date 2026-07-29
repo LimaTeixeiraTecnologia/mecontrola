@@ -1953,3 +1953,64 @@ CLEANUP EXECUTADO (2026-07-29 13:16:07 UTC, com aval do usuário):
   todas legítimas de 2026-07-28 (mercado 130, eletrônico 550,
   crédito 50/45/50). Nenhuma transação de 2026-07-29 restante no
   cartão. Fatura deixa de incluir os R$ 35,00 fantasmas.
+
+======================================================================
+RODADA 17 (2026-07-29) — B-20 DUPLICAÇÃO PÓS-DEPLOY: CAUSA RAIZ + FIX
+======================================================================
+
+INCIDENTE (10:33-10:35 BRT / 13:33-13:35 UTC): "Não entendi" após
+confirmação válida, "Prontinho!" falso para pedido de edição, lista de
+candidatos enviada 2x.
+
+CADEIA DE EVIDÊNCIA (DB + outbox + Tempo, sem hipótese):
+1. Evento outbox 019fae14-ddd8 (wamid1 "gastei 30 no almoço no vale"):
+   attempts=1, last_error="agents.consumer.whatsapp_inbound: send reply:
+   onboarding/gateway: ... Post graph.facebook.com/.../messages:
+   context deadline exceeded", published_at=13:34:04.704 (retry).
+2. Trace 59ec2335 (tentativa 1): LLM 8.436s + categorias + workflow
+   start = 9.417s; POST Meta iniciado aos 9.42s, morto aos 10.000s
+   (577ms, STATUS_CODE_ERROR sem http.status_code). A confirmação FOI
+   entregue ao usuário (Meta aceitou antes do nosso cliente desistir).
+3. Causa raiz: OUTBOX_DISPATCHER_HANDLER_TIMEOUT=10s (default
+   configs/config.go + prod.env) — incompatível com handlers com LLM
+   (só o LLM leva 8-10s). Consumer inboundTimeout=60s >> 10s.
+4. Retry (tentativa 2, trace 2a7f219f): MESMO wamid reprocessado; o
+   consumer NÃO é idempotente por wamid (dedup
+   channel_processed_messages só existe na camada webhook/API,
+   dispatcher.go:178). Com o workflow já ativo, caiu no
+   resume_dispatcher com o TEXTO ORIGINAL -> handler de confirmação
+   recebeu "gastei 30 no almoço no vale" -> reprompt "Não entendi...".
+5. Cascata: usuário repetiu "sim"; o 2º "sim" (sem workflow ativo)
+   caiu no LLM que FABRICOU "Prontinho! ✅ Você está no controle da
+   sua grana! 💪 💚" (run da3d3bea, sem tool call, sem workflow row).
+   O guard success_without_tool não pegou: "prontinho" não estava nos
+   marcadores (lista tinha registrei/salvei/atualizei/removi/exclu/
+   cadastrei/criei).
+6. Lista de candidatos 2x = 1x do workflow start (wamid5) + 1x reprompt
+   legítimo: "nubank" (wamid6) não é escolha válida 1-5 no slot
+   edit_candidate -> reprompt por design (não é bug de envio).
+7. DB íntegro o tempo todo: 1 única transação (almoço R$30 -> editada
+   para R$35), zero duplicata financeira.
+
+FIXES:
+- B-20a (raiz): OUTBOX_DISPATCHER_HANDLER_TIMEOUT 10s -> 90s em
+  configs/config.go (default), .env, .env.example,
+  deployment/config/prod.env + config_test.go. 90s cobre o cap de 60s
+  do inbound (LLM) + envio Meta com folga. Sem max no validateOutbox.
+- B-20b (falso sucesso): marcadores "prontinho" e "boa notícia"
+  adicionados ao guard success_without_tool (formato real das mensagens
+  de sucesso do workflow, que o LLM imita). Guard só bloqueia quando
+  NÃO há write tool bem-sucedida — relay verbatim e sucesso real
+  preservados (testes).
+- B-20c (overlap pergunta-cartão do LLM x slot de candidato): artefato
+  da cascata; reprompt de escolha inválida é comportamento correto.
+  Registrado como observação.
+
+VALIDAÇÃO LOCAL: gofmt limpo; go build ./... OK; go vet OK;
+go test -race ./configs/... ./internal/agents/application/agents/...
+./internal/platform/outbox/... OK; suíte internal/agents completa OK;
+golangci-lint 0 issues. Testes novos no guard reproduzem a mensagem
+exata da produção.
+
+PENDENTE: deploy (prod.env muda env do worker -> recreate) + revalidação
+em produção das frases do Passo 2.
