@@ -37,6 +37,7 @@ func (s *CategoryWithoutToolGuardSuite) TestInspect() {
 				s.True(decision.Handled)
 				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
 				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
+				s.Equal("guard category_without_tool: pergunta de categoria fabricada pelo LLM sem tool call", decision.Result.FailureReason)
 			},
 		},
 		{

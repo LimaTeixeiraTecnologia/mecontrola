@@ -37,6 +37,7 @@ func (s *ConfirmationWithoutToolGuardSuite) TestInspect() {
 				s.True(decision.Handled)
 				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
 				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
+				s.Equal("guard confirmation_without_tool: pedido de confirmação fabricado pelo LLM sem tool call", decision.Result.FailureReason)
 			},
 		},
 		{

@@ -44,6 +44,7 @@ func (s *SuccessWithoutToolGuardSuite) TestInspect() {
 				s.True(decision.Handled)
 				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
 				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
+				s.Equal("guard success_without_tool: confirmação de escrita fabricada pelo LLM sem write tool bem-sucedida", decision.Result.FailureReason)
 			},
 		},
 		{

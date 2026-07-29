@@ -1,0 +1,547 @@
+================================================================================
+ROTEIRO E2E PRODUCTION-PROOF — AGENTE WHATSAPP — DADOS REAIS JUN/JUL 2026
+Data: 2026-07-29
+Usuário sob teste: 9bbbbbcd-2081-40a8-9780-2b5d818f1580 (+5511986896322)
+VPS: ssh mecontrola-vps | DB: mecontrola_db (schema mecontrola) | Stack: Swarm
+Escopo de commits (não cobertos em docs/runs/cenarios-e2e-agente-2026-07-28.txt,
+que cobriu até e16dd2c/3a4d06a): 32fd0f1..6393fd6 (29 commits, HEAD atual)
+Fonte de dados reais: FinancialControlDB (SQL Server, site4now.net) — extração
+bruta em docs/runs/29-07-2026-dados-reais-financialcontroldb.txt
+================================================================================
+
+REGRAS DESTE ROTEIRO (herdadas do roteiro de 07-28, inegociáveis)
+- Nenhum PASS sem evidência colada (linha de SELECT, log, métrica ou trace).
+- Nenhuma resposta inventada: se o bot divergir do esperado, registrar o texto
+  REAL em platform_messages (role=assistant) e marcar FAIL/DIVERGÊNCIA.
+- Fonte de verdade das respostas do bot: tabela mecontrola.platform_messages,
+  não apenas o relato visual do WhatsApp.
+- Entre cenários: nenhum workflow_runs ativo/suspenso do usuário. Se sobrar,
+  enviar "cancelar" no WhatsApp antes de prosseguir.
+- Toda frase ENVIAR abaixo usa descrição/valor/data REAIS extraídos do
+  FinancialControlDB (nunca inventados) — o Id de origem é citado como
+  rastreio em cada cenário.
+- Este arquivo é o ROTEIRO (script). A execução das mensagens no WhatsApp é
+  manual (eu não tenho acesso ao WhatsApp). Depois de rodar cada cenário,
+  colar as evidências em docs/runs/29-07-2026-resultados-e2e-agente-jun-jul-2026.txt
+  seguindo exatamente o padrão de resultados-e2e-agente-2026-07-28.txt.
+
+NOTA IMPORTANTE SOBRE OS DADOS DE ORIGEM
+- [Transaction]+TransactionItem do FinancialControlDB: 0 linhas em jun/jul 2026
+  (MAX(Date) da tabela = 2025-12-01 — tabela legada, sem dados de 2026; o app
+  real já não grava mais ali). Não há frases desse bloco para este roteiro.
+- Bill+BillItem: 10 linhas (contas fixas de casa, jun e jul 2026, mesmos 5
+  itens repetidos: Energia, Faxina, Condomínio, Internet Central Fiber,
+  Internet Celular). Usadas nos cenários de despesa fixa (C10).
+- Invoice+InvoiceItem: 136 linhas (compras reais no cartão "XP Visa" jun/jul
+  2026). Usadas na maioria dos cenários abaixo — priorizei itens de
+  27-28/07/2026 (próximos da data de execução, 2026-07-29) para exercitar
+  "hoje"/"ontem" nas consultas diárias com dados verdadeiros.
+
+COMANDOS-BASE
+  DB:    ssh mecontrola-vps 'docker exec $(docker ps -qf name=mecontrola_postgres.1) psql -U mecontrola -d mecontrola_db -c "<SQL>"'
+  LOGS:  ssh mecontrola-vps 'docker service logs mecontrola_server --since 15m 2>&1 | grep -F "<str>"'
+         ssh mecontrola-vps 'docker service logs mecontrola_worker --since 15m 2>&1 | grep -F "<str>"'
+  PROM:  ssh mecontrola-vps 'docker exec $(docker ps -qf name=mecontrola_otel-lgtm) wget -qO- "http://localhost:9090/api/v1/query?query=<promql>"'
+  TRACE: ssh mecontrola-vps 'docker exec $(docker ps -qf name=mecontrola_otel-lgtm) wget -qO- "http://localhost:3200/api/search?tags=..."'
+
+UID = 9bbbbbcd-2081-40a8-9780-2b5d818f1580 (usar nas queries abaixo)
+
+================================================================================
+TABELA DE REFERÊNCIA RÁPIDA — FRASE EXATA POR CENÁRIO
+================================================================================
+Cada frase abaixo casa literalmente com o regex/guard citado no código
+(file:line). Copiar exatamente como está — qualquer palavra extra antes/
+depois pode mudar de guard ou quebrar o parse (detalhes e evidências de
+cada cenário no corpo do roteiro, mais abaixo).
+
+--------------------------------------------------------------------------------------------------------------------------------
+Cenário | Guard/regex (file:line)                                          | Frase exata para enviar no WhatsApp
+--------|-------------------------------------------------------------------|----------------------------------------------------
+C1-A    | card_expense_shortcut.go:16 (head) + :20 (marker)                 | gastei 69,65 no Github no crédito XP
+C1-B    | edit_entry_correction_shortcut.go:17 (2 valores, "gastei")        | no Github eu gastei 69,90 e não 69,65
+C2      | edit_entry_correction_shortcut.go:18 (só valor novo)              | lançamento do whey, pode mudar o valor para 234,90
+C3      | edit_entry_correction_shortcut.go:16 (2 valores, "lançamento")    | lançamento do porto mercadinho, o valor certo é 47,50 e não 47
+C4-1    | card_expense_shortcut.go (cartão citado)                         | gastei 194,23 no bom demais no crédito XP
+C4-2 (a)| card_expense_shortcut.go (sem apelido → pergunta cartão)          | gastei 338,92 no whey tony no crédito
+C4-2 (b)| resposta ao prompt de cartão                                      | XP
+C5      | register_expense_shortcut.go:16 (valor antes de "fatura")        | paguei 3775,08 na fatura do cartão XP
+C6      | sem guard — roteado por LLM (query_card_invoice)                 | quanto foi a fatura do XP de janeiro
+C7 (a)  | query_day_shortcut.go:19 (ancorado ^...$)                        | quanto eu gastei hoje
+C7 (b)  | query_day_shortcut.go:19 (ancorado ^...$)                        | quanto eu gastei ontem
+C8      | sem guard — roteado por LLM (detalhe de categoria)               | detalhe da categoria supermercado
+C10     | register_expense_shortcut.go:33 (sufixo "em dinheiro" = cash)     | gastei 400 na faxina em dinheiro
+C11     | expired_without_tool.go (PostGuard sobre o texto do bot, não      | gastei 30 na padaria no pix (abrir e NÃO confirmar,
+        | regex de entrada do usuário)                                     | esperar TTL expirar) → depois: oi
+--------------------------------------------------------------------------------------------------------------------------------
+
+Notas de armadilha (não fazer):
+- C1-A/C4: NUNCA colar texto (ex.: data) depois do apelido do cartão — o
+  regex captura tudo até o fim da string como nickname e quebra resolveCard.
+- C2 vs C3: frases parecidas mas regexes diferentes — C2 tem só o valor
+  novo ("mudar o valor para X"), C3 tem os dois valores ("valor certo é X
+  e não Y"). Não são intercambiáveis.
+- C7: a frase precisa ser SÓ isso (regex ancorado ^...$) — não prefixar
+  com "e ontem," nem sufixar com pontuação extra fora do previsto.
+- C10: usar "na faxina" (conector "na"), não "com a faxina" — "com" deixa
+  o artigo "a" dentro da descrição salva.
+
+================================================================================
+[S0] SETUP E BASELINE (bloqueante antes de qualquer mensagem)
+================================================================================
+
+S0.1 — CONFIRMAR QUE O DEPLOY CONTÉM OS COMMITS DESTE ROTEIRO
+  Verificar que o HEAD em produção é 6393fd6 (ou posterior):
+  a) docker inspect do container server → OTEL_SERVICE_VERSION deve começar
+     com "6393fd6".
+  b) Evidência comportamental alternativa: métrica
+     agents_query_day_total (existe só a partir de db59ea7/570cf3e) e
+     agent_guard_decisions_total{tool="query_card_invoice"} respondendo —
+     se ausentes, o binário é anterior a este lote.
+  PASS: deploy confirmado. FAIL: parar execução e reportar.
+
+S0.2 — BASELINE DB (anotar valores antes de qualquer mensagem)
+  SELECT count(*) AS tx_total, max(created_at) FROM mecontrola.transactions
+   WHERE user_id='UID';
+  SELECT id, bank, nickname, closing_day, due_day FROM mecontrola.cards
+   WHERE user_id='UID' AND deleted_at IS NULL;
+  SELECT version FROM mecontrola.category_editorial_version;
+  SELECT status, count(*) FROM mecontrola.workflow_runs
+   WHERE correlation_key LIKE 'UID:%' GROUP BY status;
+  SELECT count(*) FROM mecontrola.platform_runs WHERE resource_id='UID';
+  SELECT id, name, allocated_cents FROM mecontrola.budget_allocations
+   WHERE user_id='UID' AND category_name ILIKE '%Supermercado%';
+
+S0.3 — BASELINE MÉTRICAS (anotar valores de todas as séries)
+  agent_runs_total
+  agent_empty_completion_retries_total
+  agent_guard_decisions_total
+  agents_write_total
+  agents_query_day_total
+  agents_whatsapp_inbound_total
+  agents_transaction_write_false_success_total
+  workflow_runs_total
+  workflow_stale_suspended_reaped_total
+  workflow_version_conflict_total
+
+S0.4 — PRÉ-CONDIÇÃO: cartão "XP" ativo (necessário para C1-C6, C8, C9).
+  Se não houver com esse apelido exato, criar/renomear via agente antes de
+  iniciar (SETUP, fora da contagem de cenários).
+
+S0.5 — PRÉ-CONDIÇÃO: nenhum workflow_runs ativo/suspenso do usuário.
+  Se houver: enviar "cancelar" no WhatsApp e confirmar status terminal.
+
+================================================================================
+[C1] DESPESA NO CRÉDITO + EDIÇÃO SEM TROCAR CATEGORIA
+     Commits: 4ad802d, 7a21182, 8300022
+     Fonte real: InvoiceItem d21c44d2-48a4-4b93-ab34-f8ade2b11bcf
+       ("Github", XP Visa, PurchaseDate 2026-07-27, TotalAmount 69.65,
+       Categoria "Serviços")
+================================================================================
+PRÉ-CONDIÇÃO: cartão "XP" ativo (S0.4); nenhum rascunho aberto (S0.5).
+
+PASSO A — REGISTRAR
+ENVIAR (frase exata; NÃO acrescentar data/texto após o apelido do cartão —
+  guards/card_expense_shortcut.go:16-19 captura tudo após "no crédito" como
+  apelido do cartão até o fim da string; qualquer palavra extra quebra o
+  resolveCard):
+  "gastei 69,65 no Github no crédito XP"
+  (regex guards/card_expense_shortcut.go:16 head + :20 marker — description
+  capturado = "Github", nickname = "XP")
+SE PEDIR CATEGORIA: responder "Serviços" (ou índice correspondente)
+QUANDO PEDIR CONFIRMAÇÃO: responder "sim"
+ESPERADO: confirmação única e determinística (sem bloco duplicado — ver
+  achado F-01/regra anti-simulação já corrigida), texto sem 💳 como
+  substantivo, sem markdown incompatível (ver C9).
+EVIDÊNCIA:
+  SELECT id, description, amount_cents, category_snapshot, payment_method,
+    card_id, origin_operation, version
+  FROM mecontrola.transactions
+  WHERE user_id='UID' AND description ILIKE '%github%'
+  ORDER BY created_at DESC LIMIT 1;
+  PROM: agent_guard_decisions_total{guard="card_expense_shortcut"}
+  incrementado 1 (confirma que passou pelo atalho, não pelo LLM).
+
+PASSO B — EDITAR SEM TROCAR CATEGORIA (valida 4ad802d + 7a21182 + 8300022)
+ENVIAR (frase exata; aciona guards/edit_entry_correction_shortcut.go:17
+  editEntryTwoAmountsGasteiRe — NÃO usar "errei"/"foi", o regex exige
+  literalmente "no <desc> eu gastei <novo> e não <antigo>"):
+  "no Github eu gastei 69,90 e não 69,65"
+ESPERADO: bot NÃO pergunta categoria de novo (edição sem troca de categoria
+  busca a versão editorial correta — commit 4ad802d), category_snapshot
+  permanece a mesma evidência da criação (7a21182), card_id e
+  installments preservados (8300022). Como o guard nunca envia entryId
+  (só searchTerm="Github" + searchAmountCents=6965 + amountCents=6990,
+  ver tools/edit_entry.go:24-27), esta mesma frase também exercita o
+  fallback de busca por critério corrigido em 35f3388/a025f41/b1f1da7.
+EVIDÊNCIA ADICIONAL:
+  PROM: agent_guard_decisions_total{guard="edit_entry_correction_shortcut"}
+  incrementado 1.
+EVIDÊNCIA:
+  SELECT id, amount_cents, category_snapshot, card_id, installments,
+    category_editorial_version, version
+  FROM mecontrola.transactions
+  WHERE user_id='UID' AND description ILIKE '%github%'
+  ORDER BY created_at DESC LIMIT 1;
+  -- comparar category_snapshot e card_id ANTES/DEPOIS: devem ser idênticos.
+  -- version deve ter incrementado exatamente 1.
+
+================================================================================
+[C2] EDIT_ENTRY — FALLBACK PARA BUSCA POR CRITÉRIO (entryId inválido/ausente)
+     Commits: 35f3388, a025f41, b1f1da7
+     Fonte real: InvoiceItem e8267375-97b2-411d-b9ab-1ece34b3d92f
+       ("Whey", XP Visa, PurchaseDate 2026-07-27, TotalAmount 229.90,
+       Categoria "Suplementos")
+================================================================================
+PRÉ-CONDIÇÃO: registrar antes (SETUP, fora da contagem), frase exata
+  (guards/card_expense_shortcut.go — mesmo padrão do C1 passo A):
+  "gastei 229,90 no Whey no crédito XP" → confirmar como no C1
+  (categoria "Suplementos").
+
+CENÁRIO — variante SEM valor antigo (só descrição como critério de busca;
+  editEntryNewValueOnlyRe em guards/edit_entry_correction_shortcut.go:18):
+ENVIAR (frase exata; regex exige literalmente "lançamento do/da <desc>,
+  ... mudar/alterar/atualizar o valor para/pra <novo>"):
+  "lançamento do whey, pode mudar o valor para 234,90"
+ESPERADO: bot NÃO exige um identificador explícito; a tool edit_entry
+  recebe searchTerm="whey" e amountCents=23490 SEM entryId e SEM
+  searchAmountCents (tools/edit_entry.go:24-27 cai no ramo `else` que só
+  usa SearchAmountCents/SearchTerm) — localiza o lançamento só pela
+  descrição, exercitando o fallback por critério mais "raso" possível
+  (35f3388 + a025f41 + b1f1da7): sem a separação entre campo de busca e
+  campo de valor novo, 234,90 vazaria como critério de busca e o
+  lançamento não seria encontrado.
+EVIDÊNCIA:
+  SELECT id, description, amount_cents, updated_at, version
+  FROM mecontrola.transactions
+  WHERE user_id='UID' AND description ILIKE '%whey%'
+  ORDER BY created_at DESC LIMIT 1;
+  -- amount_cents deve ser 23490; version incrementada.
+  PROM: agent_guard_decisions_total{guard="edit_entry_correction_shortcut"}
+  incrementado 1 (2º incremento do roteiro, após C1 passo B).
+  LOGS: grep -F "edit_entry" no worker/server no intervalo — conferir que
+  o tool caiu no ramo de busca por critério (não erro de entryId inválido).
+
+================================================================================
+[C3] GUARD DETERMINÍSTICO DE CORREÇÃO DE LANÇAMENTO (atalho sem LLM)
+     Commit: 203c138
+     Fonte real: InvoiceItem a5aa59d3-3e79-4a0a-8504-7ecc302c5793
+       ("Porto Mercadinho", XP Visa, PurchaseDate 2026-07-27,
+       TotalAmount 47.00, Categoria "Supermercado")
+================================================================================
+PRÉ-CONDIÇÃO: registrar antes (SETUP), frase exata (register_expense_shortcut
+  — guards/register_expense_shortcut.go:16, conector "no" + pagamento "pix"
+  reconhecido em :44):
+  "gastei 47 no porto mercadinho no pix" → confirmar (categoria
+  "Supermercado").
+
+CENÁRIO — variante COM valor antigo e novo na mesma frase (3ª forma do
+  guard: editEntryTwoAmountsLancamentoRe, guards/edit_entry_correction_shortcut.go:16):
+ENVIAR (frase exata; regex exige literalmente "lançamento do/da <desc>, o
+  valor certo é <novo> e não <antigo>" — diferente da frase do C2, que
+  omite o valor antigo):
+  "lançamento do porto mercadinho, o valor certo é 47,50 e não 47"
+ESPERADO: correção aplicada diretamente (guard edit_entry_correction_shortcut,
+  args searchTerm="porto mercadinho", amountCents=4750,
+  searchAmountCents=4700), sem pedir categoria/forma de pagamento de novo,
+  sem round-trip de LLM.
+EVIDÊNCIA:
+  SELECT id, amount_cents, version FROM mecontrola.transactions
+  WHERE user_id='UID' AND description ILIKE '%porto mercadinho%'
+  ORDER BY created_at DESC LIMIT 1; -- amount_cents = 4750
+  PROM: agent_guard_decisions_total{guard="edit_entry_correction_shortcut"}
+  deve ter incrementado 1 desde o baseline S0.3.
+
+================================================================================
+[C4] DESPESA NO CARTÃO SEM LLM (atalho determinístico) + FORCE REGISTRO
+     APÓS RESOLVER CARTÃO
+     Commits: acd2de9, 8d68018
+     Fonte real: InvoiceItem 3739a66b-2944-4a8c-b784-829d2cee8a04
+       ("Bom demais [Proteínas]", XP Visa, PurchaseDate 2026-07-27,
+       TotalAmount 194.23, Categoria "Supermercado")
+================================================================================
+PRÉ-CONDIÇÃO: cartão "XP" ativo; nenhum rascunho aberto.
+
+ENVIAR (frase exata, mesmo padrão de card_expense_shortcut do C1):
+  "gastei 194,23 no bom demais no crédito XP"
+ESPERADO: como o cartão já foi citado explicitamente por apelido exato no
+  mesmo turno, o guard card_expense_shortcut registra sem round-trip de
+  LLM (acd2de9) — resposta rápida pedindo só a categoria/confirmação.
+SE PEDIR CATEGORIA: "Supermercado". CONFIRMAR: "sim".
+EVIDÊNCIA:
+  PROM: agent_guard_decisions_total{guard="card_expense_shortcut"}
+  incrementado (2º incremento do roteiro, após C1 passo A).
+  TRACE: span do turno deve ter ZERO chamada a llm.Provider.Complete antes
+  do registro (ou 1 chamada só de confirmação determinística) — comparar
+  com C1 que tem 1+ chamadas de LLM para resolver categoria livre.
+
+CENÁRIO 2 (força registro após resolver cartão pendente — 8d68018):
+PRÉ-CONDIÇÃO: registrar SEM apelido de cartão para forçar a pergunta —
+  frase exata (guards/card_expense_shortcut.go:20 marker casa "no crédito"
+  no fim da frase SEM texto de apelido depois, então nickname fica vazio
+  e cardID="" — ver extractResolvedCardID retornando "" quando não há
+  nickname; description = "whey tony"):
+  "gastei 338,92 no whey tony no crédito"
+ESPERADO: bot pergunta o apelido do cartão (sem 💳 como substantivo).
+ENVIAR: "XP"
+ESPERADO: assim que o cartão é resolvido, o registro é FORÇADO no mesmo
+  fluxo (sem exigir nova confirmação redundante além da determinística
+  padrão) — commit 8d68018.
+EVIDÊNCIA:
+  SELECT id, description, amount_cents, card_id, origin_operation
+  FROM mecontrola.transactions
+  WHERE user_id='UID' AND description ILIKE '%whey tony%'
+  ORDER BY created_at DESC LIMIT 1;
+  -- card_id deve ser o id do cartão XP; amount_cents=33892.
+  (Fonte real: InvoiceItem f6e1a1c6-d99d-4b51-a5c0-739c84a8f947, "Whey
+  [Tony]", XP Visa, 2026-07-27, R$ 338,92, categoria Suplementos.)
+
+================================================================================
+[C5] PAGAMENTO DE FATURA TRATADO COMO DESPESA
+     Commit: 8d495f2
+     Fonte real: Invoice 65ab4af1-3139-4688-b6f1-120eea78a261
+       (cartão XP Visa, Total 3775.079, vencimento 2026-09-01 — fatura
+       referente às compras de julho/2026)
+================================================================================
+PRÉ-CONDIÇÃO: nenhum rascunho aberto.
+
+ENVIAR (frase exata; register_expense_shortcut.go:16 exige o VALOR logo
+  após "paguei" para o atalho disparar — "paguei a fatura..." sem valor
+  cai no roteamento por LLM em vez do atalho; a frase abaixo já traz o
+  valor real da fatura e ainda assim inclui "cartão", cujo bloqueio é
+  liberado justamente pela exceção introduzida em 8d495f2 quando a frase
+  contém "fatura" — ver isExpenseCardContextBlocker em
+  register_expense_shortcut.go:154):
+  "paguei 3775,08 na fatura do cartão XP"
+ESPERADO: o guard register_expense_shortcut reconhece "paguei <valor> na
+  fatura..." como uma DESPESA (não pergunta de consulta) e registra direto
+  (sem pedir forma de pagamento, pois nenhuma foi citada — paymentMethod
+  fica vazio nesse caso e o tool deve perguntar/assumir conforme regra
+  determinística de pagamento).
+SE PEDIR FORMA DE PAGAMENTO: "pix".
+EVIDÊNCIA:
+  SELECT id, description, amount_cents, payment_method FROM
+  mecontrola.transactions WHERE user_id='UID' AND description ILIKE '%fatura%'
+  ORDER BY created_at DESC LIMIT 1;
+
+================================================================================
+[C6] FATURA INEXISTENTE COM FALLBACK
+     Commit: 6393fd6
+================================================================================
+PRÉ-CONDIÇÃO: cartão "XP" ativo.
+NOTA: diferente de C1-C5/C7/C10, este fluxo NÃO tem um guard determinístico
+  dedicado (nenhum arquivo em guards/ faz shortcut de consulta de fatura) —
+  a chamada à tool query_card_invoice acontece via function-calling do LLM.
+  A frase abaixo é suficientemente natural para o LLM chamar a tool, mas
+  não é uma string travada por regex como as demais; qualquer variação
+  razoável também é válida para este cenário.
+
+ENVIAR: "quanto foi a fatura do XP de janeiro"
+ESPERADO (fallback determinístico, sem alucinar valor): bot informa que
+  não encontrou fatura do cartão XP para o período pedido — texto real
+  claro de "não encontrado", NUNCA um valor inventado.
+EVIDÊNCIA:
+  platform_messages do turno (texto exato do assistant).
+  LOGS: grep -F "query_card_invoice" — deve aparecer o branch de fallback
+  (ErrInvoiceNotFound ou equivalente introduzido em 6393fd6), NÃO um
+  panic/erro genérico "Não consegui registrar. Tente novamente.".
+
+================================================================================
+[C7] CONSULTA DIÁRIA (query_day) — ROTEAMENTO VIA GUARD + FORMATO EM REAIS
+     Commits: db59ea7, 570cf3e, 482941d, 3e1c1a6, a0fafa6
+     Fonte real: InvoiceItems de 2026-07-27 e 2026-07-28 (ver lista completa
+       em docs/runs/29-07-2026-dados-reais-financialcontroldb.txt), ex.:
+       27/07 — Github 69,65 / Whey 229,90 / Porto Mercadinho 47,00 /
+               Bom demais [Proteínas] 194,23 / Leve Mais 79,88 /
+               Varejão Paraná 121,66 / Whey [Tony] 338,92 / Chatgpt 99,90 /
+               Armazém Paraná 47,71 / Kimi [Moonshot AI] 100,54
+       28/07 — Nasoar 178,08 / Energético 42,49 / Moonshot AI 207,66
+================================================================================
+PRÉ-CONDIÇÃO: os lançamentos de C1-C4 já criam massa própria; este cenário
+  usa o dia da EXECUÇÃO REAL (hoje) — os lançamentos criados em C1-C6 no
+  dia do teste devem aparecer na consulta de "hoje".
+
+ENVIAR (frase exata; guards/query_day_shortcut.go:19 queryDayAmountRe é
+  ancorado com ^...$ — a frase precisa ser só isso, sem prefixo/sufixo):
+  "quanto eu gastei hoje"
+ESPERADO: resposta roteada deterministicamente pelo guard query_day_shortcut
+  (570cf3e), sem round-trip de LLM para decidir a tool; valores formatados
+  em reais com vírgula (ex.: "R$ 194,23", NUNCA "194.23" ou "19423") —
+  commit 482941d; soma e itens do dia batendo com os lançamentos reais
+  criados nos cenários anteriores.
+EVIDÊNCIA:
+  SELECT sum(amount_cents), count(*) FROM mecontrola.transactions
+  WHERE user_id='UID' AND created_at::date = current_date;
+  -- comparar com o total dito pelo bot (mesma soma, formatação em R$).
+  PROM: agents_query_day_total incrementado 1;
+  agent_guard_decisions_total{guard="query_day_shortcut"} incrementado 1.
+
+ENVIAR (frase exata; NÃO usar "e ontem, ..." — o regex é ancorado e não
+  tolera prefixo antes de "quanto"):
+  "quanto eu gastei ontem"
+ESPERADO: mesma formatação em reais, escopo do dia anterior corretamente
+  resolvido a partir da data injetada no runtime (112d428) — se ontem não
+  teve lançamento do usuário de teste, resposta deve dizer explicitamente
+  "nenhum gasto" (nunca inventar valor).
+EVIDÊNCIA: platform_messages do turno + SELECT análogo com
+  created_at::date = current_date - 1.
+
+================================================================================
+[C8] ALOCAÇÃO DE ORÇAMENTO NO DETALHE DA CATEGORIA
+     Commit: bf68166
+     Fonte real: categoria "Supermercado" concentra o maior volume de
+       InvoiceItem em jun/jul 2026 (Compras do mês 1002,29 em 05/06;
+       551,68 em 09/07; 340,64 em 14/07; entre outros).
+================================================================================
+PRÉ-CONDIÇÃO: orçamento ativo do mês com alocação para "Supermercado"
+  (verificar em S0.2 budget_allocations; se ausente, configurar via
+  agente antes como SETUP).
+
+ENVIAR: "detalhe da categoria supermercado"
+ESPERADO: resposta traz o valor de alocação de orçamento correto para a
+  categoria (bug corrigido em bf68166 fazia o detalhe não resolver a
+  alocação corretamente), gasto acumulado do mês e percentual — SEM que o
+  percentual seja CALCULADO pelo LLM (ver C9, deve vir de campo
+  determinístico).
+EVIDÊNCIA:
+  SELECT allocated_cents, spent_cents FROM mecontrola.budget_allocations
+  WHERE user_id='UID' AND category_name ILIKE '%Supermercado%';
+  -- comparar com os números ditos pelo bot (idênticos, sem arredondar
+  diferente).
+
+================================================================================
+[C9] MARKDOWN INCOMPATÍVEL E PERCENTUAL PROIBIDOS + NORMALIZAÇÃO WHATSAPP
+     Commits: 500af26, 93c734f
+================================================================================
+Este cenário é uma checagem TRANSVERSAL sobre as respostas já capturadas em
+C1-C8 (não precisa de novo envio):
+
+VERIFICAR em CADA texto de platform_messages (role=assistant) capturado:
+  a) SEM markdown incompatível com WhatsApp (nada de `**negrito**` estilo
+     Markdown puro sem conversão, headers `#`, tabelas) — commit 500af26.
+  b) NENHUM percentual calculado pelo LLM: todo "%" que aparecer no texto
+     deve vir de um campo determinístico (ex.: budget_allocations), nunca
+     de uma conta feita livremente pelo modelo — commit 500af26.
+  c) Texto passou pelo whatsapp_format_sanitizer (93c734f): sem sequências
+     que quebrem a renderização do WhatsApp (ex.: itálico mal fechado).
+EVIDÊNCIA: colar o texto exato de cada resposta relevante + marcar
+  PASS/FAIL por item (a)/(b)/(c).
+
+================================================================================
+[C10] PAGAMENTO EXPLÍCITO PRESERVADO EM DESPESAS (não pergunta de novo)
+      Commit: 886853c
+      Fonte real: BillItem 03a52470-8125-49d0-b9e7-5dc74fe32b51
+        ("Faxina [Casa]", Bill 2026-07-01, Value 400,00)
+================================================================================
+PRÉ-CONDIÇÃO: nenhum rascunho aberto.
+
+ENVIAR (frase exata; register_expense_shortcut.go:33 reconhece "em
+  dinheiro" como sufixo de pagamento (cash) e o remove do corpo antes do
+  regex principal — usar "na faxina", não "com a faxina": o conector
+  "com" antes do artigo "a" faria o regex capturar "a faxina" como
+  descrição literal em vez de "faxina"):
+  "gastei 400 na faxina em dinheiro"
+ESPERADO: forma de pagamento "dinheiro" já foi dita explicitamente no
+  mesmo turno — bot NÃO deve perguntar "qual foi a forma de pagamento?"
+  de novo (regressão corrigida em 886853c); deve pedir só a categoria se
+  não for óbvia, e então confirmar.
+SE PEDIR CATEGORIA: "Casa" (ou equivalente).
+EVIDÊNCIA:
+  SELECT payment_method, description FROM mecontrola.transactions
+  WHERE user_id='UID' AND description ILIKE '%faxina%'
+  ORDER BY created_at DESC LIMIT 1; -- deve refletir "dinheiro" (cash),
+  não um valor default/pix por engano; description = "faxina" (limpa,
+  sem o artigo).
+  platform_messages do turno: NÃO deve haver pergunta de forma de
+  pagamento após o texto já a ter citado.
+
+================================================================================
+[C11] GUARD expired_without_tool — TEXTO RESTRITO AO TURNO REAL DE EXPIRAÇÃO
+      Commits: 32fd0f1, b3fde48
+================================================================================
+PRÉ-CONDIÇÃO: nenhum rascunho aberto; TTL de confirmação padrão (consultar
+  BUDGETS_PENDING_TTL_HORS / TTL do workflow de confirmação de despesa no
+  .env de produção para saber quanto esperar, ou usar cenário acelerado se
+  houver flag de teste).
+
+PASSO A — abrir uma confirmação pendente e NÃO responder:
+ENVIAR: "gastei 30 na padaria no pix"
+SE PEDIR CATEGORIA: responder a categoria, mas NÃO responder a confirmação
+  final ("sim"/"não") — deixar o workflow suspenso até expirar.
+
+PASSO B — aguardar expiração do TTL, então enviar QUALQUER outra mensagem
+  não relacionada:
+ENVIAR: "oi"
+ESPERADO (b3fde48): o texto de expiração SÓ deve aparecer no turno em que
+  a expiração realmente ocorre (o próprio turno que dispara o resume
+  expirado), nunca em turnos seguintes sem relação — commit b3fde48
+  restringiu o guard expired_without_tool a isso. Enviar uma 2ª mensagem
+  neutra depois ("tudo bem?") NÃO deve repetir o texto de expiração.
+EVIDÊNCIA:
+  SELECT status, suspend_reason, resumed_at FROM mecontrola.workflow_runs
+  WHERE correlation_key LIKE 'UID:%' ORDER BY created_at DESC LIMIT 3;
+  -- o run da padaria deve estar RunStatusFailed/cancelado por TTL, sem
+  ficar suspenso indefinidamente.
+  platform_messages: confirmar que o texto de expiração aparece 1x só,
+  no turno correto, e a mensagem seguinte ("tudo bem?") tem resposta
+  normal (sem repetir aviso de expiração).
+
+================================================================================
+[C12] RETRY AUTOMÁTICO EM CONCLUSÃO VAZIA DO LLM (checagem de observabilidade)
+      Commit: e16dd2c (já coberto como baseline S0.1; aqui é checagem
+      contínua ao longo de TODO o roteiro)
+================================================================================
+Este cenário não tem ENVIAR próprio — é uma auditoria da métrica ao final
+de toda a execução:
+  PROM: agent_empty_completion_retries_total (delta do baseline S0.3 até o
+  fim do roteiro).
+REGISTRAR: se a métrica incrementou em algum momento, qual cenário
+  coincide (por timestamp), e se o resultado final do turno ainda assim
+  foi correto (retry funcionando) ou se vazou uma resposta vazia/genérica
+  para o usuário (regressão).
+
+================================================================================
+RESUMO DE COBERTURA — commits 32fd0f1..6393fd6
+================================================================================
+32fd0f1, b3fde48 ......... C11
+35f3388, a025f41, b1f1da7  C2
+8300022 .................. C1 (passo B)
+4ad802d .................. C1 (passo B)
+7a21182 .................. C1 (passo B)
+203c138 .................. C3
+e16dd2c .................. C12 (já coberto no S0.1 do roteiro 07-28; aqui
+                            auditado como checagem contínua)
+112d428 .................. C7 (segunda pergunta "ontem")
+500af26 .................. C9
+bf68166 .................. C8
+ee77e1c .................. docs/evidência, sem superfície conversacional
+                            própria (registro de resultados do roteiro
+                            anterior) — sem cenário dedicado.
+93c734f .................. C9
+76e48d9 .................. teste (golden), sem superfície conversacional
+                            própria — coberto indiretamente em C4/C1
+                            (cartão sem emoji já é checado no texto).
+886853c .................. C10
+ae803ea .................. docs/evidência — sem cenário dedicado.
+3cafc13, 0526ef0 ......... observabilidade de falha de guard — auditar via
+                            PROM agent_guard_decisions_total{outcome="error"}
+                            ao longo de todo o roteiro (sem ENVIAR próprio).
+8d68018, acd2de9 ......... C4
+8d495f2 .................. C5
+db59ea7, 3e1c1a6, a0fafa6  C7
+482941d .................. C7
+ff0d8ef .................. teste (golden, suporte) — sem cenário dedicado
+                            de fluxo (fluxo de suporte já é estático/tool
+                            fixa; se quiser cobrir, enviar "ajuda" e
+                            conferir resposta determinística de suporte).
+570cf3e .................. C7
+6393fd6 .................. C6
+
+================================================================================
+PRÓXIMO PASSO (fora deste arquivo)
+================================================================================
+Depois de rodar manualmente cada ENVIAR no WhatsApp com o número de teste,
+colar as evidências reais (psql/logs/métricas/trace) em:
+  docs/runs/29-07-2026-resultados-e2e-agente-jun-jul-2026.txt
+no mesmo padrão de docs/runs/resultados-e2e-agente-2026-07-28.txt — PASS só
+com evidência colada, qualquer divergência de texto vira FAIL/registrado,
+zero resposta inventada.

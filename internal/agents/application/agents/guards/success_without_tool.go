@@ -56,6 +56,7 @@ func (g *successWithoutToolGuard) Inspect(_ context.Context, _ agent.Request, ou
 	forced := out
 	forced.Content = successWithoutToolFallbackMessage
 	forced.ToolOutcome = agent.ToolOutcomeUsecaseError
+	forced.FailureReason = "guard success_without_tool: confirmação de escrita fabricada pelo LLM sem write tool bem-sucedida"
 	return GuardDecision{Handled: true, Result: forced}
 }
 

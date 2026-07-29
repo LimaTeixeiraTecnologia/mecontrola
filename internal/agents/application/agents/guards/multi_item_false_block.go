@@ -9,6 +9,8 @@ import (
 
 const multiItemFalseBlockReask = "Me conta de novo esse lançamento — o valor e onde foi — que eu registro pra você. 🙂"
 
+const multiItemFalseBlockCorrectionReask = "Entendi que você quer corrigir um lançamento. Me confirma qual é e o que mudou (ex.: \"o uber de 30 virou 35\")? 🙂"
+
 var multiItemFalseBlockMarkers = []string{
 	"mais de um lançamento",
 	"um de cada vez",
@@ -37,8 +39,12 @@ func (g *multiItemFalseBlockGuard) Inspect(_ context.Context, in agent.Request, 
 	if hasSuccessfulWriteTool(out.ToolCalls) {
 		return GuardDecision{}
 	}
+	reask := multiItemFalseBlockReask
+	if IsCorrectionOrEditIntent(message) {
+		reask = multiItemFalseBlockCorrectionReask
+	}
 	forced := out
-	forced.Content = multiItemFalseBlockReask
+	forced.Content = reask
 	forced.ToolOutcome = agent.ToolOutcomeClarify
 	return GuardDecision{Handled: true, Result: forced}
 }

@@ -1589,3 +1589,123 @@ VALIDAÇÃO EM PRODUÇÃO (pós-deploy): usuário envia
 "quanto está minha fatura do cartão nubank?" → esperado: fatura de AGOSTO
 (refMonth=2026-08, R$ 458,34) sem run failed; run em platform_runs com
 status de sucesso; mensagem menciona agosto, não julho.
+
+RESULTADO PRODUÇÃO B-15 (2026-07-29 09:30 UTC) — VALIDADO, 0 REGRESSÃO:
+- Input WhatsApp 06:30 BRT: "quanto está minha fatura do cartão nubank?"
+- Run 2026-07-29 09:30:18 UTC: status=succeeded, outcome=routed, 5355ms, error vazio.
+- Resposta persistida em platform_messages bate 1:1 com WhatsApp:
+  "fatura do cartão Nubank está em R$ 458,34 e vence no dia 1º de setembro de 2026"
+  + 5 itens (130,00 + 183,34 + 50,00 + 45,00 + 50,00 = 458,34 — soma confere).
+- Banco confirma: transactions_card_invoices Nubank ref_month=2026-08,
+  items_total_cents=45834, due_at=2026-09-01 (fallback mês seguinte funcionou;
+  vencimento citado deriva da fatura 2026-08 — sem afirmar mês errado).
+- Últimas 12h: 34 succeeded / 2 failed — os 2 failed são os runs PRÉ-FIX de
+  2026-07-28 23:40/23:42 UTC (o próprio incidente B-15). Nenhum failed novo.
+- B-15 MORTO em produção.
+
+================================================================================
+RODADA 11 — Suíte 0-FP (falso positivo) em produção, 2026-07-29 09:35-09:37 UTC
+================================================================================
+
+1) "gastei 30 no almoço no vale" → confirmou DIRETO com
+   "Forma de pagamento: vale-refeição", sem perguntar cartão. DB: amount=3000,
+   payment_method=9 (vale-refeição), categoria Restaurantes. 0 FP de cartão.
+2) "gastei 30 no ônibus e 15 no café" → multi-item detectado, resposta canônica
+   "registro um de cada vez". NENHUMA transação criada para a msg composta
+   (sem dupla, sem parcial). Ônibus registrado depois (3000, pix,
+   Transporte Público) e café separado (1500, pix, Bares e Lanches).
+3) "paguei 35 no dentista no débito" → confirmou direto, Odontologia, débito
+   (payment_method=4), sem perguntar cartão nem categoria. 0 FP.
+4) "gastei 15 no café no pix" → clarify de categoria (ambíguo Cafeterias vs
+   Bares e Lanches), usuário escolheu, registro correto (1500, pix).
+
+DB: 4 transações criadas 09:35:28-09:36:49 UTC, valores/categorias/formas de
+pagamento 1:1 com as confirmações. Runs desde 09:30 UTC: 13 succeeded, 0 failed.
+SUÍTE 0-FP FECHADA — production-ready/proof nestes cenários.
+
+================================================================================
+RODADA 12 — B-16: runs failed sem diagnóstico (taxonomia de outcome)
+================================================================================
+
+INVESTIGAÇÃO (evidência VPS + código):
+- platform_runs do usuário: 133 succeeded/routed, 102 succeeded/'',
+  17 failed/usecaseError, 8 failed/''.
+- Os 5 failed com texto de clarify no campo error ("Qual é a categoria para
+  esse gasto? 📂", "Qual subcategoria isso se encaixa?") são HISTÓRICOS
+  (2026-07-28 17:22-19:22 UTC) — mensagens NÃO existem mais no codebase
+  (grep confirmado); eram fabricadas por build antigo.
+- Clarify legítimo via tool (verbatim) NÃO gera failed: rodada 11 teve
+  clarifies de categoria e todos os runs succeeded/routed.
+- Gap real: guards category_without_tool / confirmation_without_tool /
+  success_without_tool forçam fallback + ToolOutcomeUsecaseError;
+  finishRun (runtime.go) fechava failed com errStr VAZIO quando sem tool
+  calls — 12 runs failed/usecaseError sem NENHUM diagnóstico.
+
+DECISÃO (0 falso positivo): status=failed MANTIDO quando guard dispara —
+o usuário recebeu "Não consegui registrar..." (atendimento degradado é
+falha honesta; marcar succeeded seria falso positivo de observabilidade).
+O bug corrigido é a AUSÊNCIA do motivo.
+
+CORREÇÃO (gate patterns: nao aplicar padrao — mudança localizada):
+1. internal/platform/agent/ports.go — Result ganha FailureReason string
+   (diagnóstico genérico, sem tipo semântico de domínio no substrato).
+2. internal/platform/agent/runtime.go — finishRun usa FailureReason como
+   errStr quando aggregateToolErrorContent vazio (path do guard e path do
+   writeToolGuardFailed).
+3. Os 3 guards preenchem motivo canônico, ex.:
+   "guard category_without_tool: pergunta de categoria fabricada pelo LLM
+   sem tool call".
+
+TESTES: runtime_test.go TestExecute_GuardForcedFailure_PersistsFailureReason
+(run failed persiste a razão exata); assert de FailureReason canônico em um
+cenário Handled de cada guard (category/confirmation/success).
+
+VALIDAÇÃO LOCAL: gofmt limpo; go build ./...; go vet ./... e
+vet -tags integration; go test -race ./internal/platform/agent/...
+./internal/agents/... (todos ok); golangci-lint 0 issues.
+ZERO mudança de comportamento para o usuário — apenas observabilidade.
+
+================================================================================
+RODADA 13 — B-02: "o valor certo é 50 e não 45" (correção com dois valores)
+================================================================================
+
+INCIDENTE (produção, 2026-07-28 10:13/10:21 BRT):
+- "corrija o lançamento de 45 da farmácia para 50" → re-ask genérico
+- "no cartão eu gastei 35 e não 30" → re-ask genérico
+Mecanismo (código + git): PreGuard multi_item deixa correções passar
+(IsCorrectionOrEditIntent casa "corrija"/"e não"), mas o LLM fabricou o
+bloqueio multi-item ao ver dois valores; PostGuard multi_item_false_block
+(desde 10c77e7, 2026-07-18) derrubou a fabricação e forçou o re-ask
+GENÉRICO "Me conta de novo esse lançamento..." — experiência ruim: o
+usuário já tinha dito tudo. Prompt já tinha exemplo "TV 6100 e não 6000"
+(a025f41, 2026-07-27) e proibição de fabricar multi-item (825372d,
+2026-07-17) — insuficientes para as variantes sem verbo/ordem invertida.
+
+CORREÇÃO (3 camadas, gate patterns: nao aplicar padrao):
+1. Prompt (mecontrola_agent.go, regra edit_entry): nova regra explícita
+   "CORREÇÃO COM DOIS VALORES NUNCA É MÚLTIPLOS LANÇAMENTOS" + 3 exemplos
+   obrigatórios com as frases EXATAS do incidente mapeadas para
+   searchAmountCents (valor antigo) + amountCents (valor novo).
+2. Golden cases incident-derived (cases_daily_operations.go):
+   "no cartão eu gastei 35 e não 30" → edit_entry;
+   "corrija o lançamento de 45 da farmácia para 50" → edit_entry.
+   Travam o comportamento no gate realllm do CI (threshold 0.90).
+3. Rede de segurança (multi_item_false_block.go): quando o falso bloqueio
+   acontece em mensagem de correção, o re-ask passa a ser ESPECÍFICO:
+   "Entendi que você quer corrigir um lançamento. Me confirma qual é e o
+   que mudou (ex.: \"o uber de 30 virou 35\")? 🙂" — em vez do genérico.
+   Re-ask genérico preservado para item único sem intenção de correção.
+
+TESTES: multi_item_false_block_test.go ganha cenário de correção com
+assert de conteúdo por re-ask (genérico vs correção); demais cenários
+mantidos (multi genuíno intocado, sem marcador passa, write ok passa).
+
+VALIDAÇÃO LOCAL: gofmt limpo; go build ./...; go vet ./... e
+vet -tags integration; go test -race ./internal/agents/...
+./internal/platform/agent/... (todos ok); golangci-lint 0 issues.
+
+VALIDAÇÃO EM PRODUÇÃO (pós-deploy): usuário envia
+"no cartão eu gastei 35 e não 30" → esperado: edit_entry inicia busca de
+candidatos (ou lista numerada), NUNCA "mais de um lançamento" nem re-ask
+genérico; se o guard de segurança disparar, o re-ask deve ser o de
+correção. Runs sem failed novo.

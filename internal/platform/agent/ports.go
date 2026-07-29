@@ -61,6 +61,7 @@ type Result struct {
 	ToolOutcome       ToolOutcome
 	ToolCalls         []ToolCallRecord
 	TruncatedByLength bool
+	FailureReason     string
 }
 
 type InboundRequest struct {

@@ -430,6 +430,43 @@ func (s *RuntimeTestSuite) TestExecute_OutcomeOutcomeField_UsecaseErrorOnEmptyCo
 	s.Equal("conclusão vazia sem tool call", runs.updated[0].Error)
 }
 
+func (s *RuntimeTestSuite) TestExecute_GuardForcedFailure_PersistsFailureReason() {
+	threadID := uuid.New()
+
+	reg := NewAgentRegistry()
+	reg.Register(&fakeAgent{id: "agent-1", instructions: "instr", result: Result{
+		Content:       "Não consegui registrar. Tente novamente em breve.",
+		Mode:          ExecutionModeSync,
+		ToolOutcome:   ToolOutcomeUsecaseError,
+		FailureReason: "guard category_without_tool: pergunta de categoria fabricada pelo LLM sem tool call",
+	}})
+
+	runs := &fakeRunStore{}
+	rt := NewAgentRuntime(
+		reg,
+		&fakeThreadGateway{thread: memory.Thread{ID: threadID, ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		&fakeMessageStore{},
+		&fakeWorkingMemory{},
+		runs,
+		s.obs,
+	)
+
+	outcome, err := rt.Execute(s.ctx, InboundRequest{
+		AgentID:    "agent-1",
+		ResourceID: "res-1",
+		ThreadID:   "thr-1",
+		Message:    "hello",
+		MessageID:  "msg-1",
+	})
+
+	s.NoError(err)
+	s.Equal(RunStatusFailed, outcome.Status)
+	s.Equal(ToolOutcomeUsecaseError, outcome.Outcome)
+	s.Require().Len(runs.updated, 1)
+	s.Equal(RunStatusFailed, runs.updated[0].Status)
+	s.Equal("guard category_without_tool: pergunta de categoria fabricada pelo LLM sem tool call", runs.updated[0].Error)
+}
+
 func (s *RuntimeTestSuite) TestExecute_EmptyCompletion_RetriesOnceThenSucceeds() {
 	threadID := uuid.New()
 

@@ -14,12 +14,21 @@ func TestMultiItemFalseBlockGuard(t *testing.T) {
 		userMessage string
 		result      agent.Result
 		wantHandled bool
+		wantContent string
 	}{
 		{
 			name:        "falso bloqueio em item unico e sobreposto",
 			userMessage: "Gastei 30 na padaria",
 			result:      agent.Result{Content: "Percebi mais de um lançamento na mesma mensagem. Por segurança, registro um de cada vez"},
 			wantHandled: true,
+			wantContent: multiItemFalseBlockReask,
+		},
+		{
+			name:        "falso bloqueio em correcao usa re-ask de correcao",
+			userMessage: "no cartão eu gastei 35 e não 30",
+			result:      agent.Result{Content: "Percebi mais de um lançamento na mesma mensagem. Por segurança, registro um de cada vez"},
+			wantHandled: true,
+			wantContent: multiItemFalseBlockCorrectionReask,
 		},
 		{
 			name:        "multiplo genuino nao e tocado",
@@ -54,8 +63,8 @@ func TestMultiItemFalseBlockGuard(t *testing.T) {
 			if decision.Handled != scenario.wantHandled {
 				t.Fatalf("Handled = %v; want %v", decision.Handled, scenario.wantHandled)
 			}
-			if scenario.wantHandled && decision.Result.Content != multiItemFalseBlockReask {
-				t.Fatalf("content = %q; want reask", decision.Result.Content)
+			if scenario.wantHandled && decision.Result.Content != scenario.wantContent {
+				t.Fatalf("content = %q; want %q", decision.Result.Content, scenario.wantContent)
 			}
 		})
 	}
