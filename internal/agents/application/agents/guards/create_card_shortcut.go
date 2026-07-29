@@ -42,6 +42,7 @@ func (g *createCardShortcutGuard) Inspect(ctx context.Context, in agent.Request)
 	}
 	raw, verbatim, err := g.handle.Invoke(ctx, argsJSON)
 	if err != nil {
+		logShortcutInvokeError(ctx, g.Name(), err)
 		return GuardDecision{}
 	}
 	content := createCardShortcutContent(raw, verbatim)

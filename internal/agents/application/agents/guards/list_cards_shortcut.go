@@ -36,6 +36,7 @@ func (g *listCardsShortcutGuard) Inspect(ctx context.Context, in agent.Request) 
 	}
 	raw, verbatim, err := g.handle.Invoke(ctx, []byte("{}"))
 	if err != nil {
+		logShortcutInvokeError(ctx, g.Name(), err)
 		return GuardDecision{}
 	}
 	content := listCardsShortcutContent(raw, verbatim)

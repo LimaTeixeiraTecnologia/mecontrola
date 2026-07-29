@@ -86,6 +86,10 @@ func PaymentMethodMigrationBlocked() string {
 	return "Essa forma de pagamento não pode migrar de/para crédito nesta edição. Por favor, escolha outra forma de pagamento ou mantenha a atual."
 }
 
+func DuplicateRecurrence() string {
+	return "Você já tem uma recorrência igual ativa (mesmo valor, descrição e dia). Não criei outra para não lançar em dobro. Se quiser alterar a existente, é só me dizer o que mudou. 🙂"
+}
+
 func NoEditCandidateFound() string {
 	return "Não encontrei um lançamento compatível para editar. Pode me dar mais detalhes (valor, categoria ou descrição)?"
 }

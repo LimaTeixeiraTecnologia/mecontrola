@@ -15,6 +15,11 @@ import (
 var (
 	incomeAmountRe      = regexp.MustCompile(`(?i)(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real)?`)
 	incomeDescriptionRe = regexp.MustCompile(`(?i)\bde\s+([^0-9,.;!?]+)\s*$`)
+
+	incomeShortcutRecurrenceMarkers = []string{
+		"todo dia", "todo mês", "todo mes", "toda semana", "todo ano",
+		"mensalmente", "semanalmente", "anualmente", "diariamente",
+	}
 )
 
 type registerIncomeShortcutGuard struct {
@@ -43,6 +48,7 @@ func (g *registerIncomeShortcutGuard) Inspect(ctx context.Context, in agent.Requ
 	}
 	raw, verbatim, err := g.handle.Invoke(ctx, argsJSON)
 	if err != nil {
+		logShortcutInvokeError(ctx, g.Name(), err)
 		return GuardDecision{}
 	}
 	content := registerIncomeShortcutContent(raw, verbatim)
@@ -65,6 +71,9 @@ func (g *registerIncomeShortcutGuard) Inspect(ctx context.Context, in agent.Requ
 func parseRegisterIncomeShortcut(message string, handle tool.ToolHandle) (map[string]any, bool) {
 	normalized := strings.ToLower(strings.TrimSpace(message))
 	if !containsAnyText(normalized, "recebi", "ganhei", "caiu", "entrou", "salário", "salario") {
+		return nil, false
+	}
+	if containsAnyText(normalized, incomeShortcutRecurrenceMarkers...) {
 		return nil, false
 	}
 	amountMatch := incomeAmountRe.FindStringSubmatch(message)

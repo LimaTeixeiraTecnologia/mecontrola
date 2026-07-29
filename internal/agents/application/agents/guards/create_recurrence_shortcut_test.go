@@ -36,6 +36,8 @@ func TestParseCreateRecurrenceShortcut(t *testing.T) {
 		wantPay string
 	}{
 		{name: "producao todo dia 5 pago 1500 de aluguel", input: "todo dia 5 pago 1500 de aluguel", wantOK: true, wantDay: 5, wantAmt: 150000, wantDsc: "aluguel", wantDir: "outcome"},
+		{name: "producao todo dia 5 eu recebo salario", input: "todo dia 5 eu recebo R$ 13.874,40 de salário", wantOK: true, wantDay: 5, wantAmt: 1387440, wantDsc: "salário", wantDir: "income"},
+		{name: "ganhei recorrente", input: "todo dia 10 ganhei 200 de comissão", wantOK: true, wantDay: 10, wantAmt: 20000, wantDsc: "comissão", wantDir: "income"},
 		{name: "com centavos", input: "todo dia 10 pago 99,90 de internet", wantOK: true, wantDay: 10, wantAmt: 9990, wantDsc: "internet", wantDir: "outcome"},
 		{name: "receita recorrente", input: "todo dia 1 recebo 5000 de salário", wantOK: true, wantDay: 1, wantAmt: 500000, wantDsc: "salário", wantDir: "income"},
 		{name: "com pagamento no fim", input: "todo dia 5 pago 1500 de aluguel no pix", wantOK: true, wantDay: 5, wantAmt: 150000, wantDsc: "aluguel", wantDir: "outcome", wantPay: "pix"},

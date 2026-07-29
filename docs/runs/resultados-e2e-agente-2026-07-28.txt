@@ -2353,3 +2353,179 @@ PENDENTE: commit + CI + revalidar A1 em produção: "todo dia 5 pago
 1500 de aluguel" deve abrir confirmação de recorrência (dia 5,
 R$ 1.500, aluguel) SEM passar pelo LLM; "sim" deve persistir em
 transactions_recurring_templates; seguir para A2-A4.
+
+RODADA 22 — 2026-07-29 18:33-18:40 UTC / 15:33-15:40 BRT — Suíte A1
+revalidada pós-deploy do shortcut (run 30479127333, sha 2849f971)
+================================================================
+
+FLUXO REAL EXECUTADO PELO USUÁRIO (fonte: platform_messages/
+platform_runs em produção):
+1. 18:33:16 "todo dia 5 pago 1500 de aluguel" -> run 6d798ee8
+   routed em 1264ms (LLM). Shortcut deu PASS (correto, ver abaixo).
+   LLM guiou: perguntou data de início e forma de pagamento.
+2. 18:35-18:36 usuário respondeu "pix", "julho", "sim", "sim" ->
+   template 5f7e7d5a criado 18:36:16 (started_at=2026-07-05,
+   dia 5, monthly, R$ 1.500, aluguel, pix). Fluxo LLM OK.
+3. 18:38:57 "todo dia 5 pago 1500 de aluguel no pix" -> run
+   2bb9a8a8 (2bb9a8a2) routed em 18ms — SHORTCUT DETERMINÍSTICO
+   disparou (sem LLM): abriu confirmação "Encontrei esta
+   recorrência: R$ 1.500,00 ... Posso configurar?". Usuário "sim"
+   -> template 97485bde criado 18:39:03 (started_at=2026-07-29).
+4. 18:39:34 "todo mes eu recebo R$ 13.874,40 de salário" ->
+   registrado como RECEITA AVULSA (tx b7d0cd97, R$ 13.874,40,
+   origin=transaction_write_register). NÃO virou recorrência.
+
+MISTÉRIO DO "PASS" RESOLVIDO (com evidência):
+- A tool create_recurrence exige paymentMethod no schema
+  (required: direction, paymentMethod, amountCents, description,
+  frequency, dayOfMonth — tools/create_recurrence.go:58).
+- Frase SEM pagamento ("...de aluguel") -> parse ok, mas
+  handle.Invoke falha na validação do schema -> guard retorna
+  GuardDecision{} (pass) -> LLM assume. Comportamento correto de
+  fallback, MAS o erro do Invoke é engolido sem log/métrica em
+  TODOS os shortcuts (create_recurrence_shortcut.go:48-50).
+- Frase COM pagamento ("...no pix") -> Invoke ok -> handled.
+- Métrica confirma: agent_guard_decisions_total{guard=
+  "create_recurrence_shortcut"} -> handled=1 (instância
+  c51f3def8ebd, o disparo das 18:38) + pass=7 (2 workers). Bate
+  1:1 com os platform_runs. (Obs.: increase[2h] extrapola e
+  mostrou handled=0 espúrio; usar contador bruto.)
+
+ACHADO CRÍTICO 1 — TEMPLATES DUPLICADOS (risco financeiro real):
+- Dois templates idênticos ativos: 5f7e7d5a (started 2026-07-05) e
+  97485bde (started 2026-07-29), ambos dia 5, monthly, R$ 1.500,
+  aluguel, pix, sem deleted_at/ended_at.
+- O materializador (MaterializeRecurringForDay) roda no
+  day_of_month e NÃO é retroativo: em 05/08 AMBOS materializam ->
+  aluguel lançado EM DOBRO (R$ 3.000). transactions_recurring_
+  materializations está VAZIA (nenhum lançamento fantasma até
+  agora — confirmado).
+- Causa: create_recurrence não verifica template equivalente
+  existente antes de criar (sem dedup semântico).
+- AÇÃO IMEDIATA: apagar um dos dois (usuário pode exercitar A4
+  "cancela a recorrência do aluguel" — fluxo de desambiguação vai
+  listar os 2 candidatos; ou delete direto no banco).
+
+ACHADO CRÍTICO 2 — RECORRÊNCIA DE RECEITA NÃO DETECTADA:
+- "todo mes eu recebo R$ 13.874,40 de salário" virou lançamento
+  ÚNICO de R$ 13.874,40 (tx b7d0cd97). Intenção do usuário era
+  recorrência mensal.
+- Causa: regex do shortcut cobre apenas "todo dia N <verbo>"; a
+  variante "todo mês/mensalmente" (sem dia) cai no
+  register_income_shortcut/LLM, que ignorou o marcador temporal e
+  registrou avulso SEM perguntar.
+- AÇÃO IMEDIATA: usuário excluir a tx avulsa ("exclui o
+  lançamento do salário") e recriar como recorrência após fix.
+- FIX PENDENTE: cobrir "todo mês/mensalmente/toda semana" no
+  shortcut (perguntando dayOfMonth quando ausente) e/ou reforçar
+  o prompt do agente para rotear marcadores de recorrência a
+  create_recurrence em vez de register_income/expense.
+
+GAP DE OBSERVABILIDADE (não bloqueante):
+- Erros de handle.Invoke nos shortcuts são engolidos
+  silenciosamente (GuardDecision{}). Adicionar slog.WarnContext
+  no erro de Invoke para distinguir "parse não bateu" de
+  "tool rejeitou payload" — este diagnóstico só foi possível via
+  leitura de código + runs, não por logs.
+
+VEREDITO A1: shortcut determinístico FUNCIONA em produção (18ms,
+sem LLM, confirmação humana antes de persistir, 0 falso positivo).
+Mas o fluxo completo expôs 2 bugs reais (duplicidade sem dedup;
+receita recorrente tratada como avulsa) que precisam de correção
+antes de declarar o Bloco A production-ready.
+
+RODADA 23 — 2026-07-29 18:49 UTC / 15:49 BRT — Incidente real R$ 5,00
++ B-23 (4 fixes: dedup, receita recorrente, marcadores, observabilidade)
+======================================================================
+
+INCIDENTE (produção, evidência WhatsApp 15:49 BRT):
+"todo dia 5 eu recebo R$ 13.874,40 de salário" -> bot respondeu
+"💰 Valor: R$ 5,00 📥 Origem: salário. Posso registrar?".
+Usuário respondeu "não" — NADA persistido (0 dado corrompido).
+
+CAUSA RAIZ (confirmada em código): parseRegisterIncomeShortcut
+(guards/register_income_shortcut.go) dispara pelo gatilho "salário"
+e aplica incomeAmountRe no PRIMEIRO número da mensagem — o "5" de
+"dia 5" — gerando amountCents=500. O marcador de recorrência
+("todo dia 5") não era verificado por nenhum shortcut de registro
+avulso. O register_expense_shortcut e o card_expense_shortcut são
+anclarados em ^(gastei|paguei|...) e não sofrem do mesmo problema
+(provado por leitura das regex); só o de receita era vulnerável.
+
+B-23 — FIXES (design-patterns: não aplicar padrão — código direto;
+domain-modeling: sem diff em domain/, só princípios DMMF):
+
+Fix A — register_income passa em marcadores de recorrência:
+lista incomeShortcutRecurrenceMarkers (todo dia/mês/mes, toda
+semana, todo ano, mensalmente, semanalmente, anualmente,
+diariamente) -> parse retorna false e a frase segue para o
+create_recurrence_shortcut (com dia) ou para o LLM (sem dia),
+que é protegido pelo guard confirmation_without_tool.
+
+Fix B — create_recurrence_shortcut aceita "eu" + "ganhei":
+regex agora `(?:eu\s+)?` antes do verbo e ganhei como verbo de
+receita. "todo dia 5 eu recebo R$ 13.874,40 de salário" agora é
+resolvida DETERMINISTICAMENTE (dia 5, income, 1387440, salário),
+sem LLM.
+
+Fix C — dedup semântico em CreateRecurringTemplate (transactions):
+ensureNoEquivalentRecurringTemplate pagina repo.List(activeOnly)
+dentro da mesma uow e bloqueia template equivalente (direction +
+paymentMethod + amount + frequency + dayOfMonth + description
+EqualFold/trim + cardID), retornando o sentinel
+ErrDuplicateRecurringTemplate (errors.go). Workflow traduz em
+completeTransaction(Cancelled, messages.DuplicateRecurrence()) nos
+dois caminhos de escrita (idempotente — classifier ampliado — e
+direto). REST mapeia para 409 duplicate_recurring_template
+(error_mapper.go). startedAt/category/installments NÃO entram na
+chave (os dois templates duplicados de produção divergiam só em
+started_at — exatamente o caso que precisa bloquear).
+
+Fix D — observabilidade dos shortcuts: logShortcutInvokeError
+(slog.WarnContext com guard+error) nos 8 sites de Invoke que
+engoliam erro silenciosamente (register_income, register_expense,
+create_recurrence, card_expense x2, create_card, edit_entry,
+list_cards, query_day). O diagnóstico da RODADA 22 (pass por
+paymentMethod required) agora seria visível em log.
+
+TESTES ADICIONADOS:
+- create_recurrence_shortcut_test: caso exato da produção
+  (1387440/income/dia 5) + "ganhei" recorrente.
+- register_income_shortcut_test (NOVO arquivo): 2 casos positivos
+  (avulsa, milhar com centavos) + 5 casos de marcador que NÃO
+  disparam (incl. o texto exato da produção) — todos com gatilho
+  de receita presente para exercitar o ramo do marcador.
+- create_recurring_template_test (transactions): suite existente
+  ajustada para a nova chamada List + TestExecute_DuplicateTemplate
+  (description em case diferente, started_at diferente -> ErrorIs
+  ErrDuplicateRecurringTemplate, Create não chamado) +
+  TestExecute_DifferentAmount_NotDuplicate (regressão: valor
+  diferente persiste normalmente).
+- transaction_write_workflow_test: TestRecurrence_Duplicate_
+  CancelsWithFriendlyMessage (Resume com "sim" -> succeeded +
+  Cancelled + messages.DuplicateRecurrence()).
+
+VALIDAÇÃO (boundary profile — usecase-write + adapters):
+- go build ./... + go vet ./...: OK.
+- go test -race -count=1 ./internal/agents/...: 13 pacotes ok, 0 falhas.
+- go test -race -count=1 ./internal/transactions/...: 0 falhas
+  (inclui handlers HTTP).
+- gofmt limpo; golangci-lint ./internal/agents/... ./internal/transactions/...:
+  0 issues.
+- Gates: gates:zero-comments PASS, gates:init-prohibited PASS,
+  R5.26 sem novos identificadores com prefixo _ (apenas mocks
+  pré-existentes, excluídos do gate).
+
+PENDENTE (usuário): commit + CI + deploy; limpeza em produção:
+1) apagar UM dos dois templates de aluguel duplicados
+   (5f7e7d5a started 2026-07-05 / 97485bde started 2026-07-29) —
+   pode ser via WhatsApp "cancela a recorrência do aluguel"
+   (desambiguação lista os 2) ou delete direto no banco;
+2) excluir a receita avulsa de R$ 13.874,40 (tx b7d0cd97) via
+   WhatsApp ("exclui o lançamento do salário") e, após o deploy,
+   recriar como recorrência ("todo dia 5 eu recebo R$ 13.874,40
+   de salário" — agora resolvida deterministicamente).
+REVALIDAÇÃO PÓS-DEPLOY: repetir a frase exata do incidente e
+confirmar fluxo de recorrência; repetir "todo dia 5 pago 1500 de
+aluguel no pix" e confirmar que o dedup bloqueia com a mensagem
+amigável (sem 3º template).

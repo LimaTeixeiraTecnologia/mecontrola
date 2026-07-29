@@ -704,6 +704,43 @@ func (s *TransactionWriteWorkflowSuite) TestRecurrence_SuspendsWithRecurrenceBlo
 	s.Equal(TransactionWriteStatusCompleted, result.State.Status)
 }
 
+func (s *TransactionWriteWorkflowSuite) TestRecurrence_Duplicate_CancelsWithFriendlyMessage() {
+	state := TransactionWriteState{
+		Status:        TransactionWriteStatusActive,
+		Awaiting:      TransactionAwaitingConfirmation,
+		OperationKind: TransactionOpCreateRecurrence,
+		UserID:        s.userID,
+		ResourceID:    s.userID,
+		ThreadID:      "thr-recurrence-dup",
+		MessageID:     "wamid-recurrence-dup",
+		AmountCents:   150000,
+		Description:   "aluguel",
+		PaymentMethod: "pix",
+		Frequency:     "monthly",
+		Candidates: []PendingCategoryCandidate{{
+			RootCategoryID: uuid.New(),
+			SubcategoryID:  uuid.New(),
+			Path:           "Custo Fixo > Aluguel",
+		}},
+	}
+	k := s.key("thr-recurrence-dup")
+
+	s.ledger.EXPECT().
+		CreateRecurringTemplate(mock.Anything, mock.Anything).
+		Return(ifaces.EntryRef{}, txusecases.ErrDuplicateRecurringTemplate).
+		Once()
+
+	_, err := s.engine.Start(s.ctx, s.def, k, state)
+	s.Require().NoError(err)
+
+	result, err := s.engine.Resume(s.ctx, s.def, k, s.resumePayload("sim"))
+
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSucceeded, result.Status)
+	s.Equal(TransactionWriteStatusCancelled, result.State.Status)
+	s.Equal(messages.DuplicateRecurrence(), result.State.ResponseText)
+}
+
 func (s *TransactionWriteWorkflowSuite) newRootListingState() TransactionWriteState {
 	state := s.newExpenseState()
 	state.Awaiting = TransactionAwaitingCategory

@@ -3,6 +3,7 @@ package usecases
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -109,6 +110,9 @@ func (uc *CreateRecurringTemplate) Execute(ctx context.Context, raw input.RawCre
 
 	t, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, db database.DBTX) (entities.RecurringTemplate, error) {
 		repo := uc.factory.RecurringTemplateRepository(db)
+		if dupErr := ensureNoEquivalentRecurringTemplate(ctx, repo, cmd); dupErr != nil {
+			return entities.RecurringTemplate{}, dupErr
+		}
 		if createErr := repo.Create(ctx, &template); createErr != nil {
 			return entities.RecurringTemplate{}, fmt.Errorf("transactions/create_recurring_template: persistir: %w", createErr)
 		}
@@ -153,4 +157,47 @@ func buildRawCreateRecurringTemplate(raw input.RawCreateRecurringTemplate) (comm
 		rawCmd.EndedAt = &endedAt
 	}
 	return rawCmd, nil
+}
+
+const recurringTemplateDedupPageSize = 100
+
+func ensureNoEquivalentRecurringTemplate(ctx context.Context, repo interfaces.RecurringTemplateRepository, cmd commands.CreateRecurringTemplate) error {
+	cursor := interfaces.Cursor{}
+	for {
+		templates, nextCursor, err := repo.List(ctx, cmd.UserID.UUID(), true, cursor, recurringTemplateDedupPageSize)
+		if err != nil {
+			return fmt.Errorf("transactions/create_recurring_template: verificar duplicidade: %w", err)
+		}
+		for _, existing := range templates {
+			if isEquivalentRecurringTemplate(existing, cmd) {
+				return ErrDuplicateRecurringTemplate
+			}
+		}
+		if nextCursor.Value == "" {
+			return nil
+		}
+		cursor = nextCursor
+	}
+}
+
+func isEquivalentRecurringTemplate(existing *entities.RecurringTemplate, cmd commands.CreateRecurringTemplate) bool {
+	if existing.Direction() != cmd.Direction ||
+		existing.PaymentMethod() != cmd.PaymentMethod ||
+		existing.Frequency() != cmd.Frequency ||
+		existing.DayOfMonth() != cmd.DayOfMonth ||
+		existing.Amount().Cents() != cmd.Amount.Cents() {
+		return false
+	}
+	if !strings.EqualFold(
+		strings.TrimSpace(existing.Description().String()),
+		strings.TrimSpace(cmd.Description.String()),
+	) {
+		return false
+	}
+	existingCard, existingHasCard := existing.CardID().Get()
+	cmdCard, cmdHasCard := cmd.CardID.Get()
+	if existingHasCard != cmdHasCard {
+		return false
+	}
+	return !existingHasCard || existingCard == cmdCard
 }

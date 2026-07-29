@@ -12,12 +12,13 @@ import (
 )
 
 var (
-	recurrenceShortcutRe = regexp.MustCompile(`(?i)^\s*todo\s+dia\s+([0-9]{1,2})\s+(gastei|gasto|pago|paguei|recebo|recebi|ganho)\s+(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real|conto|contos|pila|mango)?\s+(?:no|na|nos|nas|em|com|de|do|da|pra|para)\s+([a-zà-ú][a-zà-ú' ]*?)\s*$`)
+	recurrenceShortcutRe = regexp.MustCompile(`(?i)^\s*todo\s+dia\s+([0-9]{1,2})\s+(?:eu\s+)?(gastei|gasto|pago|paguei|recebo|recebi|ganho|ganhei)\s+(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real|conto|contos|pila|mango)?\s+(?:no|na|nos|nas|em|com|de|do|da|pra|para)\s+([a-zà-ú][a-zà-ú' ]*?)\s*$`)
 
 	recurrenceShortcutIncomeVerbs = map[string]struct{}{
 		"recebo": {},
 		"recebi": {},
 		"ganho":  {},
+		"ganhei": {},
 	}
 )
 
@@ -47,6 +48,7 @@ func (g *createRecurrenceShortcutGuard) Inspect(ctx context.Context, in agent.Re
 	}
 	raw, verbatim, err := g.handle.Invoke(ctx, argsJSON)
 	if err != nil {
+		logShortcutInvokeError(ctx, g.Name(), err)
 		return GuardDecision{}
 	}
 	return GuardDecision{

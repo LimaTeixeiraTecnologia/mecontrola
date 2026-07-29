@@ -679,7 +679,8 @@ func executeTransactionWithIdempotency(ctx context.Context, state TransactionWri
 	})
 
 	classifier := DomainErrorClassifier(func(err error) bool {
-		return errors.Is(err, txusecases.ErrPaymentMethodMigrationNotAllowed)
+		return errors.Is(err, txusecases.ErrPaymentMethodMigrationNotAllowed) ||
+			errors.Is(err, txusecases.ErrDuplicateRecurringTemplate)
 	})
 
 	var (
@@ -701,6 +702,9 @@ func executeTransactionWithIdempotency(ctx context.Context, state TransactionWri
 	if idemErr != nil {
 		if errors.Is(idemErr, txusecases.ErrPaymentMethodMigrationNotAllowed) {
 			return completeTransaction(state, TransactionWriteStatusCancelled, messages.PaymentMethodMigrationBlocked())
+		}
+		if errors.Is(idemErr, txusecases.ErrDuplicateRecurringTemplate) {
+			return completeTransaction(state, TransactionWriteStatusCancelled, messages.DuplicateRecurrence())
 		}
 		out, _ := completeTransaction(state, TransactionWriteStatusActive, messages.WriteFailure())
 		return out, fmt.Errorf("workflows.transaction_write: idempotent_write: %w", idemErr)
@@ -737,6 +741,9 @@ func executeTransactionDirectWrite(ctx context.Context, state TransactionWriteSt
 	if writeErr != nil {
 		if errors.Is(writeErr, txusecases.ErrPaymentMethodMigrationNotAllowed) {
 			return completeTransaction(state, TransactionWriteStatusCancelled, messages.PaymentMethodMigrationBlocked())
+		}
+		if errors.Is(writeErr, txusecases.ErrDuplicateRecurringTemplate) {
+			return completeTransaction(state, TransactionWriteStatusCancelled, messages.DuplicateRecurrence())
 		}
 		out, _ := completeTransaction(state, TransactionWriteStatusActive, messages.WriteFailure())
 		return out, fmt.Errorf("workflows.transaction_write: direct_write: %w", writeErr)

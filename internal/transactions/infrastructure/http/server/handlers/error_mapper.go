@@ -34,6 +34,9 @@ func mapError(w http.ResponseWriter, span observability.Span, err error, _ ...er
 	case errors.Is(err, usecases.ErrPaymentMethodMigrationNotAllowed):
 		span.SetAttributes(observability.String("outcome", "unprocessable"))
 		responses.ErrorWithDetails(w, http.StatusUnprocessableEntity, err.Error(), map[string]string{"code": "payment_migration_forbidden"})
+	case errors.Is(err, usecases.ErrDuplicateRecurringTemplate):
+		span.SetAttributes(observability.String("outcome", "conflict"))
+		responses.ErrorWithDetails(w, http.StatusConflict, err.Error(), map[string]string{"code": "duplicate_recurring_template"})
 	case errors.Is(err, interfaces.ErrTransactionVersionConflict),
 		errors.Is(err, usecases.ErrTransactionVersionConflict),
 		errors.Is(err, repopkg.ErrRecurringTemplateVersionConflict):
