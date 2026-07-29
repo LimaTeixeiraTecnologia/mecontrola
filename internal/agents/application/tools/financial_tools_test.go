@@ -774,6 +774,18 @@ func TestBuildUpdateRecurrenceTool_NeedsConfirmation(t *testing.T) {
 	assert.True(t, result.NeedsConfirmation)
 	assert.Equal(t, templateID, result.TargetRef)
 	assert.Equal(t, "recurring_template", result.TargetKind)
+	assert.Contains(t, result.ImpactNote, "Você confirma esta operação?")
+	assert.Contains(t, result.ImpactNote, "atualizada")
+}
+
+func TestBuildUpdateRecurrenceTool_InvalidTemplateID(t *testing.T) {
+	engine := &fakeDestructiveManageEngine{}
+	handle := BuildUpdateRecurrenceTool(engine, fakeDestructiveManageDef())
+
+	argsJSON, _ := json.Marshal(UpdateRecurrenceInput{TemplateID: "aluguel", Version: 1})
+	_, _, err := handle.Invoke(inboundCtx(), argsJSON)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "templateId")
 }
 
 func TestBuildUpdateRecurrenceTool_AlreadyExists(t *testing.T) {
@@ -811,7 +823,18 @@ func TestBuildDeleteRecurrenceTool_NeedsConfirmation(t *testing.T) {
 	assert.True(t, result.NeedsConfirmation)
 	assert.Equal(t, templateID, result.TargetRef)
 	assert.Equal(t, "recurring_template", result.TargetKind)
+	assert.Contains(t, result.ImpactNote, "Você confirma esta operação?")
 	assert.Contains(t, result.ImpactNote, "permanentemente")
+}
+
+func TestBuildDeleteRecurrenceTool_InvalidTemplateID(t *testing.T) {
+	engine := &fakeDestructiveManageEngine{}
+	handle := BuildDeleteRecurrenceTool(engine, fakeDestructiveManageDef())
+
+	argsJSON, _ := json.Marshal(DeleteRecurrenceInput{TemplateID: "pensão", Version: 1})
+	_, _, err := handle.Invoke(inboundCtx(), argsJSON)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "templateId")
 }
 
 func TestBuildDeleteRecurrenceTool_AlreadyExists(t *testing.T) {

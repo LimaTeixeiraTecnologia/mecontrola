@@ -117,9 +117,12 @@ func destructiveManageSuspend(state DestructiveManageState, prompt string) workf
 	}
 }
 
+func DestructiveManageConfirmQuestionText(impactNote string) string {
+	return "⚠️ Você confirma esta operação?\n\n" + impactNote + "\n\nResponda *sim* para confirmar ou *não* para cancelar."
+}
+
 func destructiveManageConfirmQuestion(state DestructiveManageState) string {
-	base := "⚠️ Você confirma esta operação?\n\n" + state.ImpactNote
-	return base + "\n\nResponda *sim* para confirmar ou *não* para cancelar."
+	return DestructiveManageConfirmQuestionText(state.ImpactNote)
 }
 
 func destructiveManageSuccessMessage(op DestructiveOperationKind) string {

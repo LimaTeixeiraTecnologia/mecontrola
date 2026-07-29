@@ -81,6 +81,10 @@ func buildDeleteRecurrenceExec(engine wf.Engine[workflows.DestructiveManageState
 			return DeleteRecurrenceOutput{}, fmt.Errorf("agents.tool.delete_recurrence: parse resource uuid: %w", err)
 		}
 
+		if _, err := uuid.Parse(in.TemplateID); err != nil {
+			return DeleteRecurrenceOutput{}, fmt.Errorf("agents.tool.delete_recurrence: templateId deve ser o UUID obtido via list_recurrences: %w", err)
+		}
+
 		impactNote := "Esta recorrência será removida permanentemente."
 
 		state := workflows.DestructiveManageState{
@@ -110,7 +114,7 @@ func buildDeleteRecurrenceExec(engine wf.Engine[workflows.DestructiveManageState
 
 		return DeleteRecurrenceOutput{
 			NeedsConfirmation: true,
-			ImpactNote:        impactNote,
+			ImpactNote:        workflows.DestructiveManageConfirmQuestionText(impactNote),
 			TargetRef:         in.TemplateID,
 			TargetKind:        "recurring_template",
 		}, nil

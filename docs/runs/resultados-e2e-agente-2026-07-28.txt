@@ -2990,3 +2990,116 @@ deploy via serviço mecontrola_migrate). REVALIDAÇÃO PÓS-DEPLOY:
    materializa em 30; fev/2026: em 28) — registrar como verificação
    agendada, não bloqueia o production-proof;
 4) revalidar 4.3 (pensão) e dedup 7.2 que seguem pendentes da RODADA 27.
+
+================================================================================
+RODADA 29 — 2026-07-29 20:28 BRT — Revalidação pós-deploy do fix da pensão +
+clamp 29-31. Resultado: 3/3 PASS com evidência de banco + platform_runs.
+================================================================================
+
+CONVERSA (usuário) x BANCO:
+1) "todo dia 31 eu recebo 13874 de salário" -> confirmação direta -> "sim"
+   -> criado. Banco: salário 1387400 cents, day_of_month=31, income, pix,
+   "Salário > Salário" (23:28:10Z). PROVA da migration 000012: insert com
+   dia 31 passou no CHECK alargado (antes BETWEEN 1 AND 28).
+2) "todo mês eu recebo 800 de pensão" -> categoria (lista income, usuário
+   escolheu Outras Receitas) -> slot "Em qual dia do mês ele se repete? 📅
+   (ex.: 5)" -> "30" -> confirmação -> "sim" -> criado. Banco: pensão
+   80000, day 30, income, pix, "Outras Receitas > Outros" (23:29:08Z).
+   O bug da RODADA 27 (LLM fabricando + usecaseError) está ELIMINADO —
+   caminho 100% determinístico.
+3) Dedup 7.2: "todo dia 5 pago 1500 de aluguel no pix" -> confirmação ->
+   "sim" -> bloqueio amigável "Você já tem uma recorrência igual ativa...
+   Não criei outra para não lançar em dobro". Banco: count=1 template de
+   aluguel. PASS.
+
+PLATFORM_RUNS (23:28-23:29Z): 8 runs, TODOS succeeded (routed ou
+transaction-write), zero failed, zero usecaseError, zero fallback de
+guard. Comparação: na RODADA 27 a mesma frase da pensão gerou
+failed/usecaseError com texto fabricado.
+
+PONTO DE ATENÇÃO (dados de teste): existem DOIS templates de salário —
+dia 5 (13.874,40, teste da RODADA 27) e dia 31 (13.874,00, real). Ambos
+materializam todo mês. Recomendado: remover o de teste via bot ("cancela
+a recorrência do salário do dia 5" ou fluxo de edição com desambiguação)
+antes de considerar os dados limpos.
+
+SUÍTE: 4.2 PASS, 4.3 PASS, 4.4/4.5 PASS (RODADA 27), 7.1 PASS, 7.2 PASS,
+dia 31 + migration PASS. Verificação agendada (não bloqueia): clamp real
+de materialização observável em 30/09 (dia 31 -> 30) e fev/2026 (dia 31
+-> 28); dia 05/08 e 10/08 materializam aluguel/salário/internet.
+
+================================================================================
+RODADA 30 — 2026-07-29 ~23h50 UTC — 7.3/7.4 FAIL: edição e exclusão de
+recorrência. Causa raiz validada com db + mensagens + tracing (Tempo).
+================================================================================
+
+FALHAS (evidência de banco):
+- 7.3 "muda o aluguel para 1600" + "sim": aluguel continua 150000 v1 —
+  update NUNCA executado. Respostas do bot eram fabricação/verbatim sem
+  pergunta real.
+- 7.4 "cancela a recorrência da pensão": pensão continua ativa — exclusão
+  NUNCA iniciada; mensagem foi consumida como resposta do confirm pendente
+  (reprompt "Não entendi... sim ou não").
+- "cancela a recorrência do salário do dia 5": interpretado como CANCELAR
+  a operação pendente (🚫) — matou o workflow da edição do aluguel.
+- 7.5 prep: template "teste materialização" criado corretamente (dia 30).
+
+CADEIA DE EVIDÊNCIA (4 fontes convergindo):
+1. workflow_runs (id dea2a581-...): destructive-confirm criado às
+   23:34:23 (turno do "sim", NÃO no turno 1), operation=4
+   (UpdateRecurrence), targetRef="aluguel" (LLM passou a STRING "aluguel"
+   como templateId — parâmetro alucinado; mesmo confirmando, o execute
+   falharia no parse UUID), repromptDone=true, status final cancelled às
+   23:35:04. Existiu apenas UM run — o delete da pensão nunca abriu.
+2. platform_messages: turno 1 = card "Posso atualizar para R$ 1.600,00?"
+   (fabricado); turno 2 = "Esta recorrência será atualizada." (verbatim da
+   tool SEM a pergunta de confirmação); turno 3 = reprompt; turno 4 = 🚫.
+3. Tempo trace b9807349 (turno 1): 22 spans — UM llm.complete, ZERO tool
+   call, ZERO engine.start: o card foi 100% fabricado (dados corretos por
+   memória recente). Trace 746939d0 (turno 2): 28 spans com
+   workflow.engine.start + step.execute + store insert — a tool
+   update_recurrence só foi chamada no "sim".
+4. Código (causa raiz dupla):
+   a) tools/update_recurrence.go e delete_recurrence.go: o verbatim é só
+      o ImpactNote ("Esta recorrência será atualizada.") — a PERGUNTA de
+      confirmação (destructiveManageConfirmQuestion: "⚠️ Você confirma
+      esta operação?... Responda sim ou não") fica como prompt de
+      suspensão no store e NUNCA chega ao usuário quando o workflow é
+      iniciado via tool. O workflow fica aguardando sim/não sem o usuário
+      saber — e engole as mensagens seguintes (reprompt/cancel).
+   b) templateId sem validação: LLM passou "aluguel" (string) e o
+      workflow aceitou — falharia só no execute.
+
+FIX (menor mudança na causa raiz; bugfix + go-implementation R0-R7;
+design-patterns: "não aplicar padrão"):
+- workflows/destructive_manage_workflow.go: novo export
+  DestructiveManageConfirmQuestionText(impactNote) — fonte única do texto;
+  destructiveManageConfirmQuestion delega a ele.
+- tools/update_recurrence.go e delete_recurrence.go: o ImpactNote do
+  output (que vira verbatim enviado ao usuário) agora é a PERGUNTA
+  COMPLETA ("⚠️ Você confirma esta operação?\n\n<nota>\n\nResponda *sim*
+  para confirmar ou *não* para cancelar."). O usuário é efetivamente
+  perguntado; o "sim" seguinte executa de verdade.
+- Hardening anti-alucinação: ambas as tools validam uuid.Parse(templateId)
+  ANTES de iniciar o workflow — erro tipado orienta o LLM a obter o ID
+  via list_recurrences (não inicia workflow condenado).
+- Prompt (mecontrola_agent.go, seção Recorrências): instruir chamada
+  IMEDIATA da tool com templateId+version do list_recurrences; proibido
+  redigir pergunta de confirmação própria (elimina o card fabricado do
+  turno 1).
+- Testes: assert da pergunta completa no verbatim (update + delete) e
+  InvalidTemplateID rejeitando "aluguel"/"pensão" antes do engine.Start.
+
+VALIDAÇÃO: go build/vet OK; go test -race -count=1 ./internal/agents/...
+0 falhas; gofmt limpo; golangci-lint 0 issues.
+
+PENDENTE (usuário): commit + CI + deploy. REVALIDAÇÃO PÓS-DEPLOY:
+1) "muda o aluguel para 1600" -> resposta DEVE ser "⚠️ Você confirma esta
+   operação? ... Responda sim ou não" -> "sim" -> "✅ Recorrência
+   atualizada com sucesso." -> banco: 160000, version 2;
+2) "cancela a recorrência da pensão" -> pergunta de confirmação -> "sim"
+   -> "✅ Recorrência removida com sucesso." -> deleted_at preenchido;
+3) "cancela a recorrência do salário do dia 5" -> confirmação -> "sim" ->
+   sobra só salário dia 31;
+4) regressão: mensagem fora de contexto durante confirm pendente ->
+   reprompt claro, e "cancelar" cancela só a operação pendente.

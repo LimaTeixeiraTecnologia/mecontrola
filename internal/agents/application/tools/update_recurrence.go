@@ -99,6 +99,10 @@ func buildUpdateRecurrenceExec(engine wf.Engine[workflows.DestructiveManageState
 			return UpdateRecurrenceOutput{}, fmt.Errorf("agents.tool.update_recurrence: parse resource uuid: %w", err)
 		}
 
+		if _, err := uuid.Parse(in.TemplateID); err != nil {
+			return UpdateRecurrenceOutput{}, fmt.Errorf("agents.tool.update_recurrence: templateId deve ser o UUID obtido via list_recurrences: %w", err)
+		}
+
 		upd := interfaces.RawUpdateRecurrence{
 			Direction:     in.Direction,
 			PaymentMethod: in.PaymentMethod,
@@ -152,7 +156,7 @@ func buildUpdateRecurrenceExec(engine wf.Engine[workflows.DestructiveManageState
 
 		return UpdateRecurrenceOutput{
 			NeedsConfirmation: true,
-			ImpactNote:        impactNote,
+			ImpactNote:        workflows.DestructiveManageConfirmQuestionText(impactNote),
 			TargetRef:         in.TemplateID,
 			TargetKind:        "recurring_template",
 		}, nil
