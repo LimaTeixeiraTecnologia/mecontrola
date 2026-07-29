@@ -1810,3 +1810,21 @@ REC 5 — BACKLOG CONSCIENTE (documentado, não implementado nesta rodada)
     usuário quando multi-fuso for requisito real.
   - Índice (user_id, occurred_at) nas tabelas de transações: criar
     migration quando volumetria justificar (medir antes com EXPLAIN).
+
+VALIDAÇÃO PÓS-DEPLOY RODADA 14 (2026-07-29, run 30447670875, a237da8b) — TUDO VERDE:
+- CI: Quality, Golden Gate real-LLM, Unit, Integration, Governance,
+  Vulnerability, Build/Sign, Deploy Swarm, Healthcheck = success.
+- service.instance.id EM PRODUÇÃO: 4 réplicas exportando spans e
+  distinguíveis no Tempo — worker-1=2120b35098c4, worker-2=7649d977e73f,
+  server-1=23152b955c37, server-2=4f2cddf48b04 (version a237da8b).
+  Gap de "instância indistinguível" da manhã de 2026-07-29 está morto.
+- Alertas: Grafana 11.2.1 não hot-reloada provisioning de alertas;
+  arquivo já estava no container (bind mount) mas exigiu
+  `docker service update --force mecontrola_otel-lgtm` (gap de
+  telemetria ~60s, app não afetado). Após restart: 25 -> 28 rules;
+  mc-outbox-dead-letter, mc-tracing-spans-absent e
+  mc-tracing-export-failed = inactive/ok (avaliando, sem disparo).
+- Pipeline de tracing recuperado pós-restart (3 traces nos 2 min
+  seguintes).
+- PENDENTE: span agent.runtime.execute de mensagem real pós-deploy
+  (aguarda 1 mensagem WhatsApp do usuário — passo 3 da suíte).

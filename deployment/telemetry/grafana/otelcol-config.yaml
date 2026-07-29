@@ -24,6 +24,21 @@ processors:
         type: status_code
         status_code:
           status_codes: [ERROR]
+      - name: agent-flow-policy
+        type: ottl_condition
+        ottl_condition:
+          error_mode: ignore
+          span:
+            - 'name == "agent.runtime.execute"'
+            - 'name == "agent.execute"'
+            - 'name == "agents.route.whatsapp_inbound"'
+            - 'name == "agents.consumer.whatsapp_inbound.handle"'
+            - 'name == "agents.consumer.subscription_bound_welcome.handle"'
+            - 'name == "agents.usecase.handle_inbound"'
+            - 'name == "agents.usecase.resume_dispatcher"'
+            - 'name == "workflow.engine.start"'
+            - 'name == "workflow.engine.resume"'
+            - 'name == "workflow.step.execute"'
       - name: probabilistic-policy
         type: probabilistic
         probabilistic:
