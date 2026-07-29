@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -17,6 +18,7 @@ import (
 	catinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	wf "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
+	txinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 )
 
 type fakeTransactionWriteEngine struct {
@@ -300,6 +302,50 @@ func (s *TransactionWriteStarterSuite) TestEditEntry_WithoutTargetID_CarriesNewV
 	s.Equal("cinema", s.engine.lastState.EditSearchTerm)
 	s.Equal(int64(3000), s.engine.lastState.AmountCents)
 	s.Equal("pix", s.engine.lastState.PaymentMethod)
+}
+
+func (s *TransactionWriteStarterSuite) TestEditEntry_WithTargetID_NotFoundCaiParaBuscaEmVezDeErro() {
+	targetID := uuid.New()
+	s.ledger.EXPECT().
+		GetTransaction(mock.Anything, targetID.String()).
+		Return(interfaces.Entry{}, fmt.Errorf("agents/binding/transactions_ledger: obter transação: %w", txinterfaces.ErrTransactionNotFound)).Once()
+
+	result, err := s.uc.EditEntry(s.ctx, EditEntryCommand{
+		UserID:              s.userID,
+		ThreadID:            "thr-009",
+		WAMID:               "wamid-009",
+		TargetTransactionID: targetID,
+		SearchTerm:          "uber",
+		SearchAmountCents:   3000,
+		AmountCents:         3500,
+	})
+
+	s.Require().NoError(err)
+	s.Equal(agent.ToolOutcomeClarify, result.Outcome)
+	s.True(s.engine.startCalled)
+	s.Equal(workflows.TransactionOpEditEntry, s.engine.lastState.OperationKind)
+	s.Nil(s.engine.lastState.TargetTransactionID)
+	s.Equal(int64(3000), s.engine.lastState.EditSearchAmountCents)
+	s.Equal("uber", s.engine.lastState.EditSearchTerm)
+	s.Equal(int64(3500), s.engine.lastState.AmountCents)
+}
+
+func (s *TransactionWriteStarterSuite) TestEditEntry_WithTargetID_ErroGenericoPropagaSemIniciarWorkflow() {
+	targetID := uuid.New()
+	s.ledger.EXPECT().
+		GetTransaction(mock.Anything, targetID.String()).
+		Return(interfaces.Entry{}, errors.New("conexão com banco indisponível")).Once()
+
+	_, err := s.uc.EditEntry(s.ctx, EditEntryCommand{
+		UserID:              s.userID,
+		ThreadID:            "thr-010",
+		WAMID:               "wamid-010",
+		TargetTransactionID: targetID,
+		AmountCents:         3500,
+	})
+
+	s.Require().Error(err)
+	s.False(s.engine.startCalled)
 }
 
 func (s *TransactionWriteStarterSuite) TestRegisterExpense_ExplicitCategory_CarriesManualEvidenceContract() {

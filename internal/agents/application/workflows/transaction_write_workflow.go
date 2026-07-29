@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,6 +79,8 @@ func makeTransactionWriteStep(ledger interfaces.TransactionsLedger, cards cardNi
 			return handleTransactionCardResume(ctx, state, now, cards)
 		case TransactionAwaitingEditCandidate:
 			return handleTransactionEditCandidateResume(state, now)
+		case TransactionAwaitingEditSearch:
+			return handleTransactionEditSearchResume(ctx, state, now, ledger)
 		case TransactionAwaitingConfirmation:
 			return handleTransactionConfirmationResume(ctx, state, now, ledger, cats, idem, metrics)
 		default:
@@ -155,7 +158,8 @@ func handleTransactionEditSearch(ctx context.Context, state TransactionWriteStat
 	}
 
 	if len(candidates) == 0 {
-		return completeTransaction(state, TransactionWriteStatusCancelled, messages.NoEditCandidateFound())
+		state.Awaiting = TransactionAwaitingEditSearch
+		return suspendTransaction(state, messages.NoEditCandidateFound())
 	}
 
 	if len(candidates) == 1 {
@@ -232,6 +236,36 @@ func handleTransactionEditCandidateResume(state TransactionWriteState, now time.
 	}
 
 	return promoteEditCandidateToConfirmation(state, state.EditCandidates[idx])
+}
+
+func handleTransactionEditSearchResume(ctx context.Context, state TransactionWriteState, now time.Time, ledger interfaces.TransactionsLedger) (workflow.StepOutput[TransactionWriteState], error) {
+	if isTransactionExpired(state, now) {
+		return completeTransaction(state, TransactionWriteStatusExpired, messages.WriteExpired())
+	}
+
+	text := strings.TrimSpace(state.ResumeText)
+
+	if isCancelMessage(text) {
+		return completeTransaction(state, TransactionWriteStatusCancelled, messages.WriteCancelled())
+	}
+
+	if isNewCompleteOperation(text) {
+		return completeTransaction(state, TransactionWriteStatusReplaced, "")
+	}
+
+	if state.RepromptCount >= transactionMaxReprompts {
+		return completeTransaction(state, TransactionWriteStatusCancelled, messages.WriteCancelled())
+	}
+	state.RepromptCount++
+
+	if amountReais, err := strconv.Atoi(text); err == nil && amountReais > 0 {
+		state.EditSearchAmountCents = int64(amountReais) * 100
+	} else {
+		state.EditSearchTerm = text
+	}
+
+	state.Awaiting = 0
+	return handleTransactionEditSearch(ctx, state, ledger)
 }
 
 func promoteEditCandidateToConfirmation(state TransactionWriteState, candidate TransactionEditCandidate) (workflow.StepOutput[TransactionWriteState], error) {
@@ -1080,7 +1114,7 @@ func ContinueTransactionWrite(
 	}
 
 	if resumeErr != nil {
-		return true, result.State.ResponseText, fmt.Errorf("workflows.transaction_write: resume: %w", resumeErr)
+		return true, messages.WriteResumeFailure(), fmt.Errorf("workflows.transaction_write: resume: %w", resumeErr)
 	}
 
 	if result.State.Status == TransactionWriteStatusReplaced && result.State.ResponseText == "" {

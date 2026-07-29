@@ -266,7 +266,7 @@ func parseWeekday(text string, now time.Time) (string, bool) {
 	return result.Format("2006-01-02"), true
 }
 
-func parseInputDate(text string, now time.Time) string {
+func ParseInputDate(text string, now time.Time) string {
 	lower := normalizeText(text)
 	switch lower {
 	case "hoje", "today":

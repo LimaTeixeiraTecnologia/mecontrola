@@ -137,7 +137,7 @@ func DecideTransactionSlotResume(state TransactionWriteState, text string, now t
 			return TransactionSlotDecision{Action: TransactionSlotActionFill, Slot: TransactionAwaitingPaymentMethod, FilledValue: answer.Method}
 		}
 	case TransactionAwaitingDate:
-		if d := parseInputDate(trimmed, now); d != "" {
+		if d := ParseInputDate(trimmed, now); d != "" {
 			return TransactionSlotDecision{Action: TransactionSlotActionFill, Slot: TransactionAwaitingDate, FilledValue: d}
 		}
 	case TransactionAwaitingCard:

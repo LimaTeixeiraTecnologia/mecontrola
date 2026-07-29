@@ -73,6 +73,7 @@ const (
 	TransactionAwaitingDate
 	TransactionAwaitingEditCandidate
 	TransactionAwaitingConfirmation
+	TransactionAwaitingEditSearch
 )
 
 func (a TransactionAwaitingSlot) String() string {
@@ -89,13 +90,15 @@ func (a TransactionAwaitingSlot) String() string {
 		return "edit_candidate"
 	case TransactionAwaitingConfirmation:
 		return "confirmation"
+	case TransactionAwaitingEditSearch:
+		return "edit_search"
 	default:
 		return "unknown"
 	}
 }
 
 func (a TransactionAwaitingSlot) IsValid() bool {
-	return a >= TransactionAwaitingCategory && a <= TransactionAwaitingConfirmation
+	return a >= TransactionAwaitingCategory && a <= TransactionAwaitingEditSearch
 }
 
 func ParseTransactionAwaitingSlot(s string) (TransactionAwaitingSlot, error) {
@@ -112,6 +115,8 @@ func ParseTransactionAwaitingSlot(s string) (TransactionAwaitingSlot, error) {
 		return TransactionAwaitingEditCandidate, nil
 	case "confirmation":
 		return TransactionAwaitingConfirmation, nil
+	case "edit_search":
+		return TransactionAwaitingEditSearch, nil
 	default:
 		return 0, fmt.Errorf("%w: %q", errInvalidTransactionAwaitingSlot, s)
 	}

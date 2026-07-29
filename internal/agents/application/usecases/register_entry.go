@@ -2,11 +2,13 @@ package usecases
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 )
 
@@ -107,12 +109,13 @@ func currentCategoryIDs(current interfaces.Entry) (uuid.UUID, uuid.UUID, error) 
 }
 
 func resolveEntryDate(raw string) string {
-	if raw != "" {
-		return raw
-	}
 	loc, err := time.LoadLocation("America/Sao_Paulo")
 	if err != nil {
 		loc = time.UTC
 	}
-	return time.Now().In(loc).Format("2006-01-02")
+	now := time.Now().In(loc)
+	if d := workflows.ParseInputDate(strings.TrimSpace(raw), now); d != "" {
+		return d
+	}
+	return now.Format("2006-01-02")
 }

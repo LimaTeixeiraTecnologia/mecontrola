@@ -105,6 +105,10 @@ func WriteFailure() string {
 	return "Não consegui registrar. Tente novamente em breve."
 }
 
+func WriteResumeFailure() string {
+	return "Não consegui concluir agora — pode tentar de novo? Se preferir desistir, envie *cancelar*. 🙂"
+}
+
 func CardPrompt() string {
 	return "Qual cartão foi utilizado?"
 }

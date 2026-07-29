@@ -3,6 +3,7 @@ package workflows
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 	ifaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	imocks "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces/mocks"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/messages"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 	txusecases "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/usecases"
 )
@@ -113,6 +115,27 @@ func (s *TransactionWriteWorkflowSuite) TestResume_Confirmation_Accept_DirectWri
 	s.Equal(TransactionWriteStatusCompleted, result.State.Status)
 	s.Equal(txID, result.State.ResourceID)
 	s.NotEmpty(result.State.ResponseText)
+}
+
+func (s *TransactionWriteWorkflowSuite) TestContinue_Confirmation_WriteFailure_NaoRepeteConfirmacaoObsoleta() {
+	state := s.newExpenseState()
+	state.OccurredAt = "2026-07-29"
+	k := s.key("thr-confirm-write-failure")
+
+	s.ledger.EXPECT().
+		CreateTransaction(mock.Anything, mock.Anything).
+		Return(ifaces.EntryRef{}, errors.New("falha forçada de escrita")).
+		Once()
+
+	_, err := s.engine.Start(s.ctx, s.def, k, state)
+	s.Require().NoError(err)
+
+	handled, reply, err := ContinueTransactionWrite(s.ctx, s.engine, s.def, k, "sim", "wamid-write-failure")
+
+	s.Require().Error(err)
+	s.True(handled)
+	s.Equal(messages.WriteResumeFailure(), reply)
+	s.NotContains(reply, "Posso registrar?")
 }
 
 func (s *TransactionWriteWorkflowSuite) TestResume_Confirmation_Cancel() {
@@ -277,7 +300,7 @@ func (s *TransactionWriteWorkflowSuite) TestEditEntry_SingleCandidate_PromotesTo
 	s.Contains(result.State.ResponseText, "Posso atualizar?")
 }
 
-func (s *TransactionWriteWorkflowSuite) TestEditEntry_NoCandidates_Cancels() {
+func (s *TransactionWriteWorkflowSuite) TestEditEntry_NoCandidates_SuspendeAguardandoNovosDetalhes() {
 	s.ledger.EXPECT().
 		SearchEditCandidates(mock.Anything, s.userID, mock.Anything).
 		Return(nil, nil).
@@ -296,6 +319,153 @@ func (s *TransactionWriteWorkflowSuite) TestEditEntry_NoCandidates_Cancels() {
 
 	result, err := s.engine.Start(s.ctx, s.def, k, state)
 
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSuspended, result.Status)
+	s.Equal(TransactionAwaitingEditSearch, result.State.Awaiting)
+	s.Contains(result.State.ResponseText, "Não encontrei um lançamento compatível")
+}
+
+func (s *TransactionWriteWorkflowSuite) TestEditEntry_EditSearchResume_ComNovoTermoEncontraCandidato() {
+	target := uuid.New()
+	catID := uuid.New()
+
+	s.ledger.EXPECT().
+		SearchEditCandidates(mock.Anything, s.userID, mock.Anything).
+		Return(nil, nil).
+		Once()
+	s.ledger.EXPECT().
+		SearchEditCandidates(mock.Anything, s.userID, mock.MatchedBy(func(q ifaces.EditCandidateQuery) bool {
+			return q.Term == "farmácia"
+		})).
+		Return([]ifaces.Entry{{
+			Kind:          ifaces.EntryKindTransaction,
+			ID:            target.String(),
+			AmountCents:   4500,
+			Description:   "farmácia",
+			CategoryID:    catID.String(),
+			PaymentMethod: "pix",
+			OccurredAt:    time.Now().UTC(),
+			Version:       1,
+		}}, nil).
+		Once()
+
+	state := TransactionWriteState{
+		Status:                TransactionWriteStatusActive,
+		OperationKind:         TransactionOpEditEntry,
+		UserID:                s.userID,
+		ResourceID:            s.userID,
+		ThreadID:              "thr-edit-retry",
+		MessageID:             "wamid-edit-retry",
+		EditSearchAmountCents: 4500,
+	}
+	k := s.key("thr-edit-retry")
+
+	result, err := s.engine.Start(s.ctx, s.def, k, state)
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSuspended, result.Status)
+	s.Equal(TransactionAwaitingEditSearch, result.State.Awaiting)
+
+	result, err = s.engine.Resume(s.ctx, s.def, k, s.resumePayload("farmácia"))
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSuspended, result.Status)
+	s.Equal(TransactionAwaitingConfirmation, result.State.Awaiting)
+	s.Require().NotNil(result.State.TargetTransactionID)
+	s.Equal(target, *result.State.TargetTransactionID)
+	s.Equal("farmácia", result.State.EditSearchTerm)
+}
+
+func (s *TransactionWriteWorkflowSuite) TestEditEntry_EditSearchResume_ComValorInteiroAtualizaValorDaBusca() {
+	s.ledger.EXPECT().
+		SearchEditCandidates(mock.Anything, s.userID, mock.Anything).
+		Return(nil, nil).
+		Once()
+	s.ledger.EXPECT().
+		SearchEditCandidates(mock.Anything, s.userID, mock.MatchedBy(func(q ifaces.EditCandidateQuery) bool {
+			return q.AmountCents == 3500 && q.Term == "uber"
+		})).
+		Return(nil, nil).
+		Once()
+
+	state := TransactionWriteState{
+		Status:                TransactionWriteStatusActive,
+		OperationKind:         TransactionOpEditEntry,
+		UserID:                s.userID,
+		ResourceID:            s.userID,
+		ThreadID:              "thr-edit-amount",
+		MessageID:             "wamid-edit-amount",
+		EditSearchTerm:        "uber",
+		EditSearchAmountCents: 3000,
+	}
+	k := s.key("thr-edit-amount")
+
+	result, err := s.engine.Start(s.ctx, s.def, k, state)
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSuspended, result.Status)
+	s.Equal(TransactionAwaitingEditSearch, result.State.Awaiting)
+
+	result, err = s.engine.Resume(s.ctx, s.def, k, s.resumePayload("35"))
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSuspended, result.Status)
+	s.Equal(TransactionAwaitingEditSearch, result.State.Awaiting)
+	s.Equal(int64(3500), result.State.EditSearchAmountCents)
+	s.Equal("uber", result.State.EditSearchTerm)
+}
+
+func (s *TransactionWriteWorkflowSuite) TestEditEntry_EditSearchResume_RepromptCapCancela() {
+	s.ledger.EXPECT().
+		SearchEditCandidates(mock.Anything, s.userID, mock.Anything).
+		Return(nil, nil).
+		Times(2)
+
+	state := TransactionWriteState{
+		Status:                TransactionWriteStatusActive,
+		OperationKind:         TransactionOpEditEntry,
+		UserID:                s.userID,
+		ResourceID:            s.userID,
+		ThreadID:              "thr-edit-cap",
+		MessageID:             "wamid-edit-cap",
+		EditSearchAmountCents: 500,
+	}
+	k := s.key("thr-edit-cap")
+
+	result, err := s.engine.Start(s.ctx, s.def, k, state)
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSuspended, result.Status)
+	s.Equal(TransactionAwaitingEditSearch, result.State.Awaiting)
+
+	result, err = s.engine.Resume(s.ctx, s.def, k, s.resumePayload("termo inexistente"))
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSuspended, result.Status)
+	s.Equal(TransactionAwaitingEditSearch, result.State.Awaiting)
+
+	result, err = s.engine.Resume(s.ctx, s.def, k, s.resumePayload("outro termo inexistente"))
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSucceeded, result.Status)
+	s.Equal(TransactionWriteStatusCancelled, result.State.Status)
+}
+
+func (s *TransactionWriteWorkflowSuite) TestEditEntry_EditSearchResume_CancelarEncerraSemNovaBusca() {
+	s.ledger.EXPECT().
+		SearchEditCandidates(mock.Anything, s.userID, mock.Anything).
+		Return(nil, nil).
+		Once()
+
+	state := TransactionWriteState{
+		Status:                TransactionWriteStatusActive,
+		OperationKind:         TransactionOpEditEntry,
+		UserID:                s.userID,
+		ResourceID:            s.userID,
+		ThreadID:              "thr-edit-cancel",
+		MessageID:             "wamid-edit-cancel",
+		EditSearchAmountCents: 500,
+	}
+	k := s.key("thr-edit-cancel")
+
+	result, err := s.engine.Start(s.ctx, s.def, k, state)
+	s.Require().NoError(err)
+	s.Equal(workflow.RunStatusSuspended, result.Status)
+
+	result, err = s.engine.Resume(s.ctx, s.def, k, s.resumePayload("cancelar"))
 	s.Require().NoError(err)
 	s.Equal(workflow.RunStatusSucceeded, result.Status)
 	s.Equal(TransactionWriteStatusCancelled, result.State.Status)

@@ -14,6 +14,7 @@ import (
 	catinput "github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories/application/dtos/input"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	wf "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
+	txinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/application/interfaces"
 )
 
 type TransactionWriteStarter struct {
@@ -197,19 +198,29 @@ func (uc *TransactionWriteStarter) EditEntry(ctx context.Context, cmd EditEntryC
 
 	if cmd.TargetTransactionID != uuid.Nil {
 		if err := uc.populateEditTarget(ctx, &state, cmd); err != nil {
-			span.RecordError(err)
-			return RegisterResult{}, fmt.Errorf("agents.usecase.transaction_write_starter.edit: %w", err)
+			if !errors.Is(err, txinterfaces.ErrTransactionNotFound) {
+				span.RecordError(err)
+				return RegisterResult{}, fmt.Errorf("agents.usecase.transaction_write_starter.edit: %w", err)
+			}
+			populateEditSearchFallback(&state, cmd)
 		}
 	} else {
-		state.EditSearchAmountCents = cmd.SearchAmountCents
-		state.EditSearchTerm = cmd.SearchTerm
-		state.AmountCents = cmd.AmountCents
-		state.Description = cmd.Description
-		state.OccurredAt = cmd.OccurredAt
-		state.PaymentMethod = cmd.PaymentMethod
+		populateEditSearchFallback(&state, cmd)
 	}
 
 	return uc.start(ctx, span, cmd.UserID, cmd.ThreadID, state)
+}
+
+func populateEditSearchFallback(state *workflows.TransactionWriteState, cmd EditEntryCommand) {
+	state.EditSearchAmountCents = cmd.SearchAmountCents
+	state.EditSearchTerm = cmd.SearchTerm
+	state.AmountCents = cmd.AmountCents
+	state.Description = cmd.Description
+	state.OccurredAt = cmd.OccurredAt
+	if state.OccurredAt != "" {
+		state.OccurredAt = resolveEntryDate(state.OccurredAt)
+	}
+	state.PaymentMethod = cmd.PaymentMethod
 }
 
 func (uc *TransactionWriteStarter) populateEditTarget(ctx context.Context, state *workflows.TransactionWriteState, cmd EditEntryCommand) error {
@@ -292,6 +303,8 @@ func populateEditNewValues(state *workflows.TransactionWriteState, cmd EditEntry
 	state.OccurredAt = cmd.OccurredAt
 	if state.OccurredAt == "" {
 		state.OccurredAt = state.TargetOccurredAt
+	} else {
+		state.OccurredAt = resolveEntryDate(state.OccurredAt)
 	}
 	state.PaymentMethod = cmd.PaymentMethod
 	if cmd.PaymentMethod != "" && cmd.PaymentMethod != current.PaymentMethod {

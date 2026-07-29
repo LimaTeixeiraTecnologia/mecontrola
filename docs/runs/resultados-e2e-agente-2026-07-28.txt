@@ -1828,3 +1828,128 @@ VALIDAÇÃO PÓS-DEPLOY RODADA 14 (2026-07-29, run 30447670875, a237da8b) — TU
   seguintes).
 - PENDENTE: span agent.runtime.execute de mensagem real pós-deploy
   (aguarda 1 mensagem WhatsApp do usuário — passo 3 da suíte).
+
+======================================================================
+RODADA 15 (2026-07-29) — CAUSA RAIZ SPANS + FIX TAIL SAMPLING
+======================================================================
+
+CAUSA RAIZ (evidência, não hipótese): o "gap de spans do agente" da
+manhã de 2026-07-29 NUNCA foi bug de exportador nem instância parada.
+O otelcol (deployment/telemetry/grafana/otelcol-config.yaml) tinha
+tail_sampling com errors-policy (100% erros) + probabilistic-policy
+10%. Traces normais do agente eram descartados em ~90% dos casos:
+- Ontem: 5 traces agent.runtime.execute em 24h ≈ 10% de ~50 runs.
+- Manhã de hoje: 0 spans visíveis em ~15 mensagens (azar estatístico
+  de amostragem pequena).
+- 11:52 UTC: run a4c55345 succeeded (12ms, resposta R$ 293,00 = DB
+  exato) sem trace no Tempo — descarte por sampling confirmado.
+Métricas collector: dropped_spans=0, refused_spans=0 (nada "falhou";
+foi decisão de amostragem).
+
+FIX (run CI 30450340787, ad5bd8d9): nova policy agent-flow-policy
+(ottl_condition) mantém 100% dos traces contendo spans do fluxo
+agentivo — nomes verificados no código: agent.runtime.execute,
+agent.execute, agents.route.whatsapp_inbound,
+agents.consumer.whatsapp_inbound.handle,
+agents.consumer.subscription_bound_welcome.handle,
+agents.usecase.handle_inbound, agents.usecase.resume_dispatcher,
+workflow.engine.start/resume, workflow.step.execute.
+errors-policy e probabilistic-policy (10% p/ ruído) intocadas.
+Config validada com o binário real do collector 0.110.0 em produção
+(otelcol-contrib validate: OK). error_mode=ignore: se condição OTTL
+falhar, volta ao status quo (10%) — nunca quebra o pipeline.
+Deploy exigiu `docker service update --force mecontrola_otel-lgtm`
+(bind mount; spec inalterada não reinicia o serviço). 28 alert rules
+preservadas; pipeline de tracing recuperado em <90s.
+
+PROVA FINAL (2026-07-29 12:20:54 UTC, mensagem "quanto gastei hoje?"):
+- Trace c9bbc305e43cacb80d54279d2562e82c PRESENTE no Tempo — árvore
+  completa: agents.consumer.whatsapp_inbound.handle ->
+  agents.usecase.handle_inbound -> agent.runtime.execute ->
+  shortcut guard -> agents.binding.transactions_ledger.get_day_summary
+  -> transactions.usecase.get_day_summary ->
+  transactions.repository.day_entries.list_day_entries.
+- Resource: service.instance.id=85496ec96ae3 = mecontrola_worker-2
+  (mapeado via docker ps), version=ad5bd8d9.
+- Run b84a142e succeeded, 10ms (shortcut B-14, sem LLM).
+- Resposta = DB exato: R$ 293,00 (farmácia 178,00 + almoço 30,00 +
+  ônibus 35,00 [edição B-02] + dentista 35,00 + café 15,00).
+- Observabilidade do agente em produção agora é DETERMINÍSTICA:
+  100% dos traces do fluxo agentivo retidos; instância identificável
+  em cada span; alertas de ausência/falha de spans e dead-letter ativos.
+
+======================================================================
+RODADA 16 (2026-07-29) — FIX B-17/B-18/B-19 (bugs do Passo 2)
+======================================================================
+
+B-17 (occurredAt literal "hoje" quebrava resume da confirmação):
+- ParseInputDate exportada em workflows/write_shared.go; resolveEntryDate
+  (usecases/register_entry.go) agora resolve qualquer entrada não-vazia
+  via ParseInputDate com fallback "hoje"; starter normaliza OccurredAt
+  também no caminho edit-search e em populateEditNewValues.
+- Regressão: register_entry_test.go (7 casos) PASS.
+
+B-18 (bot reenviava confirmação obsoleta após falha de resume):
+- messages.WriteResumeFailure() nova; ContinueTransactionWrite retorna
+  essa mensagem no erro de resume em vez do ResponseText obsoleto.
+- Regressão: TestContinue_Confirmation_WriteFailure_NaoRepeteConfirmacaoObsoleta PASS.
+
+B-19 (falso positivo: edição com alvo não encontrado matava a pendência
+e a mensagem seguinte virava registro NOVO — R$ 35,00 "água" crédito
+inflou a fatura Nubank para 493,34):
+- Novo slot TransactionAwaitingEditSearch (=7, fim do enum) em
+  transaction_write_state.go (String/Parse/IsValid).
+- handleTransactionEditSearch com 0 candidatos agora SUSPENDE com
+  messages.NoEditCandidateFound() em vez de completar como cancelado
+  (pendência morre -> LLM inventava registro).
+- Novo handler handleTransactionEditSearchResume: expired -> expira;
+  "cancelar" -> cancela; nova operação completa -> Replaced; inteiro
+  puro atualiza EditSearchAmountCents (n*100) mantendo o termo; demais
+  textos viram novo EditSearchTerm; cap transactionMaxReprompts ->
+  cancela; senão re-executa a busca (handleTransactionEditSearch).
+- Starter door 1: EditEntry com TargetTransactionID cujo GetTransaction
+  falha com ErrTransactionNotFound (interfaces de transactions) cai para
+  busca por critério (populateEditSearchFallback) em vez de erro terminal
+  sem workflow. Outros erros continuam propagando.
+- Testes novos/ajustados:
+  TestEditEntry_NoCandidates_SuspendeAguardandoNovosDetalhes,
+  TestEditEntry_EditSearchResume_ComNovoTermoEncontraCandidato,
+  TestEditEntry_EditSearchResume_ComValorInteiroAtualizaValorDaBusca,
+  TestEditEntry_EditSearchResume_RepromptCapCancela,
+  TestEditEntry_EditSearchResume_CancelarEncerraSemNovaBusca,
+  TestEditEntry_WithTargetID_NotFoundCaiParaBuscaEmVezDeErro,
+  TestEditEntry_WithTargetID_ErroGenericoPropagaSemIniciarWorkflow.
+- Detalhe de sentinel: not-found propaga como
+  transactions/application/interfaces.ErrTransactionNotFound (repo ->
+  usecase -> adapter, %w em toda a cadeia); o var homônimo em
+  transactions/application/usecases NÃO casa via errors.Is.
+
+VALIDAÇÃO LOCAL (2026-07-29):
+- gofmt -l: limpo. go build ./... OK. go vet ./... OK.
+- go test -race -count=1 ./internal/agents/... OK.
+- go test -count=1 ./... OK (suíte unitária inteira, 0 falhas).
+- golangci-lint (pinado .tools/bin) ./internal/agents/...: 0 issues.
+
+CLEANUP PENDENTE (aguarda aval do usuário — dado financeiro em produção):
+- Transação falsa confirmada no DB: id 5e0dc158-6dac-4daf-a998-666238c40b5e,
+  "água", 3500 cents, payment_method=7 (crédito), card_id Nubank
+  91323c8b-5d0c-47f9-8276-df26bc748267, version=1, deleted_at NULL,
+  criada 2026-07-29 12:33:30 UTC (09:33 BRT) = run fc9acd58 (B-19).
+- SQL proposto (espelha repository.SoftDelete):
+  UPDATE mecontrola.transactions
+     SET deleted_at = now(), version = version + 1, updated_at = now()
+   WHERE id = '5e0dc158-6dac-4daf-a998-666238c40b5e'
+     AND user_id = '9bbbbbcd-2081-40a8-9780-2b5d818f1580'
+     AND version = 1 AND deleted_at IS NULL;
+
+OBSERVAÇÃO (não tratada nesta rodada): variância de categoria do LLM —
+"almoço no vale" resolveu Custo Fixo em vez de Prazeres > Restaurantes
+em uma das execuções. Comportamento de classificação, não de fluxo.
+
+CLEANUP EXECUTADO (2026-07-29 13:16:07 UTC, com aval do usuário):
+- UPDATE 1 — transação falsa 5e0dc158 soft-deletada (version 1 -> 2,
+  deleted_at preenchido), espelhando repository.SoftDelete.
+- Pós-cleanup: 5 transações ativas no cartão Nubank (825,00 total),
+  todas legítimas de 2026-07-28 (mercado 130, eletrônico 550,
+  crédito 50/45/50). Nenhuma transação de 2026-07-29 restante no
+  cartão. Fatura deixa de incluir os R$ 35,00 fantasmas.
