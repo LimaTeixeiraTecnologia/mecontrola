@@ -17,16 +17,26 @@ const (
 
 type CleanupProcessedMessages struct {
 	repo         MessageRepository
+	consumerRepo ConsumerMessageRepository
 	cfg          configs.WhatsAppConfig
 	o11y         observability.Observability
 	deletedTotal observability.Counter
 	duration     observability.Histogram
 }
 
+type CleanupOption func(*CleanupProcessedMessages)
+
+func WithConsumerRepository(repo ConsumerMessageRepository) CleanupOption {
+	return func(u *CleanupProcessedMessages) {
+		u.consumerRepo = repo
+	}
+}
+
 func NewCleanupProcessedMessages(
 	repo MessageRepository,
 	cfg configs.WhatsAppConfig,
 	o11y observability.Observability,
+	opts ...CleanupOption,
 ) *CleanupProcessedMessages {
 	deletedTotal := o11y.Metrics().Counter(
 		"whatsapp_dedup_housekeeping_deleted_total",
@@ -38,13 +48,17 @@ func NewCleanupProcessedMessages(
 		"Duração total de cada execução do housekeeping de dedup do WhatsApp",
 		"s",
 	)
-	return &CleanupProcessedMessages{
+	u := &CleanupProcessedMessages{
 		repo:         repo,
 		cfg:          cfg,
 		o11y:         o11y,
 		deletedTotal: deletedTotal,
 		duration:     duration,
 	}
+	for _, opt := range opts {
+		opt(u)
+	}
+	return u
 }
 
 func (u *CleanupProcessedMessages) Execute(ctx context.Context) error {
@@ -86,6 +100,18 @@ func (u *CleanupProcessedMessages) Execute(ctx context.Context) error {
 		if n == 0 {
 			break
 		}
+	}
+
+	if u.consumerRepo != nil {
+		n, err := u.consumerRepo.DeleteProcessedBefore(ctx, cutoff)
+		if err != nil {
+			span.RecordError(err)
+			u.o11y.Logger().Error(ctx, "whatsapp.dedup.housekeeping.consumer_delete_failed",
+				observability.Error(err),
+			)
+			return fmt.Errorf("whatsapp.dedup.usecase.cleanup_processed_messages consumer_delete_processed_before: %w", err)
+		}
+		total += n
 	}
 
 	elapsed := time.Since(start).Seconds()

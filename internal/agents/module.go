@@ -93,6 +93,7 @@ type Deps struct {
 	TransactionsModule transactions.TransactionsModule
 	WhatsAppGateway    whatsAppGateway
 	WelcomeDedup       consumers.WelcomeDedupStore
+	InboundDedup       consumers.MessageDedupStore
 	InboundTimeout     time.Duration
 	AgentMaxTokens     int
 }
@@ -366,6 +367,9 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		consumerOpts := []consumers.ConsumerOption{
 			consumers.WithOnboardingResolver(resolveOnboarding),
 			consumers.WithResumeDispatcher(resumeDispatcher),
+		}
+		if deps.InboundDedup != nil {
+			consumerOpts = append(consumerOpts, consumers.WithMessageDedup(deps.InboundDedup))
 		}
 		if deps.InboundTimeout > 0 {
 			consumerOpts = append(consumerOpts, consumers.WithInboundTimeout(deps.InboundTimeout))

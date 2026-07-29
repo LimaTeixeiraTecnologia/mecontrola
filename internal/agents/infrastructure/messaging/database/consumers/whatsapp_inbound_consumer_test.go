@@ -66,6 +66,20 @@ func (m *mockResumeDispatcher) Continue(ctx context.Context, resourceID, threadI
 	return args.Bool(0), args.String(1), args.Error(2)
 }
 
+type mockMessageDedup struct {
+	mock.Mock
+}
+
+func (m *mockMessageDedup) InsertIfAbsent(ctx context.Context, consumer, messageID string) (bool, error) {
+	args := m.Called(ctx, consumer, messageID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *mockMessageDedup) Delete(ctx context.Context, consumer, messageID string) error {
+	args := m.Called(ctx, consumer, messageID)
+	return args.Error(0)
+}
+
 type mockEvent struct {
 	eventType string
 	payload   any
@@ -106,6 +120,7 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 		senderMock     *mockWhatsAppSender
 		onboardingMock *mockOnboardingResolver
 		dispatcherMock *mockResumeDispatcher
+		dedupMock      *mockMessageDedup
 	}
 
 	scenarios := []struct {
@@ -270,7 +285,7 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 			},
 		},
 		{
-			name: "deve suprimir confirmacao alucinada quando run falhou e enviar fallback honesto",
+			name: "deve enviar fallback honesto quando run falhou sem mensagem segura de guard",
 			args: args{
 				event: &mockEvent{
 					eventType: "agents.whatsapp.inbound.v1",
@@ -288,7 +303,7 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 					m.On("Execute", mock.Anything, mock.Anything).
 						Return(agent.Outcome{
 							RunID:   uuid.New(),
-							Content: "Despesa registrada com sucesso ✅ R$150,00",
+							Content: "",
 							Status:  agent.RunStatusFailed,
 							Outcome: agent.ToolOutcomeUsecaseError,
 						}, nil).Once()
@@ -297,6 +312,42 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 				senderMock: func() *mockWhatsAppSender {
 					m := &mockWhatsAppSender{}
 					m.On("SendTextMessage", mock.Anything, "+5511999999999", fallbackReply).
+						Return(nil).Once()
+					return m
+				}(),
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve propagar mensagem segura do guard quando run falhou com conteudo",
+			args: args{
+				event: &mockEvent{
+					eventType: "agents.whatsapp.inbound.v1",
+					payload: buildEnvelope(whatsAppInboundPayload{
+						UserID:    "user-uuid-123",
+						Peer:      "+5511999999999",
+						Text:      "gastei 150 no mercado",
+						MessageID: "wamid-guard-001",
+					}),
+				},
+			},
+			dependencies: dependencies{
+				inboundMock: func() *mockHandleInbound {
+					m := &mockHandleInbound{}
+					m.On("Execute", mock.Anything, mock.Anything).
+						Return(agent.Outcome{
+							RunID:   uuid.New(),
+							Content: "Não consegui registrar. Tente novamente em breve.",
+							Status:  agent.RunStatusFailed,
+							Outcome: agent.ToolOutcomeUsecaseError,
+						}, nil).Once()
+					return m
+				}(),
+				senderMock: func() *mockWhatsAppSender {
+					m := &mockWhatsAppSender{}
+					m.On("SendTextMessage", mock.Anything, "+5511999999999", "Não consegui registrar. Tente novamente em breve.").
 						Return(nil).Once()
 					return m
 				}(),
@@ -616,6 +667,171 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 				s.NoError(err)
 			},
 		},
+		{
+			name: "deve ignorar mensagem duplicada quando dedup retorna inserted=false",
+			args: args{
+				event: &mockEvent{
+					eventType: "agents.whatsapp.inbound.v1",
+					payload: buildEnvelope(whatsAppInboundPayload{
+						UserID:    "user-dedup-001",
+						Peer:      "+5511999990001",
+						Text:      "gastei 30 no uber",
+						MessageID: "wamid-dedup-001",
+					}),
+				},
+			},
+			dependencies: dependencies{
+				inboundMock: &mockHandleInbound{},
+				senderMock:  &mockWhatsAppSender{},
+				dedupMock: func() *mockMessageDedup {
+					m := &mockMessageDedup{}
+					m.On("InsertIfAbsent", mock.Anything, whatsAppInboundConsumerName, "wamid-dedup-001").
+						Return(false, nil).Once()
+					return m
+				}(),
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve propagar erro quando InsertIfAbsent do dedup falha",
+			args: args{
+				event: &mockEvent{
+					eventType: "agents.whatsapp.inbound.v1",
+					payload: buildEnvelope(whatsAppInboundPayload{
+						UserID:    "user-dedup-002",
+						Peer:      "+5511999990002",
+						Text:      "quanto gastei",
+						MessageID: "wamid-dedup-002",
+					}),
+				},
+			},
+			dependencies: dependencies{
+				inboundMock: &mockHandleInbound{},
+				senderMock:  &mockWhatsAppSender{},
+				dedupMock: func() *mockMessageDedup {
+					m := &mockMessageDedup{}
+					m.On("InsertIfAbsent", mock.Anything, whatsAppInboundConsumerName, "wamid-dedup-002").
+						Return(false, errors.New("db indisponivel")).Once()
+					return m
+				}(),
+			},
+			expect: func(err error) {
+				s.Error(err)
+				s.Contains(err.Error(), "dedup")
+			},
+		},
+		{
+			name: "deve compensar dedup com Delete quando processamento falha",
+			args: args{
+				event: &mockEvent{
+					eventType: "agents.whatsapp.inbound.v1",
+					payload: buildEnvelope(whatsAppInboundPayload{
+						UserID:    "user-dedup-003",
+						Peer:      "+5511999990003",
+						Text:      "quanto gastei",
+						MessageID: "wamid-dedup-003",
+					}),
+				},
+			},
+			dependencies: dependencies{
+				inboundMock: func() *mockHandleInbound {
+					m := &mockHandleInbound{}
+					m.On("Execute", mock.Anything, mock.Anything).
+						Return(agent.Outcome{}, errors.New("runtime falhou")).Once()
+					return m
+				}(),
+				senderMock: &mockWhatsAppSender{},
+				dedupMock: func() *mockMessageDedup {
+					m := &mockMessageDedup{}
+					m.On("InsertIfAbsent", mock.Anything, whatsAppInboundConsumerName, "wamid-dedup-003").
+						Return(true, nil).Once()
+					m.On("Delete", mock.Anything, whatsAppInboundConsumerName, "wamid-dedup-003").
+						Return(nil).Once()
+					return m
+				}(),
+			},
+			expect: func(err error) {
+				s.Error(err)
+				s.Contains(err.Error(), "handle inbound")
+			},
+		},
+		{
+			name: "nao deve compensar dedup quando erro e de envio de reply",
+			args: args{
+				event: &mockEvent{
+					eventType: "agents.whatsapp.inbound.v1",
+					payload: buildEnvelope(whatsAppInboundPayload{
+						UserID:    "user-dedup-004",
+						Peer:      "+5511999990004",
+						Text:      "quanto gastei",
+						MessageID: "wamid-dedup-004",
+					}),
+				},
+			},
+			dependencies: dependencies{
+				inboundMock: func() *mockHandleInbound {
+					m := &mockHandleInbound{}
+					m.On("Execute", mock.Anything, mock.Anything).
+						Return(agent.Outcome{
+							Content: "📊 Você gastou R$ 100,00.",
+							Status:  agent.RunStatusSucceeded,
+						}, nil).Once()
+					return m
+				}(),
+				senderMock: func() *mockWhatsAppSender {
+					m := &mockWhatsAppSender{}
+					m.On("SendTextMessage", mock.Anything, "+5511999990004", "📊 Você gastou R$ 100,00.").
+						Return(errors.New("gateway indisponivel")).Once()
+					return m
+				}(),
+				dedupMock: func() *mockMessageDedup {
+					m := &mockMessageDedup{}
+					m.On("InsertIfAbsent", mock.Anything, whatsAppInboundConsumerName, "wamid-dedup-004").
+						Return(true, nil).Once()
+					return m
+				}(),
+			},
+			expect: func(err error) {
+				s.Error(err)
+				s.True(errors.Is(err, errSendReply))
+			},
+		},
+		{
+			name: "deve processar sem dedup quando MessageID vazio",
+			args: args{
+				event: &mockEvent{
+					eventType: "agents.whatsapp.inbound.v1",
+					payload: buildEnvelope(whatsAppInboundPayload{
+						UserID: "user-dedup-005",
+						Peer:   "+5511999990005",
+						Text:   "quanto gastei",
+					}),
+				},
+			},
+			dependencies: dependencies{
+				inboundMock: func() *mockHandleInbound {
+					m := &mockHandleInbound{}
+					m.On("Execute", mock.Anything, mock.Anything).
+						Return(agent.Outcome{
+							Content: "📊 Você gastou R$ 50,00.",
+							Status:  agent.RunStatusSucceeded,
+						}, nil).Once()
+					return m
+				}(),
+				senderMock: func() *mockWhatsAppSender {
+					m := &mockWhatsAppSender{}
+					m.On("SendTextMessage", mock.Anything, "+5511999990005", "📊 Você gastou R$ 50,00.").
+						Return(nil).Once()
+					return m
+				}(),
+				dedupMock: &mockMessageDedup{},
+			},
+			expect: func(err error) {
+				s.NoError(err)
+			},
+		},
 	}
 
 	for _, scenario := range scenarios {
@@ -626,6 +842,9 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 			}
 			if scenario.dependencies.dispatcherMock != nil {
 				opts = append(opts, WithResumeDispatcher(scenario.dependencies.dispatcherMock))
+			}
+			if scenario.dependencies.dedupMock != nil {
+				opts = append(opts, WithMessageDedup(scenario.dependencies.dedupMock))
 			}
 			consumer := NewWhatsAppInboundConsumer(
 				scenario.dependencies.inboundMock,
@@ -642,6 +861,9 @@ func (s *WhatsAppInboundConsumerSuite) TestHandle() {
 			}
 			if scenario.dependencies.dispatcherMock != nil {
 				scenario.dependencies.dispatcherMock.AssertExpectations(s.T())
+			}
+			if scenario.dependencies.dedupMock != nil {
+				scenario.dependencies.dedupMock.AssertExpectations(s.T())
 			}
 		})
 	}

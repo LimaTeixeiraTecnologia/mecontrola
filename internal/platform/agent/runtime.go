@@ -266,7 +266,7 @@ func (r *agentRuntime) finishRun(ctx context.Context, run Run, platformThreadID 
 	r.closeRun(ctx, run, runStatus, toolOutcome, errStr, start)
 
 	content := result.Content
-	if runStatus != RunStatusSucceeded {
+	if runStatus != RunStatusSucceeded && result.FailureReason == "" {
 		content = ""
 	}
 

@@ -462,6 +462,7 @@ func (s *RuntimeTestSuite) TestExecute_GuardForcedFailure_PersistsFailureReason(
 	s.NoError(err)
 	s.Equal(RunStatusFailed, outcome.Status)
 	s.Equal(ToolOutcomeUsecaseError, outcome.Outcome)
+	s.Equal("Não consegui registrar. Tente novamente em breve.", outcome.Content)
 	s.Require().Len(runs.updated, 1)
 	s.Equal(RunStatusFailed, runs.updated[0].Status)
 	s.Equal("guard category_without_tool: pergunta de categoria fabricada pelo LLM sem tool call", runs.updated[0].Error)

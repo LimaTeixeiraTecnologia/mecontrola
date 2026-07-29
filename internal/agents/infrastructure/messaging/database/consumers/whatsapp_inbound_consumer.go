@@ -38,6 +38,15 @@ type whatsAppTextSender interface {
 	SendTextMessage(ctx context.Context, toE164, text string) error
 }
 
+type MessageDedupStore interface {
+	InsertIfAbsent(ctx context.Context, consumer, messageID string) (bool, error)
+	Delete(ctx context.Context, consumer, messageID string) error
+}
+
+const whatsAppInboundConsumerName = "whatsapp_inbound"
+
+var errSendReply = errors.New("send reply")
+
 type whatsAppInboundPayload struct {
 	UserID    string `json:"user_id"`
 	Peer      string `json:"peer"`
@@ -67,12 +76,19 @@ func WithInboundTimeout(d time.Duration) ConsumerOption {
 	}
 }
 
+func WithMessageDedup(store MessageDedupStore) ConsumerOption {
+	return func(c *WhatsAppInboundConsumer) {
+		c.dedup = store
+	}
+}
+
 type WhatsAppInboundConsumer struct {
 	handleInbound     handleInboundUseCase
 	gateway           whatsAppTextSender
 	o11y              observability.Observability
 	resolveOnboarding onboardingResolver
 	resumeDispatcher  resumeDispatcherResolver
+	dedup             MessageDedupStore
 	inboundTimeout    time.Duration
 	inboundTotal      observability.Counter
 	decodeFails       observability.Counter
@@ -135,9 +151,27 @@ func (c *WhatsAppInboundConsumer) Handle(ctx context.Context, event events.Event
 		return fmt.Errorf("agents.consumer.whatsapp_inbound: deserializar payload: %w", err)
 	}
 
-	if p.UserID == "" || p.Peer == "" || p.Text == "" || p.MessageID == "" {
+	if p.UserID == "" || p.Peer == "" || p.Text == "" {
 		c.decodeFails.Add(ctx, 1, observability.String("channel", "whatsapp"))
-		return fmt.Errorf("agents.consumer.whatsapp_inbound: payload incompleto: user_id=%q peer=%q text=%q message_id=%q", p.UserID, p.Peer, p.Text, p.MessageID)
+		return fmt.Errorf("agents.consumer.whatsapp_inbound: payload incompleto: user_id=%q peer=%q text=%q", p.UserID, p.Peer, p.Text)
+	}
+
+	if c.dedup != nil && p.MessageID != "" {
+		inserted, err := c.dedup.InsertIfAbsent(ctx, whatsAppInboundConsumerName, p.MessageID)
+		if err != nil {
+			span.RecordError(err)
+			return fmt.Errorf("agents.consumer.whatsapp_inbound: dedup: %w", err)
+		}
+		if !inserted {
+			c.inboundTotal.Add(ctx, 1,
+				observability.String("channel", "whatsapp"),
+				observability.String("outcome", "deduplicated"),
+			)
+			c.o11y.Logger().Info(ctx, "agents.consumer.whatsapp_inbound: mensagem duplicada ignorada",
+				observability.String("message_id", p.MessageID),
+			)
+			return nil
+		}
 	}
 
 	if c.inboundTimeout > 0 {
@@ -147,10 +181,20 @@ func (c *WhatsAppInboundConsumer) Handle(ctx context.Context, event events.Event
 	}
 
 	if handled, err := c.tryResume(ctx, span, p); handled || err != nil {
-		return err
+		return c.compensateDedup(ctx, p.MessageID, err)
 	}
 
-	return c.handleAgentInbound(ctx, span, p)
+	return c.compensateDedup(ctx, p.MessageID, c.handleAgentInbound(ctx, span, p))
+}
+
+func (c *WhatsAppInboundConsumer) compensateDedup(ctx context.Context, messageID string, processErr error) error {
+	if processErr == nil || c.dedup == nil || messageID == "" || errors.Is(processErr, errSendReply) {
+		return processErr
+	}
+	if err := c.dedup.Delete(ctx, whatsAppInboundConsumerName, messageID); err != nil {
+		return errors.Join(processErr, fmt.Errorf("agents.consumer.whatsapp_inbound: compensar dedup: %w", err))
+	}
+	return processErr
 }
 
 func (c *WhatsAppInboundConsumer) tryResume(ctx context.Context, span observability.Span, p whatsAppInboundPayload) (bool, error) {
@@ -227,7 +271,7 @@ func (c *WhatsAppInboundConsumer) handleAgentInbound(ctx context.Context, span o
 		return fmt.Errorf("agents.consumer.whatsapp_inbound: handle inbound: %w", err)
 	}
 	if !outcome.Succeeded() {
-		return c.sendReply(ctx, p.Peer, fallbackReply, "not_confirmed")
+		return c.sendReply(ctx, p.Peer, outcome.Content, "not_confirmed")
 	}
 	return c.sendReply(ctx, p.Peer, outcome.Content, "success")
 }
@@ -246,7 +290,7 @@ func (c *WhatsAppInboundConsumer) sendReply(ctx context.Context, peer, content, 
 			observability.String("channel", "whatsapp"),
 			observability.String("outcome", "send_error"),
 		)
-		return fmt.Errorf("agents.consumer.whatsapp_inbound: send reply: %w", err)
+		return fmt.Errorf("agents.consumer.whatsapp_inbound: %w: %w", errSendReply, err)
 	}
 
 	c.inboundTotal.Add(ctx, 1,

@@ -24,12 +24,55 @@ func TestCleanupProcessedMessagesSuite(t *testing.T) {
 	suite.Run(t, new(CleanupProcessedMessagesSuite))
 }
 
+type fakeConsumerMessageRepository struct {
+	calls   int
+	deleted int64
+	err     error
+}
+
+func (f *fakeConsumerMessageRepository) DeleteProcessedBefore(_ context.Context, _ time.Time) (int64, error) {
+	f.calls++
+	return f.deleted, f.err
+}
+
 func (s *CleanupProcessedMessagesSuite) SetupTest() {
 	s.repoMock = mocks.NewMessageRepository(s.T())
 }
 
 func (s *CleanupProcessedMessagesSuite) newUseCase(cfg configs.WhatsAppConfig) *dedup.CleanupProcessedMessages {
 	return dedup.NewCleanupProcessedMessages(s.repoMock, cfg, noop.NewProvider())
+}
+
+func (s *CleanupProcessedMessagesSuite) TestExecuteCleansConsumerProcessedMessages() {
+	s.repoMock.EXPECT().DeleteProcessedBefore(mock.Anything, mock.Anything, 10000).Return(int64(0), nil).Once()
+
+	consumerRepo := &fakeConsumerMessageRepository{deleted: 7}
+	uc := dedup.NewCleanupProcessedMessages(
+		s.repoMock,
+		configs.WhatsAppConfig{},
+		noop.NewProvider(),
+		dedup.WithConsumerRepository(consumerRepo),
+	)
+
+	err := uc.Execute(context.Background())
+	s.Require().NoError(err)
+	s.Equal(1, consumerRepo.calls)
+}
+
+func (s *CleanupProcessedMessagesSuite) TestExecutePropagatesConsumerRepositoryError() {
+	s.repoMock.EXPECT().DeleteProcessedBefore(mock.Anything, mock.Anything, 10000).Return(int64(0), nil).Once()
+
+	consumerRepo := &fakeConsumerMessageRepository{err: errors.New("consumer db error")}
+	uc := dedup.NewCleanupProcessedMessages(
+		s.repoMock,
+		configs.WhatsAppConfig{},
+		noop.NewProvider(),
+		dedup.WithConsumerRepository(consumerRepo),
+	)
+
+	err := uc.Execute(context.Background())
+	s.Require().Error(err)
+	s.Contains(err.Error(), "consumer db error")
 }
 
 func (s *CleanupProcessedMessagesSuite) TestExecute() {

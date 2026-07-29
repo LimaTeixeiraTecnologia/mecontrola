@@ -2085,3 +2085,167 @@ VALIDAÇÃO PÓS-DEPLOY B-21 (run CI 30461932197, 2a8375e8, 2026-07-29
 RESULTADO: B-21 MORTO EM PRODUÇÃO. Fecha a revalidação ponta a ponta
 do fluxo de edição com busca (B-19 + B-21): 0 regressão, 0 falso
 positivo, evidência cruzada DB/outbox/workflow.
+
+PROVA FINAL DE FOGO REAL (2026-07-29 15:01 UTC / 12:01 BRT):
+1. "edita o lançamento de 999 do circo" -> guard multi_item_false_block
+   re-perguntou com segurança (run 7b116ed6, 0 workflow, 0 transação).
+   Comportamento por design, registrado.
+2. "no circo eu gastei 999 e não 900" -> shortcut determinístico ->
+   edit_entry -> 0 candidatos -> "Não encontrei um lançamento
+   compatível..." com PENDÊNCIA VIVA (workflow 3192d20c, op=3,
+   awaiting=7=edit_search — slot novo do B-19 em produção).
+3. "cancelar" -> resume -> workflow cancelado (tx_status=3), run
+   succeeded. ZERO transação criada (B-19 porta 2 morto em produção).
+4. "sim" solto -> LLM tentou FABRICAR "Prontinho! ✅ Mais um passo
+   rumo aos seus objetivos! 🚀 💚" -> guard success_without_tool
+   (marcador "prontinho" do B-20b) BLOQUEOU: run 26ba7710 failed com
+   o texto fabricado registrado no campo error (evidência de bloqueio),
+   usuário recebeu fallback seguro "não consegui concluir agora, pode
+   repetir?". Sem o fix, o usuário teria recebido o sucesso falso
+   (como às 10:34). B-20b PROVADO EM PRODUÇÃO.
+- Outbox: 3 eventos, attempts=0, zero retry, zero erro.
+- Detalhe UX registrado (não bloqueante): quando o guard força
+  ToolOutcomeUsecaseError, o consumer envia o fallbackReply genérico
+  em vez do conteúdo do guard ("Não consegui registrar. Tente
+  novamente em breve.").
+
+VEREDITO FINAL DO ESCOPO VALIDADO (registro, edição/busca, confirmação,
+cancelamento, falso sucesso, duplicação): todos os caminhos exercitados
+em produção com evidência cruzada DB/outbox/workflow/traces.
+0 regressão, 0 falso positivo entregue ao usuário, 0 duplicação.
+B-17, B-18, B-19, B-20, B-21: MORTOS E PROVADOS.
+Ressalvas documentadas (não bloqueantes): variância de categoria do
+LLM fora dos shortcuts; idempotência por wamid no worker (gatilho
+observado eliminado via timeout 90s; vetor residual documentado);
+fallbackReply genérico quando guard força erro.
+
+======================================================================
+RODADA 19 — 2026-07-29 (tarde) — Eliminação das 3 ressalvas + fix
+determinístico "no vale" (implementação; validação em produção
+PENDENTE de deploy)
+======================================================================
+
+CONTEXTO: o veredito da rodada anterior fechou com 3 ressalvas
+documentadas: (a) idempotência por wamid no worker; (b) fallbackReply
+genérico quando guard força erro; (c) variância de categoria do LLM
+fora dos shortcuts. Esta rodada implementa a eliminação das três,
+mais alerta de bloqueio de guard, com 0 regressão.
+
+ITEM 2 — IDEMPOTÊNCIA POR WAMID NO CONSUMER (ressalva a ELIMINADA)
+- Problema: consumer whatsapp_inbound sem dedup; retry de evento
+  (ex.: envio de reply falhou) reprocessava a mensagem do usuário,
+  causando respostas/lançamentos duplicados.
+- Migration 000011_consumer_processed_messages (up+down): tabela
+  mecontrola.consumer_processed_messages (consumer, message_id,
+  processed_at; PK composta; índice processed_at), espelhando
+  channel_processed_messages do webhook. Tabela NOVA — o webhook já
+  insere o wamid na dele, reuso causaria conflito permanente.
+- Repo nova: dedup/postgres.ConsumerDedupRepository (InsertIfAbsent
+  ON CONFLICT DO NOTHING, Delete p/ compensação,
+  DeleteProcessedBefore p/ housekeeping, integrada ao job de cleanup
+  existente com a mesma retenção).
+- Consumer: dedup após decode (message_id vazio processa sem dedup);
+  duplicado -> métrica outcome=deduplicated + return nil.
+  Compensação (Delete) em qualquer erro posterior EXCETO erro de
+  envio de reply (sentinel errSendReply, duplo %w): se o envio foi
+  tentado, o processamento já ocorreu — at-most-once é mais seguro
+  que double-processing.
+- Wiring: cmd/worker + cmd/server + internal/agents/module.go
+  (Deps.InboundDedup, option WithMessageDedup).
+- Testes: 5 cenários no consumer (skip duplicado, erro insert,
+  compensação, não-compensação em send error, message_id vazio) +
+  housekeeping + migrations_integration_test (up/down/up) — verde.
+
+ITEM 3 — FALLBACK UX: PROPAGAR MENSAGEM SEGURA DO GUARD (ressalva b
+ELIMINADA)
+- Causa raiz: runtime.finishRun zerava Outcome.Content em TODA falha
+  (runtime.go), então a mensagem segura do guard ("Não consegui
+  registrar. Tente novamente em breve.") nunca chegava ao usuário —
+  caía no genérico "não consegui concluir agora, pode repetir?".
+- Fix: content preservado em falha SOMENTE quando FailureReason != ""
+  (setado exclusivamente por guards, que por contrato substituem o
+  Content por mensagem segura — verificado em todos os guards que
+  forçam ToolOutcomeUsecaseError: success_without_tool,
+  confirmation_without_tool, category_without_tool). Falhas sem
+  guard (tool error, truncamento, conclusão vazia) seguem com
+  content zerado -> consumer cai no fallback genérico (sendReply já
+  trata vazio). Contrato anti-falso-positivo preservado.
+- Testes: runtime (guard forced -> content preservado) + consumer
+  (falha com content -> envia content; falha sem content ->
+  fallback) — verde.
+
+ITEM 6 — ALERTA DE BLOQUEIO DE GUARD
+- A métrica agent_guard_decisions_total{guard, decision=handled|pass}
+  JÁ existia (guard_chain.go). Faltava o alerta.
+- Nova regra Grafana mc-agent-guard-false-success-blocked (grupo
+  agente, warning): increase de decision=handled nos guards
+  success_without_tool|confirmation_without_tool|
+  category_without_tool > 0 em 5m — cada bloqueio é um falso
+  positivo evitado, mas gera mensagem de falha ao usuário e precisa
+  de investigação (run + arguments do tool call).
+
+ITEM 4 — VARIÂNCIA DE CATEGORIA DO LLM (ressalva c: causa
+identificada + fix determinístico)
+- Investigação (sem inventar fix): a classificação é híbrida — o LLM
+  só extrai argumentos; a categoria é resolvida por busca
+  determinística (dicionário SQL exato -> tokens -> fuzzy pg_trgm).
+  A frase "gastei 30 no almoço no vale" NUNCA passava pelo shortcut
+  determinístico porque "vale" era blocker (ambiguidade com nome de
+  lugar).
+- EVIDÊNCIA VPS (runs 09:26 BRT / 12:26 UTC, user 9bbbbbcd):
+  platform_messages mostra que o LLM preencheu categoryText com
+  "Custo Fixo" (proibido pelo system prompt quando o usuário não
+  cita categoria) -> prompt "Dentro de Custo Fixo, qual
+  subcategoria?" -> usuário respondeu "1" -> Açougue (ordem
+  alfabética pt-BR) -> registrou errado. Runs 12:26:40-12:27:31
+  confirmam a sequência, incluindo 2 falhas idempotent_write no
+  resume. Variância inerente à fronteira LLM (mesmo com
+  temperature=0: alias flutuante gpt-4o-mini + histórico de 20
+  mensagens injetado no prompt variam entre execuções).
+- Fix determinístico (register_expense_shortcut.go): "vale" saiu dos
+  blockers e virou sufixo de pagamento (vale/vale refeição/vr ->
+  vale_refeicao; vale alimentação/va -> vale_alimentacao), com
+  split do sufixo ANTES da checagem de blockers (blockers agora
+  avaliam o body sem o sufixo de pagamento). A frase de produção
+  agora resolve 100% determinística: descrição "almoço" + pagamento
+  vale-refeição + confirmação humana antes de gravar.
+  Trade-off aceito e mitigado pela confirmação: "gastei 50 no
+  shopping vale" seria lido como pagamento vale (descrição
+  "shopping") — usuário vê na confirmação e pode cancelar.
+  "vale-refeição" com hífen segue fora do shortcut (regex não casa
+  hífen) — comportamento preservado.
+- Complemento: drop silencioso de candidato em
+  EnrichCandidatesFromSearch (ResolveForWrite falhava -> continue
+  sem rastro) agora loga Warn via slog com matched_term + erro —
+  visibilidade no Loki para o vetor "1 candidato -> 0 -> prompt de
+  raízes errado".
+- Testes: 6 cenários novos/ajustados no shortcut (vale pelado, vale
+  refeição/alimentação extensos, vr, va, hífen preservado) — verde.
+
+RECOMENDAÇÃO NÃO APLICADA (decisão consciente, não esquecimento):
+pinar o modelo LLM (openai/gpt-4o-mini -> snapshot datado) em
+deployment/config/prod.env eliminaria drift de snapshot do
+OpenRouter, mas não é validável localmente (nome de snapshot errado
+derruba produção) — fica para o usuário decidir com acesso ao
+OpenRouter.
+
+VALIDAÇÃO LOCAL (tudo verde):
+- gofmt -l: vazio. go build ./... + go vet ./...: OK.
+- go test -race -count=1 no escopo (agents, platform/agent,
+  platform/whatsapp, cmd): 25 pacotes ok, 0 falhas.
+- ./.tools/bin/golangci-lint run no escopo: 0 issues.
+- migrations_integration_test (docker real): up/down/up da 000011.
+
+PENDENTE P/ PRÓXIMA RODADA (pós-deploy do usuário):
+1. CI verde (gh run watch).
+2. Prova de idempotência em produção: forçar re-entrega de um
+   evento inbound já processado e confirmar outcome=deduplicated,
+   zero mensagem duplicada no WhatsApp.
+3. "gastei 30 no almoço no vale" -> confirmação DIRETA com
+   pagamento vale-refeição (sem LLM, sem pergunta de categoria).
+4. Guard forçado -> usuário recebe "Não consegui registrar. Tente
+   novamente em breve." (não o genérico).
+5. Alerta mc-agent-guard-false-success-blocked visível no Grafana.
+6. Executar docs/runs/suite-fogo-real-fluxos-nao-cobertos.md
+   (recorrências, budgets, onboarding, parcelas, cartões, edição
+   avançada, exclusão).

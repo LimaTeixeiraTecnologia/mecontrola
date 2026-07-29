@@ -96,6 +96,8 @@ func (s *MigrationSuite) TestBaselineUpDownUp() {
 	s.assertTablePresent("mecontrola.transactions")
 	s.assertTablePresent("mecontrola.user_identities")
 	s.assertTablePresent("mecontrola.channel_processed_messages")
+	s.assertTablePresent("mecontrola.consumer_processed_messages")
+	s.assertIndexPresent("mecontrola", "consumer_processed_messages_processed_at_idx")
 	s.assertTablePresent("mecontrola.budget_alerts_sent")
 	s.assertTablePresent("mecontrola.onboarding_tokens")
 	s.assertTablePresent("mecontrola.onboarding_activation_nomatch_throttle")
@@ -129,6 +131,8 @@ func (s *MigrationSuite) TestBaselineUpDownUp() {
 	s.assertTableMissing("mecontrola.users")
 	s.assertTableMissing("mecontrola.onboarding_activation_nomatch_throttle")
 	s.assertTableMissing("mecontrola.onboarding_welcome_processed")
+	s.assertTableMissing("mecontrola.consumer_processed_messages")
+	s.assertIndexMissing("mecontrola", "consumer_processed_messages_processed_at_idx")
 	s.assertIndexMissing("mecontrola", "onboarding_tokens_mobile_activable_idx")
 	s.assertIndexMissing("mecontrola", "outbox_events_user_pending_occurred_idx")
 	s.assertIndexMissing("mecontrola", "outbox_events_user_inflight_uidx")
@@ -219,7 +223,7 @@ func (s *MigrationSuite) TestReconcilePlatformThreadColumnsFromLegacy() {
 
 	version, dirty, err := migrator.Version()
 	s.Require().NoError(err)
-	s.Equal(uint(10), version)
+	s.Equal(uint(11), version)
 	s.False(dirty)
 }
 
@@ -235,7 +239,7 @@ func (s *MigrationSuite) TestReconcileIsNoopOnFreshBaseline() {
 
 	version, dirty, err := migrator.Version()
 	s.Require().NoError(err)
-	s.Equal(uint(10), version)
+	s.Equal(uint(11), version)
 	s.False(dirty)
 }
 

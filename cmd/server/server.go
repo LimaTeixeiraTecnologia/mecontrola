@@ -31,6 +31,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/http/server/health"
 	openapidocs "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/http/server/openapi"
+	deduppostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
 )
 
@@ -238,6 +239,7 @@ func Run() error {
 		TransactionsModule: transactionsModule,
 		WhatsAppGateway:    onboardingModule.WhatsAppGateway,
 		WelcomeDedup:       onboardingpostgres.NewWelcomeDedupRepository(o11y, db),
+		InboundDedup:       deduppostgres.NewConsumerDedupRepository(db),
 		InboundTimeout:     cfg.AgentConfig.InboundTimeout,
 		AgentMaxTokens:     cfg.AgentConfig.MecontrolaMaxTokens,
 	})

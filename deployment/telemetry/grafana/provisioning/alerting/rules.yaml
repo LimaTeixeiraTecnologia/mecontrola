@@ -642,6 +642,38 @@ groups:
                   query: { params: [C] }
                   evaluator: { type: gt, params: [1] }
 
+      - uid: mc-agent-guard-false-success-blocked
+        title: Guard bloqueou confirmacao fabricada pelo LLM
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Guard de escrita bloqueou confirmacao/categoria fabricada pelo LLM sem tool call."
+          description: "Cada bloqueio e um falso positivo evitado, mas o usuario recebeu mensagem de falha. Investigar o run (campo error com prefixo 'guard <nome>:'), os argumentos do tool call e a conformidade do modelo com o system prompt. Se recorrente para o mesmo guard, revisar prompt ou promover o caminho para shortcut deterministico."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(increase(agent_guard_decisions_total{decision="handled", guard=~"success_without_tool|confirmation_without_tool|category_without_tool"}[5m]))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0] }
+
   - orgId: 1
     name: pool
     folder: MeControla Alerts

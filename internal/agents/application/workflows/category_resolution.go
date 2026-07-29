@@ -3,6 +3,7 @@ package workflows
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
@@ -110,6 +111,10 @@ func EnrichCandidatesFromSearch(ctx context.Context, reader categorySearcher, re
 			ExpectedVersion: expectedVersion,
 		})
 		if err != nil {
+			slog.WarnContext(ctx, "agents.workflows.category_resolution: candidato descartado ao resolver para escrita",
+				"matched_term", c.MatchedTerm,
+				"error", err.Error(),
+			)
 			continue
 		}
 		if decision.SubcategoryID == (uuid.UUID{}) || decision.SubcategoryID == decision.RootCategoryID {

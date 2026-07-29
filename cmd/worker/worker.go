@@ -230,6 +230,8 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		return nil, fmt.Errorf("worker: inicializar modulo budgets: %w", err)
 	}
 
+	consumerDedupRepo := deduppostgres.NewConsumerDedupRepository(r.db)
+
 	agentsModule, err := agents.NewModule(agents.Deps{
 		DB:              r.db,
 		O11y:            r.o11y,
@@ -248,6 +250,7 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		TransactionsModule: transactionsModule,
 		WhatsAppGateway:    onboardingModule.WhatsAppGateway,
 		WelcomeDedup:       onboardingpostgres.NewWelcomeDedupRepository(r.o11y, r.db),
+		InboundDedup:       consumerDedupRepo,
 		InboundTimeout:     r.cfg.AgentConfig.InboundTimeout,
 		AgentMaxTokens:     r.cfg.AgentConfig.MecontrolaMaxTokens,
 	})
@@ -293,7 +296,7 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 	}
 
 	dedupRepo := deduppostgres.NewMessageRepository(r.o11y, r.db)
-	dedupCleanup := dedup.NewCleanupProcessedMessages(dedupRepo, r.cfg.WhatsAppConfig, r.o11y)
+	dedupCleanup := dedup.NewCleanupProcessedMessages(dedupRepo, r.cfg.WhatsAppConfig, r.o11y, dedup.WithConsumerRepository(consumerDedupRepo))
 	dedupHousekeepingJob := deduphandlers.NewDedupHousekeepingJob(dedupCleanup, r.cfg.WhatsAppConfig)
 
 	jobs := make([]worker.Job, 0, 10)
