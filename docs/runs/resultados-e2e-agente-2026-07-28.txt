@@ -2820,3 +2820,108 @@ PENDENTE (usuário): commit + CI + deploy. REVALIDAÇÃO PÓS-DEPLOY
 5) 4.5 "todo dia 10 pago 200 de internet" -> pergunta pagamento -> "pix"
    -> template 20000 dia 10;
 6) 7.2 dedup: repetir a frase do aluguel -> bloqueio amigável, count=1.
+
+================================================================================
+RODADA 27 — 2026-07-29 ~23h UTC — Revalidação pós-deploy (run 30493942071,
+imagem 93e8c2128d7f) + fix da pensão "todo mês" + alinhamento ao invariante
+de domínio dia 1..28.
+================================================================================
+
+REVALIDAÇÃO PÓS-DEPLOY (evidência: conversa do usuário + banco + platform_runs):
+- PASS 4.2 salário: "todo dia 5 eu recebo R$ 13.874,40 de salário" ->
+  confirmação DIRETA de recorrência R$ 13.874,40 dia 5 (sem pergunta de
+  pagamento); "sim" -> criado. Banco: salário 1387440 cents, day 5,
+  direction=1 (income), payment_method=1 (pix default), created 22:31:47Z.
+- PASS 4.5 internet: "todo dia 10 pago 200 de internet" -> pergunta forma de
+  pagamento -> "pix" -> confirmação -> "sim" -> criado. Banco: internet
+  20000 cents, day 10, expense, pix, created 22:32:43Z.
+- PASS 7.1 listagem: bot listou aluguel/salário/internet com valores e dias
+  corretos (pensão ausente — ver FAIL abaixo).
+- FAIL 4.3 pensão: "todo mês eu recebo 800 de pensão" -> bot NÃO perguntou
+  o dia (fabricou card "Encontrei esta recorrência") e no "sim" ->
+  "Não consegui registrar. Tente novamente em breve."
+
+CAUSA RAIZ (evidência dupla):
+1. platform_runs id=4a5a4bda-3694-47df-8b32-0d5761322bce (22:32:06Z):
+   status=failed, outcome=usecaseError, error contém texto FABRICADO pelo
+   LLM ("Prontinho! ✅ A recorrência de pensão está configurada...") — o
+   guard success/confirmation_without_tool forçou o fallback. Nada
+   persistido (correto).
+2. Código: recurrenceShortcutRe (guards/create_recurrence_shortcut.go)
+   exigia literalmente "todo dia <n>" — "todo mês" não casa, a frase cai
+   no LLM (run "routed", 1947ms), que fabrica confirmação sem tool e sem
+   dia. O slot recurrence_day (P4) nunca era alcançado porque o workflow
+   transaction-write não era aberto.
+
+FIX (menor mudança na causa raiz; skills: bugfix, go-implementation R0-R7,
+design-patterns: "não aplicar padrão", DMMF princípios):
+- guards/create_recurrence_shortcut.go: regex agora aceita
+  "todo (dia <n>|m[eê]s)" — "todo mês"/"todo mes" SEM dia casa e o arg
+  dayOfMonth é OMITIDO -> CreateRecurrence inicia o workflow com
+  RecurrenceDayOfMonth=0 -> decideInitialAwaitingCreateRecurrence pergunta
+  o dia via slot determinístico. Zero LLM, zero fabricação.
+- Testes de regressão: frase exata da produção
+  "todo mês eu recebo 800 de pensão" (parse: income, 80000, sem dia) +
+  "todo mes pago 100 de luz" + negativo "todo mês tem aluguel de 1500" +
+  guard-level TestCreateRecurrenceShortcutGuardRoutesTodoMesSemDia
+  (prova que dayOfMonth não é enviado no invoke).
+
+DESCOBERTA DE DOMÍNIO (clamp 29-31 — premissa anterior CORRIGIDA):
+- Eu havia afirmado que "template dia 31 nunca materializa". FALSO na
+  prática: valueobjects.NewDayOfMonth (day_of_month.go:15-20) REJEITA
+  29-31 na criação ("day of month out of range (1..28)", com teste
+  "invalid 29" em day_of_month_test.go) — o problema de mês curto já é
+  resolvido POR CONSTRUÇÃO: só existem templates com dias 1..28, que
+  existem em todo mês. NewDayOfMonthSnapshot (1..31) serve só para
+  reidratação/billing de cartão.
+- Clamp em DecideMaterializeForDay + SQL foi IMPLEMENTADO e depois
+  REVERTIDO por ser desnecessário e contradizer invariante deliberada
+  (mudança de comportamento público de domínio exigiria decisão de
+  produto explícita).
+- GAP REAL alinhado: entry points aceitavam 29-31 e falhavam de forma
+  obscura no usecase. Correção:
+  - write_shared.go ParseRecurrenceDayOfMonth: faixa 1..28 (resposta
+    "dia 31" no slot -> reprompt em vez de falha no "sim");
+  - messages.RecurrenceDayPrompt(): "...📅 (de 1 a 28, ex.: 5)" — o
+    reprompt agora explica a restrição;
+  - shortcut: validação 1..28 (frase "todo dia 29..." não casa mais;
+    comportamento equivalente ao anterior, que já falhava no usecase,
+    mas sem invoke desperdiçado).
+  - Testes: ParseRecurrenceDayOfMonth válidos 5/28/10/7, inválidos
+    0/29/30/31/32/...; shortcut "dia 29 fora do invariante 1..28 nao
+    dispara".
+- Suíte 4.3 atualizada com o novo texto do prompt e a nota 1..28.
+
+SOBRE "ONDE FICA NO DB" E MATERIALIZAÇÃO (pergunta do usuário, respondida
+com evidência de código + banco):
+- Template = molde em mecontrola.transactions_recurring_templates; NÃO gera
+  lançamento na criação.
+- Job diário transactions-recurring-materializer (cmd/worker/worker.go:328,
+  cron TRANSACTIONS_RECURRING_MATERIALIZER_CRON, default @daily) busca
+  templates ativos com day_of_month = dia de hoje (America/Sao_Paulo),
+  respeitando started_at/ended_at/deleted_at
+  (recurring_template_repository.go:298-301) e materializa via MESMO
+  usecase CreateTransaction -> mecontrola.transactions (occurred_at 12:00
+  BRT). Crédito vira compra no cartão com parcelas.
+- Idempotência: mecontrola.transactions_recurring_materializations
+  (template_id, ref_month) + advisory lock + InsertIfAbsent -> sem
+  duplicidade em rerodada/redeploy. Banco hoje: 0 linhas — esperado
+  (hoje é dia 29; templates do usuário: dias 5 e 10; próximas
+  materializações: 05/08 aluguel+salário, 10/08 internet).
+
+VALIDAÇÃO:
+- go build ./... OK; go vet ./internal/agents/... ./internal/transactions/... OK.
+- go test -race -count=1 ./internal/agents/... ./internal/transactions/...:
+  0 falhas em todos os pacotes.
+- gofmt limpo; golangci-lint ./internal/agents/... ./internal/transactions/...:
+  0 issues.
+- Zero comentários adicionados; sem prefixo _.
+
+PENDENTE (usuário): commit + CI + deploy. REVALIDAÇÃO PÓS-DEPLOY:
+1) "todo mês eu recebo 800 de pensão" -> bot pergunta
+   "Em qual dia do mês ele se repete? 📅 (de 1 a 28, ex.: 5)" -> "dia 10"
+   -> confirmação -> "sim" -> template 80000 dia 10 income pix;
+2) "todo dia 31 pago 100 de luz" -> NÃO cria nada e não fabrica (cai no
+   LLM, que deve pedir esclarecimento; registrar o comportamento real);
+3) no slot, responder "31" -> reprompt com o texto "(de 1 a 28, ex.: 5)";
+4) dedup 7.2 (repetir aluguel) segue pendente de validação em produção.

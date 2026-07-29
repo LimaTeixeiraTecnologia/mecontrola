@@ -122,7 +122,7 @@ func DatePrompt() string {
 }
 
 func RecurrenceDayPrompt() string {
-	return "Em qual dia do mês ele se repete? 📅 (ex.: 5)"
+	return "Em qual dia do mês ele se repete? 📅 (de 1 a 28, ex.: 5)"
 }
 
 func ActiveWriteExists() string {

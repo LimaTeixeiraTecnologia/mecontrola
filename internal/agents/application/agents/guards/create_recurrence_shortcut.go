@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	recurrenceShortcutRe = regexp.MustCompile(`(?i)^\s*todo\s+dia\s+([0-9]{1,2})\s+(?:eu\s+)?(gastei|gasto|pago|paguei|recebo|recebi|ganho|ganhei)\s+(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real|conto|contos|pila|mango)?\s+(?:no|na|nos|nas|em|com|de|do|da|pra|para)\s+([a-zà-ú][a-zà-ú' ]*?)\s*$`)
+	recurrenceShortcutRe = regexp.MustCompile(`(?i)^\s*todo\s+(?:dia\s+([0-9]{1,2})|m[eê]s)\s+(?:eu\s+)?(gastei|gasto|pago|paguei|recebo|recebi|ganho|ganhei)\s+(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real|conto|contos|pila|mango)?\s+(?:no|na|nos|nas|em|com|de|do|da|pra|para)\s+([a-zà-ú][a-zà-ú' ]*?)\s*$`)
 
 	recurrenceShortcutIncomeVerbs = map[string]struct{}{
 		"recebo": {},
@@ -83,9 +83,13 @@ func parseCreateRecurrenceShortcut(message string, handle tool.ToolHandle) (map[
 	if len(match) != 5 {
 		return nil, false
 	}
-	dayOfMonth, err := strconv.Atoi(match[1])
-	if err != nil || dayOfMonth < 1 || dayOfMonth > 31 {
-		return nil, false
+	dayOfMonth := 0
+	if match[1] != "" {
+		parsedDay, err := strconv.Atoi(match[1])
+		if err != nil || parsedDay < 1 || parsedDay > 28 {
+			return nil, false
+		}
+		dayOfMonth = parsedDay
 	}
 	amountCents, ok := parseBrazilianAmountCents(match[3])
 	if !ok {
@@ -109,7 +113,9 @@ func parseCreateRecurrenceShortcut(message string, handle tool.ToolHandle) (map[
 		"amountCents": amountArg,
 		"description": description,
 		"frequency":   "monthly",
-		"dayOfMonth":  dayOfMonth,
+	}
+	if dayOfMonth > 0 {
+		args["dayOfMonth"] = dayOfMonth
 	}
 	if paymentMethod != "" {
 		args["paymentMethod"] = paymentMethod

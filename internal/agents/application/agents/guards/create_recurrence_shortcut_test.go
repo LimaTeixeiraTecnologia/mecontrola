@@ -2,6 +2,7 @@ package guards
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
@@ -42,7 +43,11 @@ func TestParseCreateRecurrenceShortcut(t *testing.T) {
 		{name: "receita recorrente", input: "todo dia 1 recebo 5000 de salário", wantOK: true, wantDay: 1, wantAmt: 500000, wantDsc: "salário", wantDir: "income"},
 		{name: "com pagamento no fim", input: "todo dia 5 pago 1500 de aluguel no pix", wantOK: true, wantDay: 5, wantAmt: 150000, wantDsc: "aluguel", wantDir: "outcome", wantPay: "pix"},
 		{name: "milhar com ponto", input: "todo dia 20 paguei 1.200 de condomínio", wantOK: true, wantDay: 20, wantAmt: 120000, wantDsc: "condomínio", wantDir: "outcome"},
+		{name: "producao todo mes eu recebo 800 de pensao sem dia", input: "todo mês eu recebo 800 de pensão", wantOK: true, wantDay: 0, wantAmt: 80000, wantDsc: "pensão", wantDir: "income"},
+		{name: "todo mes sem acento despesa sem dia", input: "todo mes pago 100 de luz", wantOK: true, wantDay: 0, wantAmt: 10000, wantDsc: "luz", wantDir: "outcome"},
+		{name: "todo mes sem verbo nao dispara", input: "todo mês tem aluguel de 1500", wantOK: false},
 		{name: "cartao nao dispara", input: "todo dia 5 pago 300 de streaming no cartão", wantOK: false},
+		{name: "dia 29 fora do invariante 1..28 nao dispara", input: "todo dia 29 pago 100 de luz", wantOK: false},
 		{name: "dia invalido nao dispara", input: "todo dia 32 pago 100 de luz", wantOK: false},
 		{name: "sem verbo nao dispara", input: "todo dia 5 tem aluguel de 1500", wantOK: false},
 		{name: "despesa avulsa nao dispara", input: "gastei 30 no mercado", wantOK: false},
@@ -102,6 +107,25 @@ func TestCreateRecurrenceShortcutGuardRoutes(t *testing.T) {
 	}
 	if len(decision.Result.ToolCalls) != 1 || decision.Result.ToolCalls[0].Tool != "create_recurrence" {
 		t.Fatalf("tool calls = %+v", decision.Result.ToolCalls)
+	}
+}
+
+func TestCreateRecurrenceShortcutGuardRoutesTodoMesSemDia(t *testing.T) {
+	handle := &stubRecurrenceTool{id: "create_recurrence", message: "Em qual dia do mês ele se repete?"}
+	guard := NewCreateRecurrenceShortcutGuard(handle)
+
+	decision := guard.Inspect(context.Background(), agent.Request{
+		Messages: []llm.Message{{Role: "user", Content: "todo mês eu recebo 800 de pensão"}},
+	})
+
+	if !decision.Handled {
+		t.Fatal("esperava short-circuit determinístico para recorrência mensal sem dia")
+	}
+	if !handle.invoked {
+		t.Fatal("esperava invocação de create_recurrence")
+	}
+	if strings.Contains(string(handle.args), "dayOfMonth") {
+		t.Fatalf("dayOfMonth não deveria ser enviado: %s", handle.args)
 	}
 }
 
