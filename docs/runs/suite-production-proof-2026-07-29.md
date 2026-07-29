@@ -6,7 +6,7 @@ Substitui e consolida: `suite-fogo-real-fluxos-nao-cobertos.md` + incidentes de 
 
 ## Como usar
 
-1. Envie as frases EXATAS no WhatsApp, na ordem, aguardando a resposta do bot entre elas.
+1. Envie as frases EXATAS, na ordem indicada na coluna "Você envia", aguardando a resposta do bot entre elas.
 2. "Resposta variável" = valide a SEMÂNTICA (intenção, dados, valores), não o texto exato.
 3. O `user_id` mudou após o wipe. Resolva uma vez por sessão de validação:
 
@@ -16,7 +16,7 @@ ssh mecontrola-vps "docker exec -i mecontrola_postgres.1.uvxevski7nrklemzf2gnusg
 
 Todas as queries abaixo usam `'<USER_ID>'` — substitua pelo id resolvido.
 
-4. **FAIL imediato global (0 falso positivo)**: bot diz "Prontinho! ✅"/"atualizei"/"removi" sem efeito no banco; valor/categoria/cartão/dia diferente do confirmado; mensagem duplicada; pergunta de cartão em pagamento que não é crédito; a palavra "cartão" substituída por emoji 💳 no texto do bot (exigência explícita do usuário: o texto deve ser "Qual é o apelido do cartão que você usou?").
+4. **FAIL imediato global (0 falso positivo)**: bot diz "Prontinho! ✅"/"atualizei"/"removi" sem efeito no banco; valor/categoria/cartão/dia diferente do confirmado; mensagem duplicada; pergunta de cartão em pagamento que não é crédito; a palavra "cartão" substituída por emoji 💳 no texto do bot.
 5. Registre cada resultado na tabela final + evidência (run id, query).
 
 ---
@@ -25,17 +25,16 @@ Todas as queries abaixo usam `'<USER_ID>'` — substitua pelo id resolvido.
 
 ### 1.1 Fluxo completo informando cartão e recorrência
 
-Frases (na ordem das etapas do workflow; aguardar cada pergunta):
-
-1. `oi` → boas-vindas + pergunta do nome de tratamento
-2. `Jailton` → pergunta do orçamento mensal
-3. `4000` → pergunta sobre cartões de crédito
-4. `nubank vencimento dia 10` (resposta variável do bot pedindo confirmação) → confirmar com `sim` se pedir
-5. (proposta de distribuição do orçamento por categoria) `sim`
-6. (despesas recorrentes) `aluguel 1500 dia 5`
-7. (confirmação/resumo final) `sim`
-
-Esperado: cada etapa suspende e retoma sem loop; ao final, usuário ACTIVE com budget de R$ 4.000, alocações somando o total, cartão "nubank" (due_day=10) e template de recorrência aluguel R$ 1.500 dia 5.
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `oi` | Boas-vindas + pergunta do nome de tratamento |
+| 2 | `Jailton` | Pergunta do orçamento mensal |
+| 3 | `4000` | Pergunta sobre cartões de crédito |
+| 4 | `nubank vencimento dia 10` | Confirmação do cartão (variável) |
+| 5 | `sim` | Proposta de distribuição do orçamento por categoria |
+| 6 | `sim` | Pergunta sobre despesas recorrentes |
+| 7 | `aluguel 1500 dia 5` | Confirmação da recorrência (variável) |
+| 8 | `sim` | Resumo final + onboarding concluído |
 
 Checks:
 
@@ -47,7 +46,7 @@ SELECT nickname, due_day, closing_day FROM mecontrola.cards WHERE user_id='<USER
 SELECT description, amount_cents, day_of_month, frequency FROM mecontrola.transactions_recurring_templates WHERE user_id='<USER_ID>';
 ```
 
-PASS: tudo persistido coerente com as respostas; soma das alocações = total. FAIL: loop de etapa, dado errado, onboarding concluído sem dados, cartão criado sem confirmação.
+PASS: usuário ACTIVE; budget 400000 cents com alocações somando o total; cartão nubank due_day=10; template aluguel 150000 dia 5. FAIL: loop de etapa, dado errado, onboarding concluído sem dados, cartão criado sem confirmação.
 
 ---
 
@@ -55,13 +54,10 @@ PASS: tudo persistido coerente com as respostas; soma das alocações = total. F
 
 ### 2.1 Pix com categoria automática (sem nenhuma pergunta de cartão)
 
-Frases:
-
-1. `gastei 45 na farmácia no pix`
-2. (se pedir categoria, responder número/nome)
-3. `sim`
-
-Esperado: confirmação com valor R$ 45,00, categoria resolvida (Medicamentos e Farmácia ou equivalente), pagamento pix. **NUNCA perguntar "Qual cartão foi utilizado?"** (regressão histórica RODADA inicial).
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `gastei 45 na farmácia no pix` | Confirmação: R$ 45,00, categoria resolvida (Medicamentos e Farmácia ou equivalente), pagamento pix. **NUNCA perguntar cartão** |
+| 2 | `sim` | "Prontinho! ✅" |
 
 Check:
 
@@ -74,49 +70,66 @@ PASS: 4500 cents, pix, categoria coerente, data de hoje. FAIL: perguntou cartão
 
 ### 2.2 Vale-refeição com categoria automática
 
-Frases: `gastei 30 no almoço no vale` → (confirmação) `sim`
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `gastei 30 no almoço no vale` | Confirmação: R$ 30,00, Prazeres > Restaurantes (ou listagem — responder o número), vale-refeição |
+| 2 | `sim` | "Prontinho! ✅" |
 
-Esperado: pagamento `vale_refeicao`, categoria Prazeres > Restaurantes (ou listagem se não resolver — responder). Check: mesma query — payment_method=`vale_refeicao`, 3000 cents.
+Check: mesma query de 2.1 — payment_method=`vale_refeicao`, 3000 cents.
 
-### 2.3 Categoria desconhecida → listagem numerada → subcategoria
+### 2.3 Categoria desconhecida → listagem numerada → recusa
 
-Frases:
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `gastei 77 em teste recusa` | Lista de categorias raiz numerada |
+| 2 | `2` | Lista de subcategorias de Custo Fixo |
+| 3 | `1` | Pergunta forma de pagamento (ou confirmação direta) |
+| 4 | `pix` | Confirmação: R$ 77,00, Custo Fixo > Açougue, pix |
+| 5 | `não` | "Tudo certo, o registro foi cancelado." |
 
-1. `gastei 77 em teste recusa`
-2. (lista de raízes) `2` (Custo Fixo)
-3. (lista de subcategorias) `1` (Açougue)
-4. (forma de pagamento, se perguntar) `pix`
-5. (confirmação) `não`
-
-Esperado: após `não`, "Tudo certo, o registro foi cancelado." e **zero transação nova**. Check: query de 2.1 — o lançamento de 7700 NÃO pode existir.
+PASS: **zero** transação de 7700 no banco. FAIL: persistiu após "não".
 
 ### 2.4 Reprompt de confirmação ("talvez")
 
-Frases:
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `gastei 33 em teste reprompt` | Lista de categorias |
+| 2 | `2` | Lista de subcategorias |
+| 3 | `2` | Pergunta forma de pagamento |
+| 4 | `pix` | Confirmação: R$ 33,00, Custo Fixo > Água, pix |
+| 5 | `talvez` | "Não entendi. Por favor, responda apenas sim ou não para confirmar." |
+| 6 | `talvez` | Reprompt OU cancelamento — registrar o que ocorreu: ____ |
+| 7 | `cancelar` | "Tudo certo, o registro foi cancelado." |
 
-1. `gastei 33 em teste reprompt`
-2. (categoria) `2` → (subcategoria) `2` → (pagamento) `pix`
-3. (confirmação) `talvez` → esperado: "Não entendi. Por favor, responda apenas sim ou não para confirmar."
-4. `talvez` de novo → comportamento documentado: reprompt OU cancelamento — registrar o que ocorreu: ____
-5. `cancelar` → cancelado, zero transação.
+PASS: zero transação de 3300. FAIL: registrou; ou aceitou "talvez" como confirmação.
 
 ### 2.5 Cancelar na etapa de categoria
 
-Frases: `gastei 99 em teste cancelamento` → (lista de categorias) `cancelar`
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `gastei 99 em teste cancelamento` | Lista de categorias |
+| 2 | `cancelar` | "Tudo certo, o registro foi cancelado." |
 
-Esperado: "Tudo certo, o registro foi cancelado." Zero transação de 9900.
+PASS: zero transação de 9900.
 
 ### 2.6 Multi-item na mesma mensagem
 
-Frase: `gastei 30 no ônibus e 15 no café`
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `gastei 30 no ônibus e 15 no café` | "Percebi mais de um lançamento na mesma mensagem... registro um de cada vez" |
 
-Esperado: orientação para registrar um de cada vez ("Por segurança, registro um de cada vez..."). **Nenhum** lançamento criado. Check: zero transações novas.
+PASS: **nenhum** lançamento criado. FAIL: registrou 1 ou 2 lançamentos.
 
 ### 2.7 Débito e dinheiro
 
-Frases: `paguei 35 no dentista no débito` → `sim`; depois `gastei 20 no padaria em dinheiro` → (categoria se pedir) → `sim`
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `paguei 35 no dentista no débito` | Confirmação: R$ 35,00, Odontologia (ou listagem), débito |
+| 2 | `sim` | "Prontinho! ✅" |
+| 3 | `gastei 20 na padaria em dinheiro` | Confirmação (ou listagem de categoria — responder) |
+| 4 | `sim` | "Prontinho! ✅" |
 
-Esperado: payment_method `debit_card` (3500) e `cash` (2000). Check query 2.1 para cada um.
+Check: payment_method `debit_card` (3500) e `cash` (2000).
 
 ---
 
@@ -124,25 +137,31 @@ Esperado: payment_method `debit_card` (3500) e `cash` (2000). Check query 2.1 pa
 
 ### 3.1 Crédito com apelido na frase (atalho determinístico)
 
-Frases: `gastei 45 no cartão nubank` → (categoria se pedir) → `sim`
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `gastei 45 no cartão nubank` | Confirmação direta: R$ 45,00, categoria, crédito — **sem perguntar apelido** (ou listagem de categoria — responder) |
+| 2 | `sim` | "Prontinho! ✅" |
 
-Esperado: **sem pergunta de apelido** (nubank já veio na frase); confirmação com "crédito" e categoria. Check: transação 4500 payment_method=`credit_card`, card_id do nubank.
+Check: 4500 cents, payment_method=`credit_card`, card_id do nubank.
 
 ### 3.2 Crédito SEM apelido → pergunta com texto correto
 
-Frases: `comprei 50 no crédito` → bot pergunta o apelido → `nubank` → (categoria) → `sim`
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `comprei 50 no crédito` | "Qual é o apelido do cartão que você usou?" (ou listagem de categoria antes/depois) |
+| 2 | `nubank` | Confirmação (ou listagem de categoria — responder) |
+| 3 | `sim` | "Prontinho! ✅" |
 
-Esperado (exigência dura do usuário): o texto da pergunta é **"Qual é o apelido do cartão que você usou?"** (ou variação que contenha a palavra "cartão" por extenso). FAIL se a palavra "cartão" for substituída pelo emoji 💳 (ex.: "preciso saber qual 💳 você quer usar").
+**Exigência dura**: a pergunta contém a palavra "cartão" por extenso. FAIL se 💳 substituir a palavra (ex.: "preciso saber qual 💳 você quer usar").
 
 ### 3.3 Parcelado + fatura por mês
 
-Frases:
-
-1. `quanto está minha fatura do cartão nubank?` (anotar baseline: ____)
-2. `comprei 600 de eletrônico em 3x no crédito` → (apelido se pedir) `nubank` → (categoria) → `sim`
-3. `quanto está minha fatura do cartão nubank?`
-
-Esperado: 1 transação de 60000 cents com installments_total=3; fatura do mês sobe **R$ 200,00** (não R$ 600,00); parcelas 2 e 3 nas faturas dos 2 meses seguintes.
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `quanto está minha fatura do cartão nubank?` | Valor baseline (anotar: ____) |
+| 2 | `comprei 600 de eletrônico em 3x no crédito` | Confirmação (apelido/categoria se pedir: `nubank` / número) |
+| 3 | `sim` | "Prontinho! ✅" |
+| 4 | `quanto está minha fatura do cartão nubank?` | Baseline + **R$ 200,00** (não R$ 600,00) |
 
 Checks:
 
@@ -155,11 +174,15 @@ JOIN mecontrola.transactions_card_invoices i ON i.id=it.invoice_id
 WHERE it.transaction_id='<ID_DA_TRANSACAO>' ORDER BY it.installment_index;
 ```
 
-PASS: 3 itens de 20000 em ref_months consecutivos. FAIL: fatura subiu 60000 de uma vez.
+PASS: 1 transação 60000 com installments_total=3; 3 itens de 20000 em ref_months consecutivos. FAIL: fatura subiu 60000 de uma vez.
 
 ### 3.4 Listar cartões / atualizar vencimento
 
-Frases: `quais cartões eu tenho?` → confere nubank. Depois: `muda o vencimento do nubank para dia 15` → `sim`
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `quais cartões eu tenho?` | Lista com nubank (sem cartão alucinado) |
+| 2 | `muda o vencimento do nubank para dia 15` | Confirmação: 10 → 15 |
+| 3 | `sim` | Confirmação de atualização |
 
 Check: `SELECT nickname, due_day FROM mecontrola.cards WHERE user_id='<USER_ID>';` → due_day=15 só após confirmação.
 
@@ -169,22 +192,26 @@ Check: `SELECT nickname, due_day FROM mecontrola.cards WHERE user_id='<USER_ID>'
 
 ### 4.1 Receita avulsa
 
-Frases: `recebi 500 de freelance` → `sim`
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `recebi 500 de freelance` | Confirmação: R$ 500,00, Origem: freelance |
+| 2 | `sim` | Mensagem de receita registrada |
 
-Esperado: direção income, 50000 cents, Origem: freelance. Check:
+Check:
 
 ```sql
 SELECT direction, payment_method, amount_cents, description FROM mecontrola.transactions
 WHERE user_id='<USER_ID>' AND direction=1 ORDER BY created_at DESC LIMIT 1;
 ```
 
-(direction: confirmar valor de income na 1ª execução — registrar: ____)
+(direction de income: confirmar valor na 1ª execução — registrar: ____)
 
 ### 4.2 Receita recorrente — frase exata do incidente R$ 5,00
 
-Frases: `todo dia 5 eu recebo R$ 13.874,40 de salário` → (confirmação) `sim`
-
-Esperado (fix B-23): confirmação de **recorrência** com valor **R$ 13.874,40** — NUNCA R$ 5,00 — dia 5, descrição salário. Resolução determinística (sem LLM).
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `todo dia 5 eu recebo R$ 13.874,40 de salário` | Confirmação de **recorrência**: **R$ 13.874,40**, dia 5, salário — NUNCA R$ 5,00 |
+| 2 | `sim` | Confirmação de recorrência criada |
 
 Check:
 
@@ -193,13 +220,17 @@ SELECT description, amount_cents, day_of_month, direction FROM mecontrola.transa
 WHERE user_id='<USER_ID>' ORDER BY created_at DESC LIMIT 1;
 ```
 
-PASS: 1387440 cents, dia 5, income. FAIL: R$ 5,00; lançamento avulso em vez de recorrência; qualquer pergunta de valor.
+PASS: 1387440 cents, dia 5, income, resolução determinística. FAIL: R$ 5,00; lançamento avulso; pergunta de valor.
 
 ### 4.3 Receita recorrente sem dia ("todo mês" — caminho LLM protegido)
 
-Frases: `todo mês eu recebo 800 de pensão` → seguir o fluxo (bot deve perguntar o dia) → `dia 10` → (confirmação) `sim`
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `todo mês eu recebo 800 de pensão` | Pergunta o dia do mês (NÃO confirma lançamento avulso) |
+| 2 | `dia 10` | Confirmação de recorrência: R$ 800,00, dia 10 |
+| 3 | `sim` | Recorrência criada |
 
-Esperado: bot NÃO registra avulso; pergunta o dia; cria recorrência dia 10, 80000 cents. Se em qualquer etapa aparecer confirmação de lançamento avulso de R$ 800: FAIL.
+PASS: template 80000 dia 10. FAIL: lançamento avulso de R$ 800 em `transactions`.
 
 ---
 
@@ -207,51 +238,80 @@ Esperado: bot NÃO registra avulso; pergunta o dia; cria recorrência dia 10, 80
 
 ### 5.1 Correção de valor com desambiguação
 
-Preparação: `gastei 30 no uber no pix` → (categoria) → `sim`. Repetir: `gastei 30 no uber no pix` → (categoria, pode diferir) → `sim`.
+Preparação:
 
-Frases:
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `gastei 30 no uber no pix` | Confirmação (categoria se pedir) |
+| 2 | `sim` | Registrado |
+| 3 | `gastei 30 no uber no pix` | Confirmação (categoria se pedir) |
+| 4 | `sim` | Registrado (2º uber) |
 
-1. `edita o lançamento do uber` → bot pergunta o que mudar
-2. `quero alterar o valor para 35` → bot lista 2 candidatos numerados
-3. `1`
-4. (confirmação mostrando 30 → 35) `sim`
+Cenário:
 
-Esperado: MESMO id atualizado para 3500, version incrementada. A outra de 3000 intacta.
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `edita o lançamento do uber` | "Qual alteração você gostaria de fazer...?" |
+| 2 | `quero alterar o valor para 35` | Lista 2 candidatos numerados |
+| 3 | `1` | Confirmação: atual R$ 30,00 → novo R$ 35,00 |
+| 4 | `sim` | "Prontinho, atualizei! ✅" |
 
 ```sql
 SELECT id, description, amount_cents, version, deleted_at FROM mecontrola.transactions
 WHERE user_id='<USER_ID>' AND description ILIKE '%uber%' ORDER BY created_at;
 ```
 
+PASS: MESMO id com 3500 e version+1; o outro uber intacto com 3000. FAIL: criou lançamento novo.
+
 ### 5.2 Correção por frase completa ("o valor certo é X e não Y")
 
-Frases: `no lançamento da farmácia o valor certo é 50 e não 45` → (candidato se listar) `1` → `sim`
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `no lançamento da farmácia o valor certo é 50 e não 45` | Candidato(s) ou confirmação direta 45 → 50 |
+| 2 | `1` (se listar) | Confirmação |
+| 3 | `sim` | "Prontinho, atualizei! ✅" |
 
-Esperado: a farmácia de 4500 vira 5000. Check: query de 5.1 com '%farmácia%'.
+PASS: farmácia 4500 → 5000, mesmo id.
 
 ### 5.3 Edição de lançamento inexistente (sem fabricar)
 
-Frases: `edita o lançamento de 999 do circo` → esperado: bot informa que não encontrou e pede detalhes OU pede confirmação do que corrigir — **NUNCA** "Prontinho!" nem cria lançamento. Depois `cancelar`.
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `edita o lançamento de 999 do circo` | "Não encontrei um lançamento compatível..." (ou pede detalhes) — **NUNCA** "Prontinho!" |
+| 2 | `cancelar` | "Tudo certo, o registro foi cancelado." |
 
 PASS: zero efeito no banco. FAIL: confirmou/fabricou edição inexistente.
 
 ### 5.4 Cancelar no meio da edição
 
-Frases: `quero corrigir um lançamento aí` → `o lançamento do uber` → `quero alterar o valor para 40` → (confirmação) `cancelar`
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `quero corrigir um lançamento aí` | "Qual lançamento você gostaria de corrigir?" |
+| 2 | `o lançamento do uber` | "Qual correção...?" |
+| 3 | `quero alterar o valor para 40` | Candidato(s)/confirmação |
+| 4 | `cancelar` | "Tudo certo, o registro foi cancelado." |
 
-Esperado: "Tudo certo, o registro foi cancelado." Valor do uber inalterado no banco.
+PASS: valor do uber inalterado no banco.
 
 ### 5.5 Editar categoria
 
-Frases: `o lançamento do uber não é essa categoria, coloca em transporte` → (candidato) `1` → (nova categoria se listar) → `sim`
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `o lançamento do uber não é essa categoria, coloca em transporte` | Candidato(s) ou nova categoria proposta |
+| 2 | `1` (se listar) | Confirmação mostrando categoria atual → nova |
+| 3 | `sim` | "Prontinho, atualizei! ✅" |
 
-Check: category_id muda, MESMO id, version+1.
+PASS: category_id muda, MESMO id, version+1.
 
 ### 5.6 Excluir lançamento
 
-Frases: `apaga o lançamento de 30 do uber` → (candidato) `1` → (confirmação) `sim`
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `apaga o lançamento de 30 do uber` | Candidato(s) numerado(s) |
+| 2 | `1` | Confirmação de remoção |
+| 3 | `sim` | Confirma remoção |
 
-Esperado: soft delete (`deleted_at` preenchido) só após confirmação; o outro uber intacto.
+PASS: `deleted_at` preenchido só após confirmação; demais uber intactos.
 
 ---
 
@@ -259,9 +319,9 @@ Esperado: soft delete (`deleted_at` preenchido) só após confirmação; o outro
 
 ### 6.1 Quanto gastei hoje (valores e decimais exatos)
 
-Frase: `quanto gastei hoje?`
-
-Esperado: total e itens **batendo centavo a centavo** com o banco (regressão histórica: R$ 300 aparecia como R$ 30). Conferir com:
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `quanto gastei hoje?` | Total + itens **centavo a centavo** iguais ao banco (regressão histórica: R$ 300 aparecia como R$ 30) |
 
 ```sql
 SELECT description, amount_cents FROM mecontrola.transactions
@@ -274,17 +334,35 @@ ORDER BY created_at;
 
 ### 6.2 Quanto gastei ontem
 
-Preparação: ter ao menos 1 lançamento de ontem (editar data em 5.x ou criar com "ontem": `gastei 25 ontem no lanche no pix` → `sim`).
+Preparação:
 
-Frase: `quanto gastei ontem?` → esperado: janela 00:00–23:59 de ontem (regressão histórica: retornava "sem lançamentos").
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `gastei 25 ontem no lanche no pix` | Confirmação com data de ontem |
+| 2 | `sim` | Registrado |
 
-### 6.3 Pergunta fora de contexto
+Cenário:
 
-Frase: `que dia é hoje?` → resposta com a data corrente correta, sem quebrar nenhum fluxo pendente (testar no meio de um fluxo suspenso: iniciar `gastei 15 no café no pix`, na pergunta de categoria mandar `que dia é hoje?`, depois retomar com a resposta da categoria e concluir ou cancelar).
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `quanto gastei ontem?` | R$ 25,00 — lanche (janela 00:00–23:59 de ontem; regressão histórica: retornava "sem lançamentos") |
+
+### 6.3 Pergunta fora de contexto no meio de fluxo
+
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `gastei 15 no café no pix` | Lista de categorias (fluxo suspenso) |
+| 2 | `que dia é hoje?` | Data corrente correta |
+| 3 | `5` (ou número da categoria) | Fluxo retoma: subcategoria/confirmação |
+| 4 | `cancelar` | "Tudo certo, o registro foi cancelado." |
+
+PASS: a pergunta não quebra o fluxo; retoma corretamente. FAIL: perdeu o fluxo ou registrou errado.
 
 ### 6.4 Fatura do cartão
 
-Frase: `quanto está minha fatura do cartão nubank?` → valor e vencimento corretos, itens batem com `transactions_card_invoice_items` do ref_month corrente.
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `quanto está minha fatura do cartão nubank?` | Valor, vencimento e itens batendo com `transactions_card_invoice_items` do ref_month corrente |
 
 ---
 
@@ -292,36 +370,52 @@ Frase: `quanto está minha fatura do cartão nubank?` → valor e vencimento cor
 
 ### 7.1 Listar recorrências
 
-Frase: `quais são minhas recorrências?` → lista aluguel (onboarding), salário e pensão (bloco 4) com valores/dias corretos. Sem alucinação.
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `quais são minhas recorrências?` | Lista: aluguel (onboarding), salário, pensão — valores/dias corretos, sem alucinação |
 
 ### 7.2 Dedup — criar a mesma recorrência 2x (fix B-23)
 
-Frases: `todo dia 5 pago 1500 de aluguel no pix` → (confirmação) `sim`
-
-Esperado: **bloqueio com mensagem amigável** ("Você já tem uma recorrência igual ativa... Não criei outra para não lançar em dobro...") — NUNCA um 2º template de aluguel 1500 dia 5.
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `todo dia 5 pago 1500 de aluguel no pix` | Confirmação de recorrência (valor/dia/categoria) |
+| 2 | `sim` | **Bloqueio amigável**: "Você já tem uma recorrência igual ativa... Não criei outra para não lançar em dobro..." |
 
 ```sql
 SELECT count(*) FROM mecontrola.transactions_recurring_templates
 WHERE user_id='<USER_ID>' AND description ILIKE '%aluguel%' AND deleted_at IS NULL;
 ```
 
-PASS: count=1. FAIL: 2 templates; ou criou e disse "Prontinho!".
+PASS: count=1. FAIL: 2 templates; ou "Prontinho!" com template novo.
 
 ### 7.3 Editar recorrência
 
-Frases: `muda o aluguel para 1600` → (candidato/confirmação) `sim`
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `muda o aluguel para 1600` | Confirmação: R$ 1.500,00 → R$ 1.600,00 |
+| 2 | `sim` | Atualizado |
 
 Check: amount_cents=160000, version+1, mesmo id.
 
 ### 7.4 Excluir recorrência
 
-Frases: `cancela a recorrência da pensão` → `sim`
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `cancela a recorrência da pensão` | Confirmação de remoção |
+| 2 | `sim` | Removida |
 
 Check: `deleted_at` preenchido no template da pensão; demais intactas.
 
 ### 7.5 Materialização (janela real, se aplicável)
 
-Se houver template com day_of_month = dia de amanhã, criar um proposital (`todo dia <amanhã> pago 10 de teste materialização no pix` → `sim`) e no dia seguinte verificar:
+Preparação (se amanhã for dia D):
+
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `todo dia <D> pago 10 de teste materialização no pix` | Confirmação |
+| 2 | `sim` | Recorrência criada |
+
+No dia seguinte:
 
 ```sql
 SELECT t.description, m.ref_month, m.materialized_transaction_id, m.materialized_at
@@ -330,7 +424,7 @@ JOIN mecontrola.transactions_recurring_templates t ON t.id=m.template_id
 WHERE t.user_id='<USER_ID>';
 ```
 
-PASS: 1 lançamento materializado de 1000 cents com occurred_at no dia. FAIL: duplicado, retroativo, ou valor errado. Depois excluir o template e o lançamento de teste.
+PASS: 1 lançamento materializado de 1000 cents no dia. FAIL: duplicado, retroativo ou valor errado. Depois excluir o template e o lançamento de teste.
 
 ---
 
@@ -338,13 +432,18 @@ PASS: 1 lançamento materializado de 1000 cents com occurred_at no dia. FAIL: du
 
 ### 8.1 Consultar orçamento
 
-Frase: `como está meu orçamento?` → números batem com `budgets` + gastos reais do mês (validar contra query do bloco 1 + soma de transações do mês).
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `como está meu orçamento?` | Planejado x gasto do mês batendo com `budgets` + soma real das transações |
 
 ### 8.2 Alterar total com reescalonamento
 
-Frases: `quero mudar meu orçamento total para 5000` → (confirmação) `sim`
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `quero mudar meu orçamento total para 5000` | Aviso de reescalonamento + confirmação |
+| 2 | `sim` | Confirmado |
 
-Check: total_cents=500000; alocações reescaladas somando 500000.
+Check: total_cents=500000; alocações somando 500000.
 
 ---
 
@@ -352,7 +451,12 @@ Check: total_cents=500000; alocações reescaladas somando 500000.
 
 ### 9.1 Duplo "sim" (reenvio da mesma mensagem)
 
-Em qualquer confirmação, enviar `sim` duas vezes seguidas rapidamente. Esperado: 1 único lançamento; o 2º "sim" recebe resposta segura (não duplica, não quebra).
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `gastei 12 no teste duplo sim no pix` | Confirmação |
+| 2 | `sim` (2x seguidas, rápido) | 1 único "Prontinho! ✅"; 2º "sim" recebe resposta segura |
+
+PASS: exatamente 1 transação de 1200. FAIL: 2 transações ou erro.
 
 ### 9.2 Re-entrega de evento (técnico)
 
@@ -365,9 +469,11 @@ WHERE id='<ID_DO_EVENTO_JA_PROCESSADO>';
 
 Esperado: consumer ignora com outcome=deduplicated (métrica `agents_whatsapp_inbound_total` + log), zero mensagem/lançamento duplicado.
 
-### 9.3 Mensagem fora de qualquer fluxo
+### 9.3 Mensagem sem sentido
 
-Frase: `asdfgh` → resposta segura/orientação, sem criar nada, sem "Prontinho!".
+| # | Você envia | Bot responde (esperado) |
+|---|-----------|------------------------|
+| 1 | `asdfgh` | Resposta segura/orientação — sem criar nada, sem "Prontinho!" |
 
 ---
 
