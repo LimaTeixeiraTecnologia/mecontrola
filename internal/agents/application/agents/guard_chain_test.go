@@ -54,6 +54,31 @@ func (a *stubGuardChainUnderlyingAgent) Execute(ctx context.Context, in agent.Re
 	return a.result, a.err
 }
 
+type sequencedGuardChainUnderlyingAgent struct {
+	results []agent.Result
+	errs    []error
+	calls   int
+}
+
+func (a *sequencedGuardChainUnderlyingAgent) ID() string           { return "stub-agent" }
+func (a *sequencedGuardChainUnderlyingAgent) Instructions() string { return "" }
+func (a *sequencedGuardChainUnderlyingAgent) Stream(ctx context.Context, in agent.Request) (agent.ResultStream, error) {
+	return nil, nil
+}
+
+func (a *sequencedGuardChainUnderlyingAgent) Execute(ctx context.Context, in agent.Request) (agent.Result, error) {
+	idx := a.calls
+	if idx >= len(a.results) {
+		idx = len(a.results) - 1
+	}
+	a.calls++
+	var err error
+	if idx < len(a.errs) {
+		err = a.errs[idx]
+	}
+	return a.results[idx], err
+}
+
 type GuardChainAgentSuite struct {
 	suite.Suite
 	ctx context.Context
@@ -314,6 +339,143 @@ func (s *GuardChainAgentSuite) TestExecute_ResultAlreadyUsecaseError_NoDuplicate
 	s.NoError(err)
 	s.Require().Len(output.ToolCalls, 1)
 	s.Equal("register_expense", output.ToolCalls[0].Tool)
+}
+
+func (s *GuardChainAgentSuite) TestExecute_RetryableGuardHandledFirstAttempt_RecoversOnSecondAttempt() {
+	fabricated := "Posso registrar?"
+	recovered := agent.Result{
+		Content: "Como você pagou?",
+		ToolCalls: []agent.ToolCallRecord{{
+			Tool:    "register_expense",
+			Outcome: agent.ToolCallOutcomeSuccess,
+			Content: `{"outcome":"clarify","message":"Como você pagou?"}`,
+		}},
+	}
+	underlying := &sequencedGuardChainUnderlyingAgent{results: []agent.Result{
+		{Content: fabricated},
+		recovered,
+	}}
+	o11y := fake.NewProvider()
+
+	built := WithGuardChain(underlying, o11y, nil, []guards.PostGuard{guards.NewConfirmationWithoutToolGuard()})
+	output, err := built.Execute(s.ctx, agent.Request{AgentID: "agent-1"})
+
+	s.NoError(err)
+	s.Equal(2, underlying.calls)
+	s.Equal("Como você pagou?", output.Content)
+	s.NotEqual(agent.ToolOutcomeUsecaseError, output.ToolOutcome)
+
+	counter := o11y.Metrics().(*fake.FakeMetrics).GetCounter("agent_guard_retry_total")
+	s.Require().NotNil(counter)
+	var found bool
+	for _, v := range counter.GetValues() {
+		if s.hasLabel(v.Fields, "guard", "confirmation_without_tool") && s.hasLabel(v.Fields, "outcome", "recovered") {
+			found = true
+			break
+		}
+	}
+	s.True(found, "deveria registrar outcome=recovered para confirmation_without_tool")
+}
+
+func (s *GuardChainAgentSuite) TestExecute_RetryableGuardHandledBothAttempts_FallsBackAfterExhausted() {
+	fabricated := agent.Result{Content: "Posso registrar?"}
+	underlying := &sequencedGuardChainUnderlyingAgent{results: []agent.Result{fabricated, fabricated}}
+	o11y := fake.NewProvider()
+
+	built := WithGuardChain(underlying, o11y, nil, []guards.PostGuard{guards.NewConfirmationWithoutToolGuard()})
+	output, err := built.Execute(s.ctx, agent.Request{AgentID: "agent-1"})
+
+	s.NoError(err)
+	s.Equal(2, underlying.calls)
+	s.Equal("Não consegui registrar. Tente novamente em breve.", output.Content)
+	s.Equal(agent.ToolOutcomeUsecaseError, output.ToolOutcome)
+	s.Require().Len(output.ToolCalls, 1)
+	s.Equal("guard:confirmation_without_tool", output.ToolCalls[0].Tool)
+
+	counter := o11y.Metrics().(*fake.FakeMetrics).GetCounter("agent_guard_retry_total")
+	s.Require().NotNil(counter)
+	var found bool
+	for _, v := range counter.GetValues() {
+		if s.hasLabel(v.Fields, "guard", "confirmation_without_tool") && s.hasLabel(v.Fields, "outcome", "exhausted") {
+			found = true
+			break
+		}
+	}
+	s.True(found, "deveria registrar outcome=exhausted para confirmation_without_tool")
+
+	decisionsCounter := o11y.Metrics().(*fake.FakeMetrics).GetCounter("agent_guard_decisions_total")
+	s.Require().NotNil(decisionsCounter)
+	handledCount := 0
+	for _, v := range decisionsCounter.GetValues() {
+		if s.hasLabel(v.Fields, "guard", "confirmation_without_tool") && s.hasLabel(v.Fields, "decision", "handled") {
+			handledCount++
+		}
+	}
+	s.Equal(2, handledCount, "guard deve ser inspecionado e marcado handled nas duas tentativas")
+}
+
+func (s *GuardChainAgentSuite) TestExecute_NonRetryableGuardHandled_DoesNotRetry() {
+	underlying := &stubGuardChainUnderlyingAgent{result: agent.Result{Content: "resposta original"}}
+	post := &stubPostGuard{name: "post-1", decision: guards.GuardDecision{Handled: true, Retryable: false, Result: agent.Result{Content: "corrigido"}}}
+	o11y := fake.NewProvider()
+
+	built := WithGuardChain(underlying, o11y, nil, []guards.PostGuard{post})
+	output, err := built.Execute(s.ctx, agent.Request{AgentID: "agent-1"})
+
+	s.NoError(err)
+	s.Equal("corrigido", output.Content)
+
+	counter := o11y.Metrics().(*fake.FakeMetrics).GetCounter("agent_guard_retry_total")
+	if counter != nil {
+		s.Empty(counter.GetValues())
+	}
+}
+
+func (s *GuardChainAgentSuite) TestExecute_RetryableGuardHandled_RetryLLMErrors_KeepsFirstFallback() {
+	fabricated := agent.Result{Content: "Posso registrar?"}
+	underlying := &sequencedGuardChainUnderlyingAgent{
+		results: []agent.Result{fabricated, {}},
+		errs:    []error{nil, assertAnError{}},
+	}
+	o11y := fake.NewProvider()
+
+	built := WithGuardChain(underlying, o11y, nil, []guards.PostGuard{guards.NewConfirmationWithoutToolGuard()})
+	output, err := built.Execute(s.ctx, agent.Request{AgentID: "agent-1"})
+
+	s.NoError(err)
+	s.Equal(2, underlying.calls)
+	s.Equal("Não consegui registrar. Tente novamente em breve.", output.Content)
+	s.Equal(agent.ToolOutcomeUsecaseError, output.ToolOutcome)
+
+	counter := o11y.Metrics().(*fake.FakeMetrics).GetCounter("agent_guard_retry_total")
+	s.Require().NotNil(counter)
+	var found bool
+	for _, v := range counter.GetValues() {
+		if s.hasLabel(v.Fields, "guard", "confirmation_without_tool") && s.hasLabel(v.Fields, "outcome", "exhausted") {
+			found = true
+			break
+		}
+	}
+	s.True(found, "deveria registrar outcome=exhausted quando o retry falha com erro")
+}
+
+func (s *GuardChainAgentSuite) TestExecute_ExpiredWithoutTool_NotRetryable_NoRetryCall() {
+	underlying := &sequencedGuardChainUnderlyingAgent{results: []agent.Result{
+		{Content: "O registro expirou. Para registrar, envie a informação completa novamente."},
+	}}
+	o11y := fake.NewProvider()
+
+	built := WithGuardChain(underlying, o11y, nil, []guards.PostGuard{guards.NewExpiredWithoutToolGuard()})
+	output, err := built.Execute(s.ctx, agent.Request{AgentID: "agent-1"})
+
+	s.NoError(err)
+	s.Equal(1, underlying.calls)
+	s.Equal(agent.ToolOutcomeClarify, output.ToolOutcome)
+
+	counter := o11y.Metrics().(*fake.FakeMetrics).GetCounter("agent_guard_retry_total")
+	if counter != nil {
+		s.Empty(counter.GetValues())
+	}
 }
 
 func (s *GuardChainAgentSuite) TestStream_DelegatesToUnderlyingAgent() {

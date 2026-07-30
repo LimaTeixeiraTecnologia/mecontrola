@@ -35,6 +35,7 @@ func (s *ConfirmationWithoutToolGuardSuite) TestInspect() {
 			},
 			expect: func(decision GuardDecision) {
 				s.True(decision.Handled)
+				s.True(decision.Retryable)
 				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
 				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
 				s.Equal("guard confirmation_without_tool: pedido de confirmação fabricado pelo LLM sem tool call", decision.Result.FailureReason)
@@ -48,6 +49,7 @@ func (s *ConfirmationWithoutToolGuardSuite) TestInspect() {
 			},
 			expect: func(decision GuardDecision) {
 				s.True(decision.Handled)
+				s.True(decision.Retryable)
 				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
 				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
 			},
@@ -73,6 +75,7 @@ func (s *ConfirmationWithoutToolGuardSuite) TestInspect() {
 			},
 			expect: func(decision GuardDecision) {
 				s.True(decision.Handled)
+				s.True(decision.Retryable)
 				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
 				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
 			},
@@ -84,6 +87,7 @@ func (s *ConfirmationWithoutToolGuardSuite) TestInspect() {
 			},
 			expect: func(decision GuardDecision) {
 				s.True(decision.Handled)
+				s.True(decision.Retryable)
 				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
 				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
 			},
@@ -95,6 +99,7 @@ func (s *ConfirmationWithoutToolGuardSuite) TestInspect() {
 			},
 			expect: func(decision GuardDecision) {
 				s.True(decision.Handled)
+				s.True(decision.Retryable)
 				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
 				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
 			},

@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	expenseShortcutRe = regexp.MustCompile(`(?i)^\s*(?:hoje\s+|ontem\s+)?(?:gastei|paguei|torrei)\s+(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real|conto|contos|pila|mango)?\s+(?:no|na|nos|nas|em|com|de|do|da|pra|para)\s+([a-zà-ú][a-zà-ú' ]*?)\s*$`)
+	expenseShortcutRe = regexp.MustCompile(`(?i)^\s*(?:hoje\s+|ontem\s+)?(?:gastei|paguei|torrei|comprei|fiz\s+(?:uma|a)\s+compra|realizei\s+(?:uma|a)\s+compra)\s+(?:de\s+)?(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real|conto|contos|pila|mango)?\s+(?:no|na|nos|nas|em|com|de|do|da|pra|para)\s+([a-zà-ú][a-zà-ú' ]*?)\s*$`)
 
 	expenseShortcutBlockers = []string{
 		"cartão", "cartao", "crédito", "credito", "parcel",

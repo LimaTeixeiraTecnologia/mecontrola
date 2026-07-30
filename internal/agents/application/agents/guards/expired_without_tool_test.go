@@ -49,6 +49,9 @@ func TestExpiredWithoutToolGuard(t *testing.T) {
 			if scenario.wantHandled && decision.Result.Content != expiredWithoutToolReask {
 				t.Fatalf("content = %q; want reask", decision.Result.Content)
 			}
+			if decision.Retryable {
+				t.Fatalf("Retryable = true; want false (expired_without_tool nao entra no retry desta correcao)")
+			}
 		})
 	}
 }

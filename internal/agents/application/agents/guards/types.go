@@ -10,6 +10,7 @@ type GuardDecision struct {
 	Handled   bool
 	Result    agent.Result
 	InvokeErr error
+	Retryable bool
 }
 
 type PreGuard interface {

@@ -39,7 +39,7 @@ func (g *confirmationWithoutToolGuard) Inspect(_ context.Context, _ agent.Reques
 	forced.Content = successWithoutToolFallbackMessage
 	forced.ToolOutcome = agent.ToolOutcomeUsecaseError
 	forced.FailureReason = "guard confirmation_without_tool: pedido de confirmação fabricado pelo LLM sem tool call"
-	return GuardDecision{Handled: true, Result: forced}
+	return GuardDecision{Handled: true, Retryable: true, Result: forced}
 }
 
 func containsConfirmationMarker(content string) bool {

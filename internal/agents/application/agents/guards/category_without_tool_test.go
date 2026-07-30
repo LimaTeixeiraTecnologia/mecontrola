@@ -35,6 +35,7 @@ func (s *CategoryWithoutToolGuardSuite) TestInspect() {
 			},
 			expect: func(decision GuardDecision) {
 				s.True(decision.Handled)
+				s.True(decision.Retryable)
 				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
 				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
 				s.Equal("guard category_without_tool: pergunta de categoria fabricada pelo LLM sem tool call", decision.Result.FailureReason)
@@ -47,6 +48,7 @@ func (s *CategoryWithoutToolGuardSuite) TestInspect() {
 			},
 			expect: func(decision GuardDecision) {
 				s.True(decision.Handled)
+				s.True(decision.Retryable)
 				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
 			},
 		},
@@ -57,6 +59,7 @@ func (s *CategoryWithoutToolGuardSuite) TestInspect() {
 			},
 			expect: func(decision GuardDecision) {
 				s.True(decision.Handled)
+				s.True(decision.Retryable)
 				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
 			},
 		},
@@ -67,6 +70,7 @@ func (s *CategoryWithoutToolGuardSuite) TestInspect() {
 			},
 			expect: func(decision GuardDecision) {
 				s.True(decision.Handled)
+				s.True(decision.Retryable)
 				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
 				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
 			},
@@ -79,6 +83,7 @@ func (s *CategoryWithoutToolGuardSuite) TestInspect() {
 			},
 			expect: func(decision GuardDecision) {
 				s.True(decision.Handled)
+				s.True(decision.Retryable)
 				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
 				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
 			},

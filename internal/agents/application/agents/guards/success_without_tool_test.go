@@ -42,6 +42,7 @@ func (s *SuccessWithoutToolGuardSuite) TestInspect() {
 			args: args{out: agent.Result{Content: "Registrei sua despesa com sucesso!"}},
 			expect: func(decision GuardDecision) {
 				s.True(decision.Handled)
+				s.True(decision.Retryable)
 				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
 				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
 				s.Equal("guard success_without_tool: confirmação de escrita fabricada pelo LLM sem write tool bem-sucedida", decision.Result.FailureReason)
@@ -69,6 +70,7 @@ func (s *SuccessWithoutToolGuardSuite) TestInspect() {
 			}},
 			expect: func(decision GuardDecision) {
 				s.True(decision.Handled)
+				s.True(decision.Retryable)
 			},
 		},
 		{
@@ -95,6 +97,7 @@ func (s *SuccessWithoutToolGuardSuite) TestInspect() {
 			args: args{out: agent.Result{Content: "Prontinho! ✅\n\nVocê está no controle da sua grana! 💪 💚"}},
 			expect: func(decision GuardDecision) {
 				s.True(decision.Handled)
+				s.True(decision.Retryable)
 				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
 			},
 		},
@@ -103,6 +106,7 @@ func (s *SuccessWithoutToolGuardSuite) TestInspect() {
 			args: args{out: agent.Result{Content: "Boa notícia! 🎉\n\nSeu esforço está dando resultado! 💪 💚"}},
 			expect: func(decision GuardDecision) {
 				s.True(decision.Handled)
+				s.True(decision.Retryable)
 				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
 			},
 		},

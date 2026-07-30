@@ -36,7 +36,7 @@ func (g *categoryWithoutToolGuard) Inspect(_ context.Context, _ agent.Request, o
 	forced.Content = successWithoutToolFallbackMessage
 	forced.ToolOutcome = agent.ToolOutcomeUsecaseError
 	forced.FailureReason = "guard category_without_tool: pergunta de categoria fabricada pelo LLM sem tool call"
-	return GuardDecision{Handled: true, Result: forced}
+	return GuardDecision{Handled: true, Retryable: true, Result: forced}
 }
 
 func containsCategoryMarker(content string) bool {

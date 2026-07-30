@@ -14,10 +14,14 @@ const (
 	guardDecisionPass    = "pass"
 	guardDecisionHandled = "handled"
 	maxGuardEvidenceSize = 500
+
+	guardRetryOutcomeRecovered = "recovered"
+	guardRetryOutcomeExhausted = "exhausted"
 )
 
 type guardChainMetrics struct {
 	decisions observability.Counter
+	retries   observability.Counter
 }
 
 type guardChainAgent struct {
@@ -39,6 +43,11 @@ func WithGuardChain(a agent.Agent, o11y observability.Observability, pre []guard
 		g.metrics.decisions = o11y.Metrics().Counter(
 			"agent_guard_decisions_total",
 			"Total decisions taken by conversational guards",
+			"1",
+		)
+		g.metrics.retries = o11y.Metrics().Counter(
+			"agent_guard_retry_total",
+			"Total re-executions of the LLM triggered by a retryable post-guard",
 			"1",
 		)
 	}
@@ -63,6 +72,29 @@ func (g *guardChainAgent) Execute(ctx context.Context, in agent.Request) (agent.
 		return result, err
 	}
 
+	result, retryGuard := g.runPostGuards(ctx, in, result)
+	if retryGuard == "" {
+		return result, nil
+	}
+
+	retried, retryErr := g.Agent.Execute(ctx, in)
+	if retryErr != nil {
+		g.logGuardRetryError(ctx, in.AgentID, retryGuard, retryErr)
+		g.recordGuardRetry(ctx, in.AgentID, retryGuard, guardRetryOutcomeExhausted)
+		return result, nil
+	}
+
+	finalResult, secondRetryGuard := g.runPostGuards(ctx, in, retried)
+	if secondRetryGuard == "" {
+		g.recordGuardRetry(ctx, in.AgentID, retryGuard, guardRetryOutcomeRecovered)
+		return finalResult, nil
+	}
+	g.recordGuardRetry(ctx, in.AgentID, secondRetryGuard, guardRetryOutcomeExhausted)
+	return finalResult, nil
+}
+
+func (g *guardChainAgent) runPostGuards(ctx context.Context, in agent.Request, result agent.Result) (agent.Result, string) {
+	retryGuard := ""
 	for _, guard := range g.post {
 		decision := guard.Inspect(ctx, in, result)
 		if decision.Handled {
@@ -75,12 +107,14 @@ func (g *guardChainAgent) Execute(ctx context.Context, in agent.Request) (agent.
 				})
 			}
 			result = decision.Result
+			if decision.Retryable {
+				retryGuard = guard.Name()
+			}
 			continue
 		}
 		g.recordDecision(ctx, in.AgentID, guard.Name(), guardDecisionPass)
 	}
-
-	return result, nil
+	return result, retryGuard
 }
 
 func truncateGuardEvidence(content string, maxRunes int) string {
@@ -102,6 +136,17 @@ func (g *guardChainAgent) logGuardInvokeError(ctx context.Context, agentID, guar
 	)
 }
 
+func (g *guardChainAgent) logGuardRetryError(ctx context.Context, agentID, guardName string, err error) {
+	if g.o11y == nil {
+		return
+	}
+	g.o11y.Logger().Warn(ctx, "agents.guard_chain: retry apos guard retryable falhou; mantendo fallback",
+		observability.String("agent_id", agentID),
+		observability.String("guard", guardName),
+		observability.Error(err),
+	)
+}
+
 func (g *guardChainAgent) recordDecision(ctx context.Context, agentID, guardName, decision string) {
 	if g.metrics.decisions == nil {
 		return
@@ -110,5 +155,16 @@ func (g *guardChainAgent) recordDecision(ctx context.Context, agentID, guardName
 		observability.String("agent_id", agentID),
 		observability.String("guard", guardName),
 		observability.String("decision", decision),
+	)
+}
+
+func (g *guardChainAgent) recordGuardRetry(ctx context.Context, agentID, guardName, outcome string) {
+	if g.metrics.retries == nil {
+		return
+	}
+	g.metrics.retries.Add(ctx, 1,
+		observability.String("agent_id", agentID),
+		observability.String("guard", guardName),
+		observability.String("outcome", outcome),
 	)
 }
