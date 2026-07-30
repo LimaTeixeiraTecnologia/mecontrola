@@ -11,6 +11,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/agents/guards"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 )
 
 type stubPreGuard struct {
@@ -55,9 +56,10 @@ func (a *stubGuardChainUnderlyingAgent) Execute(ctx context.Context, in agent.Re
 }
 
 type sequencedGuardChainUnderlyingAgent struct {
-	results []agent.Result
-	errs    []error
-	calls   int
+	results        []agent.Result
+	errs           []error
+	calls          int
+	capturedInputs []agent.Request
 }
 
 func (a *sequencedGuardChainUnderlyingAgent) ID() string           { return "stub-agent" }
@@ -71,6 +73,7 @@ func (a *sequencedGuardChainUnderlyingAgent) Execute(ctx context.Context, in age
 	if idx >= len(a.results) {
 		idx = len(a.results) - 1
 	}
+	a.capturedInputs = append(a.capturedInputs, in)
 	a.calls++
 	var err error
 	if idx < len(a.errs) {
@@ -357,13 +360,22 @@ func (s *GuardChainAgentSuite) TestExecute_RetryableGuardHandledFirstAttempt_Rec
 	}}
 	o11y := fake.NewProvider()
 
+	original := agent.Request{AgentID: "agent-1", Messages: []llm.Message{{Role: "user", Content: "Fiz a compra do mês e foi 150 no mercado"}}}
 	built := WithGuardChain(underlying, o11y, nil, []guards.PostGuard{guards.NewConfirmationWithoutToolGuard()})
-	output, err := built.Execute(s.ctx, agent.Request{AgentID: "agent-1"})
+	output, err := built.Execute(s.ctx, original)
 
 	s.NoError(err)
 	s.Equal(2, underlying.calls)
 	s.Equal("Como você pagou?", output.Content)
 	s.NotEqual(agent.ToolOutcomeUsecaseError, output.ToolOutcome)
+
+	s.Require().Len(underlying.capturedInputs, 2)
+	s.Equal(original.Messages, underlying.capturedInputs[0].Messages, "primeira tentativa deve usar as mensagens originais sem alteracao")
+	s.Require().Len(underlying.capturedInputs[1].Messages, len(original.Messages)+1)
+	s.Equal(original.Messages, underlying.capturedInputs[1].Messages[:len(original.Messages)], "retry deve preservar o historico original intacto")
+	nudge := underlying.capturedInputs[1].Messages[len(original.Messages)]
+	s.Equal("system", nudge.Role)
+	s.Contains(nudge.Content, "Chame AGORA a ferramenta de escrita")
 
 	counter := o11y.Metrics().(*fake.FakeMetrics).GetCounter("agent_guard_retry_total")
 	s.Require().NotNil(counter)

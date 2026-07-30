@@ -1344,3 +1344,121 @@ func (s *MecontrolaAgentIntegrationSuite) TestCancelamentoNaoEscreve() {
 		require.NotContains(t, lower, term, "M-05=0: cancelamento nao deve resultar em escrita")
 	}
 }
+
+func buildProdIncidentRegisterExpenseTool(invoked *int, capturedPayment *string) tool.ToolHandle {
+	type expInput struct {
+		AmountCents   int64  `json:"amountCents"`
+		Description   string `json:"description"`
+		PaymentMethod string `json:"paymentMethod,omitempty"`
+		CategoryText  string `json:"categoryText,omitempty"`
+		OccurredAt    string `json:"occurredAt,omitempty"`
+	}
+	type expOutput struct {
+		Outcome string `json:"outcome"`
+		Message string `json:"message"`
+	}
+	in := llm.Schema{
+		Name:   "register_expense_input",
+		Strict: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"amountCents":   map[string]any{"type": "integer"},
+				"description":   map[string]any{"type": "string"},
+				"paymentMethod": map[string]any{"type": "string"},
+				"categoryText":  map[string]any{"type": "string"},
+				"occurredAt":    map[string]any{"type": "string"},
+			},
+			"required":             []string{"amountCents", "description"},
+			"additionalProperties": false,
+		},
+	}
+	out := llm.Schema{
+		Name:   "register_expense_output",
+		Strict: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"outcome": map[string]any{"type": "string"},
+				"message": map[string]any{"type": "string"},
+			},
+			"required":             []string{"outcome", "message"},
+			"additionalProperties": false,
+		},
+	}
+	return tool.NewTool[expInput, expOutput]("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário.", in, out,
+		func(_ context.Context, inp expInput) (expOutput, error) {
+			*invoked++
+			*capturedPayment = inp.PaymentMethod
+			if inp.PaymentMethod == "" {
+				return expOutput{Outcome: "clarify", Message: "Como você pagou? (pix, débito, crédito, dinheiro...) 💳"}, nil
+			}
+			return expOutput{
+				Outcome: "clarify",
+				Message: "💰 Valor: R$ 150,00\n📅 Data: hoje\n📂 Categoria: Custo Fixo > Supermercado\n💳 Forma de pagamento: débito\n\nPosso registrar?",
+			}, nil
+		},
+	)
+}
+
+func (s *MecontrolaAgentIntegrationSuite) TestProdIncidentFizACompraDoMesRecoversViaGuardRetry() {
+	t := s.T()
+	const iterations = 10
+	const minRecovered = 8
+
+	recovered := 0
+	for i := 1; i <= iterations; i++ {
+		obs := fake.NewProvider()
+		var invoked int
+		var capturedPayment string
+		handle := buildProdIncidentRegisterExpenseTool(&invoked, &capturedPayment)
+
+		a := BuildMeControlaAgent(s.provider, []tool.ToolHandle{handle}, nil, obs, 0)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+
+		workingMemory := "## Nome de Tratamento\n\nStef\n\n## Objetivo Financeiro\n\nGuardar 300 reais"
+		systemContent := a.Instructions() + "\n\n## Data e Hora Atuais\nAgora são 23:44 de 29/07/2026, quarta-feira.\n\n## Working Memory\n" + workingMemory
+
+		result, err := a.Execute(ctx, agent.Request{
+			AgentID: MecontrolaAgentID,
+			Messages: []llm.Message{
+				{Role: "system", Content: systemContent},
+				{Role: "user", Content: "Xp vence dia 10"},
+				{Role: "assistant", Content: "Resumo de Onboarding\n\n🎯 Objetivo: Guardar 300 reais (meta de R$ 300,00)\n💵 Orçamento mensal: R$ 2.000,00\n\nDistribuição:\n💰 Custo Fixo: R$ 800,00 (40%)\n🎓 Conhecimento: R$ 200,00 (10%)\n🎉 Prazeres: R$ 200,00 (10%)\n🎯 Metas: R$ 200,00 (10%)\n🏦 Liberdade Financeira: R$ 600,00 (30%)\n\nCartões:\nNenhum cartão cadastrado.\n\n🔁 Recorrência: ligada (repete pelos próximos 3 meses)\n\nTudo pronto! 🚀\n\nAgora é só começar: me envie seus gastos e receitas no dia a dia (ex.: \"gastei R$ 50 no mercado\" ou \"recebi R$ 3.000 de salário\")."},
+				{Role: "user", Content: "Gastei 400 no aluguel"},
+				{Role: "assistant", Content: "Como você pagou? (pix, débito, crédito, dinheiro...) 💳"},
+				{Role: "user", Content: "Débito"},
+				{Role: "assistant", Content: "💰 Valor: R$ 400,00\n📅 Data: hoje\n📂 Categoria: Custo Fixo > Aluguel\n💳 Forma de pagamento: débito\n\nPosso registrar?"},
+				{Role: "user", Content: "Sim"},
+				{Role: "assistant", Content: "Prontinho! ✅\n\nRegistrar é o primeiro passo pra prosperar! 🌱 💚"},
+				{Role: "user", Content: "Gastei 100 na conta de água paguei no débito"},
+				{Role: "assistant", Content: "💰 Valor: R$ 100,00\n📅 Data: hoje\n📂 Categoria: Custo Fixo > Água\n💳 Forma de pagamento: débito\n\nPosso registrar?"},
+				{Role: "user", Content: "Sim"},
+				{Role: "assistant", Content: "Prontinho! ✅\n\nMais um passo rumo aos seus objetivos! 🚀 💚"},
+				{Role: "user", Content: "Gastei 100 na conta de luz"},
+				{Role: "assistant", Content: "Como você pagou? (pix, débito, crédito, dinheiro...) 💳"},
+				{Role: "user", Content: "Débito"},
+				{Role: "assistant", Content: "💰 Valor: R$ 100,00\n📅 Data: hoje\n📂 Categoria: Custo Fixo > Energia\n💳 Forma de pagamento: débito\n\nPosso registrar?"},
+				{Role: "user", Content: "Sim"},
+				{Role: "assistant", Content: "Prontinho! ✅\n\nMais um passo rumo aos seus objetivos! 🚀 💚"},
+				{Role: "user", Content: "Fiz a compra do mês e foi 150 no mercado"},
+				{Role: "assistant", Content: "Como você pagou? (pix, débito, crédito, dinheiro...) 💳"},
+				{Role: "user", Content: "Débito"},
+			},
+			MaxTokens: 512,
+		})
+		cancel()
+
+		require.NoError(t, err)
+		require.NotEmpty(t, result.Content)
+
+		isDeadEnd := strings.Contains(result.Content, "Não consegui registrar")
+		if invoked > 0 && !isDeadEnd {
+			recovered++
+		}
+		t.Logf("prod-incident iter=%d invoked=%d paymentMethod=%q outcome=%s content=%q", i, invoked, capturedPayment, result.ToolOutcome.String(), result.Content)
+	}
+
+	t.Logf("prod-incident: %d/%d iteracoes terminaram com register_expense efetivamente chamado (recuperado do guard confirmation_without_tool via retry)", recovered, iterations)
+	require.GreaterOrEqual(t, recovered, minRecovered, "regressao do incidente de producao: 'Fiz a compra do mês e foi X no Y' + resposta de pagamento deve terminar chamando register_expense na maioria das vezes")
+}

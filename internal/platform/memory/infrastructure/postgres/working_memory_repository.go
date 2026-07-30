@@ -48,6 +48,43 @@ func (r *workingMemoryRepository) Get(ctx context.Context, resourceID string) (s
 	return content, nil
 }
 
+func (r *workingMemoryRepository) GetMetadata(ctx context.Context, resourceID string) (map[string]any, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "platform.memory.repository.working_memory.get_metadata")
+	defer span.End()
+
+	const q = `
+		SELECT metadata
+		  FROM mecontrola.platform_resources
+		 WHERE resource_id = $1`
+
+	var raw []byte
+	err := r.db.QueryRowContext(ctx, q, resourceID).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("platform.memory.repository.working_memory.get_metadata: %w", memory.ErrWorkingMemoryNotFound)
+	}
+	if err != nil {
+		span.RecordError(err)
+		r.o11y.Logger().Error(ctx, "platform.memory.repository.working_memory.get_metadata.failed",
+			observability.String("resource_id", resourceID),
+			observability.Error(err),
+		)
+		return nil, fmt.Errorf("platform.memory.repository.working_memory.get_metadata: %w", err)
+	}
+
+	var metadata map[string]any
+	if len(raw) == 0 {
+		return map[string]any{}, nil
+	}
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("platform.memory.repository.working_memory.get_metadata: unmarshal: %w", err)
+	}
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	return metadata, nil
+}
+
 func (r *workingMemoryRepository) Upsert(ctx context.Context, resourceID, content string) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "platform.memory.repository.working_memory.upsert")
 	defer span.End()

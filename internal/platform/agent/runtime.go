@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -369,6 +370,15 @@ func (r *agentRuntime) buildMessages(ctx context.Context, a Agent, threadPK uuid
 	wm, _ := r.workingMem.Get(ctx, in.ResourceID)
 	if wm != "" {
 		systemContent += "\n\n## Working Memory\n" + wm
+	}
+	if metadataReader, ok := r.workingMem.(memory.WorkingMemoryMetadataReader); ok {
+		metadata, _ := metadataReader.GetMetadata(ctx, in.ResourceID)
+		if len(metadata) > 0 {
+			raw, err := json.Marshal(metadata)
+			if err == nil && len(raw) > 0 {
+				systemContent += "\n\n## Working Memory Metadata\n" + string(raw)
+			}
+		}
 	}
 	if systemContent != "" {
 		msgs = append(msgs, llm.Message{Role: "system", Content: systemContent})

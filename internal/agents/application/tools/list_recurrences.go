@@ -31,6 +31,7 @@ type ListRecurrencesItemOutput struct {
 	InstallmentsTotal    int        `json:"installmentsTotal"`
 	StartedAt            time.Time  `json:"startedAt"`
 	EndedAt              *time.Time `json:"endedAt,omitempty"`
+	Version              int64      `json:"version"`
 }
 
 type ListRecurrencesOutput struct {
@@ -93,6 +94,7 @@ func buildListRecurrencesExec(recurrences interfaces.RecurrenceManager) func(con
 				InstallmentsTotal:    r.InstallmentsTotal,
 				StartedAt:            r.StartedAt,
 				EndedAt:              r.EndedAt,
+				Version:              r.Version,
 			}
 		}
 		return ListRecurrencesOutput{Recurrences: out}, nil

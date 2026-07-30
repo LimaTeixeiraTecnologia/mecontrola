@@ -12,7 +12,9 @@ import (
 )
 
 var (
-	expenseShortcutRe = regexp.MustCompile(`(?i)^\s*(?:hoje\s+|ontem\s+)?(?:gastei|paguei|torrei|comprei|fiz\s+(?:uma|a)\s+compra|realizei\s+(?:uma|a)\s+compra)\s+(?:de\s+)?(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real|conto|contos|pila|mango)?\s+(?:no|na|nos|nas|em|com|de|do|da|pra|para)\s+([a-zà-ú][a-zà-ú' ]*?)\s*$`)
+	expenseShortcutRe         = regexp.MustCompile(`(?i)^\s*(?:hoje\s+|ontem\s+)?(?:gastei|paguei|torrei|comprei|fiz\s+(?:uma|a)\s+compra|realizei\s+(?:uma|a)\s+compra)\s+(?:de\s+)?(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real|conto|contos|pila|mango)?\s+(?:no|na|nos|nas|em|com|de|do|da|pra|para)\s+([a-zà-ú][a-zà-ú' ]*?)\s*$`)
+	expensePurchaseClauseRe   = regexp.MustCompile(`(?i)^\s*(?:hoje\s+|ontem\s+)?fiz\s+(?:uma|a)\s+compra(?:\s+do\s+m[eê]s)?\s+e\s+foi\s+(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real|conto|contos|pila|mango)?\s+(?:no|na|nos|nas|em|com|de|do|da|pra|para)\s+([a-zà-ú][a-zà-ú' ]*?)\s*$`)
+	expensePaymentClauseForms = []string{"e paguei no", "e paguei na", "e paguei em", "e paguei com", "paguei no", "paguei na", "paguei em", "paguei com"}
 
 	expenseShortcutBlockers = []string{
 		"cartão", "cartao", "crédito", "credito", "parcel",
@@ -126,6 +128,9 @@ func parseRegisterExpenseShortcut(message string, handle tool.ToolHandle) (map[s
 	}
 	match := expenseShortcutRe.FindStringSubmatch(body)
 	if len(match) != 3 {
+		match = expensePurchaseClauseRe.FindStringSubmatch(body)
+	}
+	if len(match) != 3 {
 		return nil, false
 	}
 	amountCents, ok := parseBrazilianAmountCents(match[1])
@@ -161,6 +166,14 @@ func isExpenseCardContextBlocker(blocker string) bool {
 
 func splitExpensePaymentSuffix(message string) (string, string) {
 	for _, payment := range expenseShortcutPayments {
+		for _, form := range expensePaymentClauseForms {
+			suffix := form + " " + payment.phrase
+			body, ok := trimFoldWordSuffix(message, suffix)
+			if !ok {
+				continue
+			}
+			return body, payment.method
+		}
 		body, ok := trimFoldWordSuffix(message, payment.phrase)
 		if !ok {
 			continue

@@ -21,6 +21,10 @@ type WorkingMemory interface {
 	UpsertMetadata(ctx context.Context, resourceID string, metadata map[string]any) error
 }
 
+type WorkingMemoryMetadataReader interface {
+	GetMetadata(ctx context.Context, resourceID string) (map[string]any, error)
+}
+
 type SemanticRecall interface {
 	Index(ctx context.Context, resourceID, threadID string, sourceMessageID uuid.UUID, content, model string, embedding []float32) error
 	Recall(ctx context.Context, resourceID, query string, embedding []float32, k int) ([]RecallHit, error)

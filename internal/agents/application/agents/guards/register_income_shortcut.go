@@ -13,8 +13,11 @@ import (
 )
 
 var (
-	incomeAmountRe      = regexp.MustCompile(`(?i)(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real)?`)
-	incomeDescriptionRe = regexp.MustCompile(`(?i)\bde\s+([^0-9,.;!?]+)\s*$`)
+	incomeAmountRe            = regexp.MustCompile(`(?i)(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real|reis)?`)
+	incomeDescriptionRe       = regexp.MustCompile(`(?i)\bde\s+([^0-9,.;!?]+)\s*$`)
+	incomeDescriptionBeforeRe = regexp.MustCompile(`(?i)^\s*(.+?)\s+(?:e\s+)?(?:recebi|ganhei|caiu|entrou)\s+(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real|reis)?(?:\s+(hoje|ontem))?\s*$`)
+	incomeServiceAmountRe     = regexp.MustCompile(`(?i)^\s*(?:novo\s+)?servi[cç]o\s+de\s+(.+?)\s+de\s+(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real|reis)?(?:\s+(hoje|ontem))?\s*$`)
+	incomeSaleRe              = regexp.MustCompile(`(?i)^\s*(?:quero\s+registrar\s+uma\s+)?(?:vendi|venda\s+de|registrar\s+uma\s+venda\s+de)\s+(.+?)\s+(?:por|de)\s+(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s*(?:reais|real|reis)?(?:\s+que\s+fiz)?(?:\s+(hoje|ontem))?\s*$`)
 
 	incomeShortcutRecurrenceMarkers = []string{
 		"todo dia", "todo mês", "todo mes", "toda semana", "todo ano",
@@ -69,22 +72,21 @@ func (g *registerIncomeShortcutGuard) Inspect(ctx context.Context, in agent.Requ
 
 func parseRegisterIncomeShortcut(message string, handle tool.ToolHandle) (map[string]any, bool) {
 	normalized := strings.ToLower(strings.TrimSpace(message))
-	if !containsAnyText(normalized, "recebi", "ganhei", "caiu", "entrou", "salário", "salario") {
+	if !containsAnyText(normalized, "recebi", "ganhei", "caiu", "entrou", "salário", "salario", "vendi", "venda", "serviço", "servico") {
 		return nil, false
 	}
 	if containsAnyText(normalized, incomeShortcutRecurrenceMarkers...) {
 		return nil, false
 	}
-	amountMatch := incomeAmountRe.FindStringSubmatch(message)
-	descriptionMatch := incomeDescriptionRe.FindStringSubmatch(message)
-	if len(amountMatch) != 2 || len(descriptionMatch) != 2 {
-		return nil, false
-	}
-	amountCents, ok := parseBrazilianAmountCents(amountMatch[1])
+	amountText, description, occurredAt, ok := parseIncomeShortcutParts(message)
 	if !ok {
 		return nil, false
 	}
-	description := strings.TrimSpace(descriptionMatch[1])
+	amountCents, ok := parseBrazilianAmountCents(amountText)
+	if !ok {
+		return nil, false
+	}
+	description = normalizeIncomeDescription(description)
 	if description == "" {
 		return nil, false
 	}
@@ -92,10 +94,57 @@ func parseRegisterIncomeShortcut(message string, handle tool.ToolHandle) (map[st
 	if toolPropertyWantsString(handle, "amountCents") {
 		amountArg = strconv.FormatInt(amountCents, 10)
 	}
-	return map[string]any{
+	args := map[string]any{
 		"amountCents": amountArg,
 		"description": description,
-	}, true
+	}
+	if occurredAt != "" {
+		args["occurredAt"] = occurredAt
+	}
+	return args, true
+}
+
+func parseIncomeShortcutParts(message string) (string, string, string, bool) {
+	if match := incomeSaleRe.FindStringSubmatch(message); len(match) == 4 {
+		return match[2], match[1], strings.TrimSpace(strings.ToLower(match[3])), true
+	}
+	if match := incomeServiceAmountRe.FindStringSubmatch(message); len(match) == 4 {
+		return match[2], match[1], strings.TrimSpace(strings.ToLower(match[3])), true
+	}
+	if match := incomeDescriptionBeforeRe.FindStringSubmatch(message); len(match) == 4 {
+		return match[2], match[1], strings.TrimSpace(strings.ToLower(match[3])), true
+	}
+	amountMatch := incomeAmountRe.FindStringSubmatch(message)
+	descriptionMatch := incomeDescriptionRe.FindStringSubmatch(message)
+	if len(amountMatch) != 2 || len(descriptionMatch) != 2 {
+		return "", "", "", false
+	}
+	return amountMatch[1], descriptionMatch[1], "", true
+}
+
+func normalizeIncomeDescription(description string) string {
+	description = strings.TrimSpace(description)
+	prefixes := []string{
+		"fiz um serviço de ",
+		"fiz uma serviço de ",
+		"fiz um servico de ",
+		"fiz uma servico de ",
+		"fiz uma podologia ",
+		"fiz um ",
+		"fiz uma ",
+		"novo serviço de ",
+		"novo servico de ",
+		"novo ",
+		"serviço de ",
+		"servico de ",
+	}
+	lower := strings.ToLower(description)
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(lower, prefix) {
+			return strings.TrimSpace(description[len(prefix):])
+		}
+	}
+	return description
 }
 
 func parseBrazilianAmountCents(value string) (int64, bool) {

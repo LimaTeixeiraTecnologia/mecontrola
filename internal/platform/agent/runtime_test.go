@@ -367,6 +367,31 @@ func (s *RuntimeTestSuite) TestExecute_InjectsRecentHistoryChronologically() {
 	s.Equal("nova pergunta", ag.captured.Messages[3].Content)
 }
 
+func (s *RuntimeTestSuite) TestExecute_InjectsWorkingMemoryMetadata() {
+	threadID := uuid.New()
+	ag := &capturingAgent{id: "agent-1", instructions: "Be helpful", result: Result{Content: "ok", Mode: ExecutionModeSync}}
+
+	reg := NewAgentRegistry()
+	reg.Register(ag)
+	rt := NewAgentRuntime(
+		reg,
+		&fakeThreadGateway{thread: memory.Thread{ID: threadID, ResourceID: "res-1", ThreadID: "thr-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
+		&fakeMessageStore{},
+		&fakeWorkingMemory{metadata: map[string]any{"nome_tratamento": "Stef"}},
+		&fakeRunStore{},
+		s.obs,
+	)
+
+	in := InboundRequest{AgentID: "agent-1", ResourceID: "res-1", ThreadID: "thr-1", Message: "nova pergunta", MessageID: "msg-1"}
+	_, err := rt.Execute(s.ctx, in)
+	s.NoError(err)
+
+	s.Require().NotEmpty(ag.captured.Messages)
+	s.Equal("system", ag.captured.Messages[0].Role)
+	s.Contains(ag.captured.Messages[0].Content, "## Working Memory Metadata")
+	s.Contains(ag.captured.Messages[0].Content, `"nome_tratamento":"Stef"`)
+}
+
 func (s *RuntimeTestSuite) TestExecute_OutcomeOutcomeField_Routed() {
 	threadID := uuid.New()
 
@@ -985,8 +1010,9 @@ func (f *failingMessageStore) Recent(_ context.Context, _ uuid.UUID, _ int) ([]m
 }
 
 type fakeWorkingMemory struct {
-	content string
-	err     error
+	content  string
+	metadata map[string]any
+	err      error
 }
 
 func (f *fakeWorkingMemory) Get(_ context.Context, _ string) (string, error) {
@@ -999,6 +1025,10 @@ func (f *fakeWorkingMemory) Upsert(_ context.Context, _, _ string) error {
 
 func (f *fakeWorkingMemory) UpsertMetadata(_ context.Context, _ string, _ map[string]any) error {
 	return nil
+}
+
+func (f *fakeWorkingMemory) GetMetadata(_ context.Context, _ string) (map[string]any, error) {
+	return f.metadata, f.err
 }
 
 type fakeRunStore struct {

@@ -11,9 +11,15 @@ func TestParseRegisterIncomeShortcut(t *testing.T) {
 		wantOK  bool
 		wantAmt int64
 		wantDsc string
+		wantAt  string
 	}{
 		{name: "receita avulsa", input: "recebi 500 de freelance", wantOK: true, wantAmt: 50000, wantDsc: "freelance"},
 		{name: "milhar com centavos", input: "caiu R$ 1.250,90 de reembolso", wantOK: true, wantAmt: 125090, wantDsc: "reembolso"},
+		{name: "servico podologia recebi hoje", input: "Fiz um serviço de podologia recebi 55 reais hoje", wantOK: true, wantAmt: 5500, wantDsc: "podologia", wantAt: "hoje"},
+		{name: "podologia sem servico", input: "Fiz uma podologia recebi 55 reais", wantOK: true, wantAmt: 5500, wantDsc: "podologia"},
+		{name: "novo servico typo reis", input: "Novo serviço de podologia de 55 reis", wantOK: true, wantAmt: 5500, wantDsc: "podologia"},
+		{name: "venda perfume avon", input: "Vendi um perfume da avon por 50 hoje", wantOK: true, wantAmt: 5000, wantDsc: "um perfume da avon", wantAt: "hoje"},
+		{name: "registrar venda perfume", input: "Quero registrar uma venda de perfume de 50 reais que fiz hoje", wantOK: true, wantAmt: 5000, wantDsc: "perfume", wantAt: "hoje"},
 		{name: "producao todo dia 5 eu recebo salario nao dispara", input: "todo dia 5 eu recebo R$ 13.874,40 de salário", wantOK: false},
 		{name: "todo mes nao dispara", input: "todo mês eu recebo R$ 13.874,40 de salário", wantOK: false},
 		{name: "todo mes sem acento nao dispara", input: "todo mes caiu 1000 de pensão", wantOK: false},
@@ -38,6 +44,9 @@ func TestParseRegisterIncomeShortcut(t *testing.T) {
 			}
 			if dsc, _ := args["description"].(string); dsc != scenario.wantDsc {
 				t.Fatalf("description = %q; want %q", args["description"], scenario.wantDsc)
+			}
+			if at, _ := args["occurredAt"].(string); at != scenario.wantAt {
+				t.Fatalf("occurredAt = %q; want %q", at, scenario.wantAt)
 			}
 		})
 	}

@@ -32,6 +32,13 @@ func (s *WorkingMemoryRepositoryIntegrationSuite) TestUpsertMetadataMergesAndPre
 
 	s.Require().NoError(repo.Upsert(ctx, resourceID, "## Objetivo Financeiro\n\nComprar uma casa nova"))
 	s.Require().NoError(repo.UpsertMetadata(ctx, resourceID, map[string]any{"objetivo_financeiro": "Comprar uma casa nova"}))
+	metadataReader, ok := repo.(interface {
+		GetMetadata(context.Context, string) (map[string]any, error)
+	})
+	s.Require().True(ok)
+	metadata, err := metadataReader.GetMetadata(ctx, resourceID)
+	s.Require().NoError(err)
+	s.Equal("Comprar uma casa nova", metadata["objetivo_financeiro"])
 
 	var wm, objetivo string
 	s.Require().NoError(db.QueryRowContext(ctx,
