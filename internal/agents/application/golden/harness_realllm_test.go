@@ -32,7 +32,10 @@ func buildGoldenHarnessProvider(t *testing.T) llm.Provider {
 	if apiKey == "" || os.Getenv("RUN_REAL_LLM") != "1" {
 		t.Skip("RUN_REAL_LLM=1 e OPENROUTER_API_KEY obrigatórios")
 	}
-	baseURL := "https://openrouter.ai"
+	baseURL := os.Getenv("OPENROUTER_BASE_URL")
+	if baseURL == "" {
+		baseURL = "https://openrouter.ai"
+	}
 	client, err := httpclient.NewClient(fake.NewProvider(),
 		httpclient.WithBaseURL(baseURL),
 		httpclient.WithTarget("openrouter"),
