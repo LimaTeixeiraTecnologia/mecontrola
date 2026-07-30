@@ -54,6 +54,7 @@ type TransactionsModule struct {
 	HasOpenInstallmentsUC           *usecases.HasOpenInstallments
 	GetCardInvoiceUC                *usecases.GetCardInvoice
 	CreateRecurringTemplateUC       *usecases.CreateRecurringTemplate
+	GetRecurringTemplateUC          *usecases.GetRecurringTemplate
 	UpdateRecurringTemplateUC       *usecases.UpdateRecurringTemplate
 	DeleteRecurringTemplateUC       *usecases.DeleteRecurringTemplate
 	ListRecurringTemplatesUC        *usecases.ListRecurringTemplates
@@ -310,6 +311,7 @@ func (b *transactionsModuleBuilder) build() (TransactionsModule, error) { //noli
 		GetDaySummaryUC:                 getDS,
 		HasOpenInstallmentsUC:           hasOpenInstallments,
 		CreateRecurringTemplateUC:       createRT,
+		GetRecurringTemplateUC:          getRT,
 		ListRecurringTemplatesUC:        listRT,
 		GetCardInvoiceHandler:           getCardInvoiceHandler,
 		EventHandlers: []EventHandlerRegistration{

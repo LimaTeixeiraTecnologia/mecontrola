@@ -10,7 +10,7 @@ var (
 	ErrInputOccurredAtRequired     = errors.New("occurred_at: não pode ser vazio")
 	ErrInputStartedAtRequired      = errors.New("started_at: não pode ser vazio")
 	ErrInputFrequencyRequired      = errors.New("frequency: não pode ser vazio")
-	ErrInputDayOfMonthOutOfRange   = errors.New("day_of_month: deve estar entre 1 e 28")
+	ErrInputDayOfMonthOutOfRange   = errors.New("day_of_month: deve estar entre 1 e 31")
 	ErrInputInstallmentsOutOfRange = errors.New("installments: deve estar entre 1 e 24")
 	ErrInputVersionRequired        = errors.New("version: deve ser maior que zero")
 	ErrInputCategoryIDRequired     = errors.New("category_id: obrigatório")

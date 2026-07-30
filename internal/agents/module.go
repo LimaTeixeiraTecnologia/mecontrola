@@ -192,6 +192,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		deps.TransactionsModule.UpdateRecurringTemplateUC,
 		deps.TransactionsModule.DeleteRecurringTemplateUC,
 		deps.TransactionsModule.ListRecurringTemplatesUC,
+		deps.TransactionsModule.GetRecurringTemplateUC,
 		deps.O11y,
 	)
 	workflowStore := workflowpostgres.NewPostgresStore(deps.O11y, deps.DB)

@@ -10,6 +10,12 @@ import (
 var confirmationWithoutToolMarkers = []string{
 	"posso registrar?",
 	"posso atualizar?",
+	"você confirma esta operação?",
+	"responda *sim* para confirmar",
+	"responda apenas sim ou não",
+	"responda apenas *sim* ou *não*",
+	"operação cancelada conforme solicitado",
+	"a operação foi cancelada",
 }
 
 type confirmationWithoutToolGuard struct{}

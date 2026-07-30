@@ -20,6 +20,7 @@ type recurrenceManagerAdapter struct {
 	updateRT *txusecases.UpdateRecurringTemplate
 	deleteRT *txusecases.DeleteRecurringTemplate
 	listRT   *txusecases.ListRecurringTemplates
+	getRT    *txusecases.GetRecurringTemplate
 	o11y     observability.Observability
 }
 
@@ -28,6 +29,7 @@ func NewRecurrenceManagerAdapter(
 	updateRT *txusecases.UpdateRecurringTemplate,
 	deleteRT *txusecases.DeleteRecurringTemplate,
 	listRT *txusecases.ListRecurringTemplates,
+	getRT *txusecases.GetRecurringTemplate,
 	o11y observability.Observability,
 ) agentsifaces.RecurrenceManager {
 	return &recurrenceManagerAdapter{
@@ -35,6 +37,7 @@ func NewRecurrenceManagerAdapter(
 		updateRT: updateRT,
 		deleteRT: deleteRT,
 		listRT:   listRT,
+		getRT:    getRT,
 		o11y:     o11y,
 	}
 }
@@ -93,8 +96,29 @@ func (a *recurrenceManagerAdapter) UpdateRecurrence(ctx context.Context, templat
 		return agentsifaces.EntryRef{}, err
 	}
 
+	current, err := a.getRT.Execute(ctx, templateID)
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.EntryRef{}, fmt.Errorf("agents/binding/recurrence_manager: buscar recorrência atual: %w", err)
+	}
+
 	raw := txinput.RawUpdateRecurringTemplate{
-		Version: in.Version,
+		Direction:         current.Direction,
+		PaymentMethod:     current.PaymentMethod,
+		CardID:            current.CardID,
+		AmountCents:       current.AmountCents,
+		Description:       current.Description,
+		CategoryID:        current.CategoryID,
+		SubcategoryID:     current.SubcategoryID,
+		Frequency:         current.Frequency,
+		DayOfMonth:        current.DayOfMonth,
+		InstallmentsTotal: current.InstallmentsTotal,
+		StartedAt:         current.StartedAt.Format(time.RFC3339),
+		Version:           in.Version,
+	}
+	if current.EndedAt != nil {
+		endedAt := current.EndedAt.Format(time.RFC3339)
+		raw.EndedAt = &endedAt
 	}
 	if in.Direction != nil {
 		raw.Direction = *in.Direction
@@ -111,14 +135,18 @@ func (a *recurrenceManagerAdapter) UpdateRecurrence(ctx context.Context, templat
 	if in.CategoryID != nil {
 		raw.CategoryID = *in.CategoryID
 	}
-	raw.SubcategoryID = in.SubcategoryID
+	if in.SubcategoryID != nil {
+		raw.SubcategoryID = in.SubcategoryID
+	}
 	if in.Frequency != nil {
 		raw.Frequency = *in.Frequency
 	}
 	if in.DayOfMonth != nil {
 		raw.DayOfMonth = *in.DayOfMonth
 	}
-	raw.EndedAt = in.EndedAt
+	if in.EndedAt != nil {
+		raw.EndedAt = in.EndedAt
+	}
 
 	out, err := a.updateRT.Execute(ctx, templateID, raw)
 	if err != nil {
