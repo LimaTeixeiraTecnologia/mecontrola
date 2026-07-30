@@ -12,6 +12,16 @@ func ambiguityCases() []Case {
 			ResponseProperty: containsAny("ano"),
 			ResponseDescribe: "mês nomeado sem ano pergunta o ano em vez de assumir (verbatim do clarifyPrompt)",
 		},
+		{
+			Name:               "cancelamento ambiguo pos-registro nao alucina exclusao",
+			Category:           CategoryAmbiguity,
+			Origin:             "production-2026-07-29",
+			Input:              "Então estou querendo cancelar acho que não tá funcionando",
+			ToolSubset:         []string{"cancel_plan_info", "support_info", "delete_entry"},
+			ExpectedAnyOfTools: []string{"cancel_plan_info", "support_info"},
+			ResponseProperty:   notContainsAny("o registro foi cancelado", "o lançamento foi cancelado", "cancelei o registro", "cancelei o lançamento"),
+			ResponseDescribe:   "não alega ter cancelado/excluído um lançamento sem tool de escrita; direciona para cancelamento de assinatura ou suporte",
+		},
 	}
 }
 

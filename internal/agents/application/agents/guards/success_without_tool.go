@@ -19,6 +19,8 @@ var successWithoutToolMarkers = []string{
 	"criei",
 	"prontinho",
 	"boa notícia",
+	"cancelad",
+	"cancelei",
 }
 
 var successWithoutToolWriteTools = map[string]struct{}{

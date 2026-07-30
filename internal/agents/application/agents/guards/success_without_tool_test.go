@@ -122,6 +122,28 @@ func (s *SuccessWithoutToolGuardSuite) TestInspect() {
 				s.False(decision.Handled)
 			},
 		},
+		{
+			name: "frase real de cancelamento fabricada sem tool -> fallback + Failed",
+			args: args{out: agent.Result{Content: "Tudo certo, o registro foi cancelado."}},
+			expect: func(decision GuardDecision) {
+				s.True(decision.Handled)
+				s.True(decision.Retryable)
+				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
+				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
+			},
+		},
+		{
+			name: "cancelamento real com delete_entry bem-sucedido -> nao trata",
+			args: args{out: agent.Result{
+				Content: "Tudo certo, o registro foi cancelado.",
+				ToolCalls: []agent.ToolCallRecord{
+					{Tool: "delete_entry", Outcome: agent.ToolCallOutcomeSuccess, Content: `{"outcome":"routed"}`},
+				},
+			}},
+			expect: func(decision GuardDecision) {
+				s.False(decision.Handled)
+			},
+		},
 	}
 
 	for _, scenario := range scenarios {
