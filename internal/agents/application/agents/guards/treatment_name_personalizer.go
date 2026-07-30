@@ -32,10 +32,17 @@ func (g *treatmentNamePersonalizerGuard) Inspect(_ context.Context, in agent.Req
 		return GuardDecision{}
 	}
 	name := extractTreatmentName(in)
-	if name == "" || responseContainsTreatmentName(content, name) {
+	if name == "" {
+		return GuardDecision{}
+	}
+	if strings.Contains(content, name) {
 		return GuardDecision{}
 	}
 	result := out
+	if responseContainsTreatmentName(content, name) {
+		result.Content = replaceTreatmentNameCaseInsensitive(content, name)
+		return GuardDecision{Handled: true, Result: result}
+	}
 	result.Content = name + ", " + lowerFirstRune(content)
 	return GuardDecision{Handled: true, Result: result}
 }
@@ -104,6 +111,27 @@ func normalizeTreatmentName(name string) string {
 
 func responseContainsTreatmentName(content string, name string) bool {
 	return strings.Contains(strings.ToLower(content), strings.ToLower(name))
+}
+
+func replaceTreatmentNameCaseInsensitive(content string, name string) string {
+	loweredContent := strings.ToLower(content)
+	loweredName := strings.ToLower(name)
+	if loweredName == "" {
+		return content
+	}
+	var b strings.Builder
+	start := 0
+	for {
+		idx := strings.Index(loweredContent[start:], loweredName)
+		if idx < 0 {
+			b.WriteString(content[start:])
+			return b.String()
+		}
+		idx += start
+		b.WriteString(content[start:idx])
+		b.WriteString(name)
+		start = idx + len(loweredName)
+	}
 }
 
 func lowerFirstRune(content string) string {
