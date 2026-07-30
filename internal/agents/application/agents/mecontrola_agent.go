@@ -327,6 +327,9 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 	if editEntry := findTool(tools, editEntryToolID); editEntry != nil {
 		pre = append(pre, guards.NewEditEntryCorrectionShortcutGuard(editEntry))
 	}
+	if updateRecurrence := findTool(tools, "update_recurrence"); updateRecurrence != nil {
+		pre = append(pre, guards.NewRecurrenceManageShortcutGuard(updateRecurrence, findTool(tools, "delete_recurrence"), findTool(tools, "list_recurrences")))
+	}
 	post := []guards.PostGuard{
 		guards.NewVerbatimRelayGuard(),
 		guards.NewEmptyAnswerGuard(),
