@@ -300,6 +300,42 @@ func goldenEditTreatmentNameTool(sink ToolCaptureSink) tool.ToolHandle {
 	)
 }
 
+type goldenRecurrenceItem struct {
+	ID          string `json:"id"`
+	Description string `json:"description"`
+	DayOfMonth  int    `json:"dayOfMonth"`
+	AmountCents int64  `json:"amountCents"`
+	Version     int64  `json:"version"`
+}
+
+func goldenListRecurrencesTool(sink ToolCaptureSink) tool.ToolHandle {
+	in := llm.Schema{Name: "list_recurrences_input", Strict: false, Schema: goldenBaseSchema("activeOnly")}
+	out := llm.Schema{
+		Name:   "list_recurrences_output",
+		Strict: true,
+		Schema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{"recurrences": map[string]any{"type": "array"}},
+			"required":             []string{"recurrences"},
+			"additionalProperties": false,
+		},
+	}
+	type output struct {
+		Recurrences []goldenRecurrenceItem `json:"recurrences"`
+	}
+	return tool.NewTool[map[string]any, output]("list_recurrences", "Lista as recorrências financeiras do usuário.", in, out,
+		func(_ context.Context, in map[string]any) (output, error) {
+			sink("list_recurrences", in)
+			return output{Recurrences: []goldenRecurrenceItem{
+				{ID: "2dc23397-5551-494a-8085-854fa96858a3", Description: "aluguel", DayOfMonth: 5, AmountCents: 150000, Version: 1},
+				{ID: "a83be4e3-cb07-435e-96fc-a53ded2ef65b", Description: "salário", DayOfMonth: 5, AmountCents: 1387440, Version: 1},
+				{ID: "047884cc-bc8a-445a-8290-0015378b5348", Description: "salário", DayOfMonth: 31, AmountCents: 1387400, Version: 1},
+				{ID: "f7e70454-3662-472a-bacb-a2932682b5bb", Description: "pensão", DayOfMonth: 30, AmountCents: 80000, Version: 1},
+			}}, nil
+		},
+	)
+}
+
 func goldenRegisterExpensePaymentClarifyTool(sink ToolCaptureSink) tool.ToolHandle {
 	in := llm.Schema{Name: "register_expense_payment_clarify_input", Strict: false, Schema: goldenSchemaWithPaymentEnum("description", "amountCents", "paymentMethod", "occurredAt", "categoryText")}
 	out := llm.Schema{
@@ -363,7 +399,7 @@ var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
 		return goldenCaptureTool("query_card_invoice", "Consulta fatura do 💳", goldenBaseSchema("cardId", "refMonth"), sink)
 	},
 	"list_recurrences": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("list_recurrences", "Lista templates de recorrência", goldenBaseSchema(), sink)
+		return goldenListRecurrencesTool(sink)
 	},
 	"update_recurrence": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("update_recurrence", "Solicita atualização de recorrência", goldenBaseSchema("templateId", "version", "description"), sink)

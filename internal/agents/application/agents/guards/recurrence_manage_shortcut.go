@@ -3,15 +3,22 @@ package guards
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
 
+	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
+)
+
+const (
+	recurrenceManageResolveOutcomeNoMatch   = "no_match"
+	recurrenceManageResolveOutcomeAmbiguous = "ambiguous"
 )
 
 var (
@@ -29,10 +36,19 @@ type recurrenceManageShortcutGuard struct {
 	updateHandle tool.ToolHandle
 	deleteHandle tool.ToolHandle
 	listHandle   tool.ToolHandle
+	unresolved   observability.Counter
 }
 
-func NewRecurrenceManageShortcutGuard(updateHandle, deleteHandle, listHandle tool.ToolHandle) PreGuard {
-	return &recurrenceManageShortcutGuard{updateHandle: updateHandle, deleteHandle: deleteHandle, listHandle: listHandle}
+func NewRecurrenceManageShortcutGuard(updateHandle, deleteHandle, listHandle tool.ToolHandle, o11y observability.Observability) PreGuard {
+	g := &recurrenceManageShortcutGuard{updateHandle: updateHandle, deleteHandle: deleteHandle, listHandle: listHandle}
+	if o11y != nil {
+		g.unresolved = o11y.Metrics().Counter(
+			"agent_recurrence_manage_shortcut_unresolved_total",
+			"Total de vezes que o atalho determinístico de recorrência não conseguiu resolver o termo para um único candidato",
+			"1",
+		)
+	}
+	return g
 }
 
 func (g *recurrenceManageShortcutGuard) Name() string {
@@ -88,8 +104,9 @@ func (g *recurrenceManageShortcutGuard) invokeResolved(ctx context.Context, rawT
 	if err != nil {
 		return GuardDecision{InvokeErr: err}
 	}
-	candidate, ok := resolveRecurrenceManageCandidate(candidates, rawTerm)
+	candidate, matchCount, ok := resolveRecurrenceManageCandidate(candidates, rawTerm)
 	if !ok {
+		g.recordUnresolved(ctx, matchCount)
 		return GuardDecision{}
 	}
 
@@ -97,9 +114,7 @@ func (g *recurrenceManageShortcutGuard) invokeResolved(ctx context.Context, rawT
 		"templateId": candidate.ID,
 		"version":    candidate.Version,
 	}
-	for k, v := range extra {
-		args[k] = v
-	}
+	maps.Copy(args, extra)
 	argsJSON, err := json.Marshal(args)
 	if err != nil {
 		return GuardDecision{}
@@ -138,7 +153,7 @@ func (g *recurrenceManageShortcutGuard) listCandidates(ctx context.Context) ([]r
 	return payload.Recurrences, nil
 }
 
-func resolveRecurrenceManageCandidate(candidates []recurrenceManageCandidate, rawTerm string) (recurrenceManageCandidate, bool) {
+func resolveRecurrenceManageCandidate(candidates []recurrenceManageCandidate, rawTerm string) (recurrenceManageCandidate, int, bool) {
 	term := strings.TrimSpace(rawTerm)
 	day := 0
 	if match := recurrenceManageDayRe.FindStringSubmatch(term); len(match) == 2 {
@@ -149,7 +164,7 @@ func resolveRecurrenceManageCandidate(candidates []recurrenceManageCandidate, ra
 	}
 	termNorm := normalizeRecurrenceManageTerm(term)
 	if termNorm == "" {
-		return recurrenceManageCandidate{}, false
+		return recurrenceManageCandidate{}, 0, false
 	}
 
 	var matches []recurrenceManageCandidate
@@ -163,9 +178,20 @@ func resolveRecurrenceManageCandidate(candidates []recurrenceManageCandidate, ra
 		}
 	}
 	if len(matches) != 1 {
-		return recurrenceManageCandidate{}, false
+		return recurrenceManageCandidate{}, len(matches), false
 	}
-	return matches[0], true
+	return matches[0], 1, true
+}
+
+func (g *recurrenceManageShortcutGuard) recordUnresolved(ctx context.Context, matchCount int) {
+	if g.unresolved == nil {
+		return
+	}
+	outcome := recurrenceManageResolveOutcomeNoMatch
+	if matchCount > 1 {
+		outcome = recurrenceManageResolveOutcomeAmbiguous
+	}
+	g.unresolved.Add(ctx, 1, observability.String("outcome", outcome))
 }
 
 func normalizeRecurrenceManageTerm(s string) string {
