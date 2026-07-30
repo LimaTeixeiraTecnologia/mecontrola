@@ -3103,3 +3103,91 @@ PENDENTE (usuário): commit + CI + deploy. REVALIDAÇÃO PÓS-DEPLOY:
    sobra só salário dia 31;
 4) regressão: mensagem fora de contexto durante confirm pendente ->
    reprompt claro, e "cancelar" cancela só a operação pendente.
+
+================================================================================
+RODADA 31 — 29/07/2026 ~21:00 BRT: update de recorrência falha no execute
+(payload parcial) + LLM imitando textos canned do destructive-confirm
+================================================================================
+
+EVIDÊNCIA (produção, usuário 6dcadf6d-485d-4d91-a071-8e1303c6545e):
+1. Run 23:59:24Z "muda o aluguel para 1600": pergunta de confirmação REAL
+   exibida (verbatim da RODADA 30 funcionou, targetRef UUID correto
+   2dc23397-...). Pergunta → "sim" (run 23:59:34Z): workflow
+   destructive-confirm FAILED no execute com:
+   "direction: não pode ser vazio / payment_method: não pode ser vazio /
+   description: não pode ser vazio / category_id: obrigatório /
+   frequency: não pode ser vazio / day_of_month: deve estar entre 1 e 28 /
+   started_at: não pode ser vazio". Aluguel seguiu 150000 no banco.
+2. Runs 23:59:45Z/23:59:54Z: LLM IMITOU textos canned do histórico sem
+   workflow ativo ("Não entendi... sim ou não" e "Tudo certo, a operação
+   foi cancelada") — respostas fabricadas apresentadas como sistema.
+3. Run 00:00:02Z "cancela a recorrência da pensão": LLM fabricou "Você
+   confirma a exclusão...?" sem tool → guard confirmation_without_tool
+   pegou → fallback honesto "Não consegui registrar".
+4. Run 00:00:09Z: LLM fabricou "🚫 Operação cancelada conforme
+   solicitado." e PASSOU (marcador ainda não existia no guard).
+
+CAUSAS RAIZ (3):
+a) update_recurrence: o LLM passa só o campo alterado (amountCents) e o
+   adapter repassava direto ao usecase UpdateRecurringTemplate, que é
+   FULL-REPLACE (raw DTO exige todos os campos) → validação rejeitava.
+   Contrato LLM (patch) ≠ contrato do usecase (replace).
+b) Texto do erro de validação day_of_month stale: "deve estar entre 1 e
+   28" — a regra já é 1..31 desde a RODADA 28 (VO + migration 000012).
+c) Guard confirmation_without_tool não cobria os textos canned do fluxo
+   destructive-confirm ("Você confirma esta operação?", reprompt sim/não,
+   "Operação cancelada conforme solicitado", "a operação foi cancelada")
+   → LLM podia imitá-los sem tool e o usuário recebia confirmação falsa.
+
+FIX (menor mudança na causa raiz; bugfix + go-implementation R0-R7;
+design-patterns: "não aplicar padrão"):
+- binding/recurrence_manager_adapter.go: UpdateRecurrence agora faz MERGE
+  — busca o template atual via GetRecurringTemplate (novo 5º param do
+  construtor), monta o RawUpdateRecurringTemplate com TODOS os campos
+  atuais (StartedAt/EndedAt em RFC3339, Version do input) e sobrescreve
+  apenas os ponteiros não-nil do patch do LLM. Contrato patch do LLM
+  preservado; contrato full-replace do usecase satisfeito.
+- transactions/module.go: TransactionsModule expõe GetRecurringTemplateUC
+  (o getRT já existia como variável local no wiring).
+- agents/module.go: call site do adapter passa
+  TransactionsModule.GetRecurringTemplateUC.
+- transactions/application/dtos/input/errors.go: texto
+  ErrInputDayOfMonthOutOfRange corrigido para "entre 1 e 31".
+- guards/confirmation_without_tool.go: novos marcadores canned —
+  "você confirma esta operação?", "responda *sim* para confirmar",
+  "responda apenas sim ou não", "responda apenas *sim* ou *não*",
+  "operação cancelada conforme solicitado", "a operação foi cancelada".
+  O guard só dispara quando ExpectedVerbatimText(toolCalls) == "" →
+  verbatim legítimo da tool destructive-confirm continua passando.
+
+TESTES NOVOS:
+- guards/confirmation_without_tool_test.go: 4 cenários — pergunta canned
+  fabricada, "🚫 Operação cancelada conforme solicitado." fabricado,
+  reprompt sim/não fabricado (todos → fallback honesto + ToolOutcome
+  UsecaseError) e pergunta canned COM verbatim de tool (passa adiante).
+- binding/recurrence_manager_adapter_test.go (novo arquivo):
+  TestUpdateRecurrence_MergesPartialPayloadWithCurrentTemplate — patch só
+  com AmountCents 160000 → entity persistida com valor novo E demais
+  campos preservados (descrição, dia 5, direction, payment, frequency);
+  TestUpdateRecurrence_PropagatesGetError — erro do getRT propaga.
+
+VALIDAÇÃO LOCAL (29/07 ~21:30):
+- go build ./... OK; go vet ./internal/agents/... ./internal/transactions/... OK
+- gofmt -l: limpo
+- go test -race -count=1 ./internal/agents/... ./internal/transactions/...: 0 falhas
+- golangci-lint run ./internal/agents/... ./internal/transactions/...: 0 issues
+
+PENDENTE (usuário): commit + CI + deploy. REVALIDAÇÃO PÓS-DEPLOY:
+1) "muda o aluguel para 1600" → "⚠️ Você confirma esta operação?..." →
+   "sim" → "✅ Recorrência atualizada com sucesso." → banco:
+   amount_cents=160000, version=2, demais campos intactos;
+2) "cancela a recorrência da pensão" → pergunta → "sim" →
+   "✅ Recorrência removida com sucesso." → deleted_at preenchido;
+3) "cancela a recorrência do salário do dia 5" → pergunta → "sim" →
+   sobra só salário dia 31;
+4) "cancela a recorrência da pensão" → pergunta → "não" → operação
+   cancelada de verdade (run cancelled no banco), template intacto;
+5) materialização agendada: template "teste materialização" dia 30 → job
+   diário 00:00 UTC (21:00 BRT) deve materializar em transactions +
+   transactions_recurring_materializations na virada 30→31/07; salário
+   dia 31 materializa em 31/07 21:00 BRT.

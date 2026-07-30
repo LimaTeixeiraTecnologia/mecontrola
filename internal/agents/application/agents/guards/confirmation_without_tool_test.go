@@ -67,6 +67,53 @@ func (s *ConfirmationWithoutToolGuardSuite) TestInspect() {
 			},
 		},
 		{
+			name: "pergunta canned de confirmacao destrutiva fabricada sem tool e substituida por falha honesta",
+			out: agent.Result{
+				Content: "⚠️ Você confirma esta operação?\n\nEsta recorrência será excluída.\n\nResponda sim para confirmar ou não para cancelar.",
+			},
+			expect: func(decision GuardDecision) {
+				s.True(decision.Handled)
+				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
+				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
+			},
+		},
+		{
+			name: "texto canned de cancelamento fabricado sem tool e substituido por falha honesta",
+			out: agent.Result{
+				Content: "🚫 Operação cancelada conforme solicitado.",
+			},
+			expect: func(decision GuardDecision) {
+				s.True(decision.Handled)
+				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
+				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
+			},
+		},
+		{
+			name: "reprompt canned de sim ou nao fabricado sem tool e substituido por falha honesta",
+			out: agent.Result{
+				Content: "Não entendi. Por favor, responda apenas sim ou não para confirmar a operação.",
+			},
+			expect: func(decision GuardDecision) {
+				s.True(decision.Handled)
+				s.Equal(successWithoutToolFallbackMessage, decision.Result.Content)
+				s.Equal(agent.ToolOutcomeUsecaseError, decision.Result.ToolOutcome)
+			},
+		},
+		{
+			name: "pergunta canned com verbatim de tool destrutiva passa adiante",
+			out: agent.Result{
+				Content: "⚠️ Você confirma esta operação?\n\nEsta recorrência será atualizada.",
+				ToolCalls: []agent.ToolCallRecord{{
+					Tool:    "update_recurrence",
+					Outcome: agent.ToolCallOutcomeSuccess,
+					Content: `{"message":"⚠️ Você confirma esta operação?\n\nEsta recorrência será atualizada."}`,
+				}},
+			},
+			expect: func(decision GuardDecision) {
+				s.False(decision.Handled)
+			},
+		},
+		{
 			name: "resposta sem marcador de confirmacao passa adiante",
 			out: agent.Result{
 				Content: "Prontinho! ✅",
