@@ -128,12 +128,13 @@ func (s *DictionaryRepositoryIntegrationSuite) TestListPagination() {
 
 func (s *DictionaryRepositoryIntegrationSuite) TestSearch() {
 	scenarios := []struct {
-		name            string
-		query           interfaces.DictionarySearchQuery
-		expectCount     int
-		expectTerm      string
-		expectKind      valueobjects.Kind
-		expectAmbiguous bool
+		name             string
+		query            interfaces.DictionarySearchQuery
+		expectCount      int
+		expectTerm       string
+		expectKind       valueobjects.Kind
+		expectAmbiguous  bool
+		expectCategoryID uuid.UUID
 	}{
 		{
 			name:            "deve encontrar termo agua buscando por agua",
@@ -167,6 +168,30 @@ func (s *DictionaryRepositoryIntegrationSuite) TestSearch() {
 			query:       interfaces.DictionarySearchQuery{Kind: valueobjects.KindIncome, Term: "energia", Limit: 10},
 			expectCount: 0,
 		},
+		{
+			name:             "deve encontrar merchant busterfit em esportes e academia",
+			query:            interfaces.DictionarySearchQuery{Kind: valueobjects.KindExpense, Term: "busterfit", Limit: 10},
+			expectCount:      1,
+			expectTerm:       "busterfit",
+			expectKind:       valueobjects.KindExpense,
+			expectCategoryID: uuid.MustParse("c0e10d9f-b0fe-59e7-8fb9-22a3bebd4784"),
+		},
+		{
+			name:             "deve encontrar merchant open.ai em assinaturas essenciais",
+			query:            interfaces.DictionarySearchQuery{Kind: valueobjects.KindExpense, Term: "open.ai", Limit: 10},
+			expectCount:      1,
+			expectTerm:       "open.ai",
+			expectKind:       valueobjects.KindExpense,
+			expectCategoryID: uuid.MustParse("178d590e-bc16-5df3-a7c8-ec7c193896d5"),
+		},
+		{
+			name:             "deve encontrar merchant sem parar em pedagio",
+			query:            interfaces.DictionarySearchQuery{Kind: valueobjects.KindExpense, Term: "sem parar", Limit: 10},
+			expectCount:      1,
+			expectTerm:       "sem parar",
+			expectKind:       valueobjects.KindExpense,
+			expectCategoryID: uuid.MustParse("9dc2ed94-0ea2-5b72-a948-850670f2bee7"),
+		},
 	}
 
 	for _, scenario := range scenarios {
@@ -180,6 +205,9 @@ func (s *DictionaryRepositoryIntegrationSuite) TestSearch() {
 
 			if scenario.expectCount > 0 {
 				s.Assert().Equal(scenario.expectTerm, entries[0].Term)
+				if scenario.expectCategoryID != uuid.Nil {
+					s.Assert().Equal(scenario.expectCategoryID, entries[0].CategoryID)
+				}
 				s.Assert().Equal(scenario.expectKind, entries[0].Kind)
 				s.Assert().Equal(scenario.expectAmbiguous, entries[0].IsAmbiguous)
 			}
@@ -270,6 +298,12 @@ func (s *DictionaryRepositoryIntegrationSuite) TestSearchTokens() {
 			name:      "deve retornar vazio quando token nao existe",
 			query:     interfaces.DictionaryTokenSearchQuery{Kind: valueobjects.KindExpense, Tokens: []string{"zzzznaoexiste"}, Limit: 50},
 			expectMin: 0,
+		},
+		{
+			name:      "deve casar merchant semparar por token dentro de descritor de fatura",
+			query:     interfaces.DictionaryTokenSearchQuery{Kind: valueobjects.KindExpense, Tokens: []string{"pix", "semparar", "ltda"}, Limit: 50},
+			expectMin: 1,
+			wantTerm:  "semparar",
 		},
 	}
 
