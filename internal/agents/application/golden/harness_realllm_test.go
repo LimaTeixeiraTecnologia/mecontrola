@@ -363,10 +363,10 @@ var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
 		return goldenCaptureTool("list_recurrences", "Lista templates de recorrência", goldenBaseSchema(), sink)
 	},
 	"update_recurrence": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("update_recurrence", "Solicita atualização de recorrência", goldenBaseSchema("recurrenceId", "description"), sink)
+		return goldenCaptureTool("update_recurrence", "Solicita atualização de recorrência", goldenBaseSchema("templateId", "version", "description"), sink)
 	},
 	"delete_recurrence": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("delete_recurrence", "Solicita exclusão de recorrência", goldenBaseSchema("recurrenceId"), sink)
+		return goldenCaptureTool("delete_recurrence", "Solicita exclusão de recorrência", goldenBaseSchema("templateId", "version"), sink)
 	},
 	"list_categories": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("list_categories", "Lista categorias disponíveis", goldenBaseSchema(), sink)
