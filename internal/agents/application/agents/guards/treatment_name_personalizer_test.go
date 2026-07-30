@@ -44,6 +44,13 @@ func TestTreatmentNamePersonalizerGuard(t *testing.T) {
 			handled: true,
 		},
 		{
+			name:    "usa ultima secao de working memory",
+			system:  "## Nome de Tratamento (RF-05)\n\nUse a memória.\n\n## Working Memory\n## Nome de Tratamento\n\nJJ\n\n## Objetivo Financeiro\n\nReserva",
+			content: "(RF-05), jJ, neste mês você já gastou *R$ 250,00*.",
+			want:    "(RF-05), JJ, neste mês você já gastou *R$ 250,00*.",
+			handled: true,
+		},
+		{
 			name:    "sem nome",
 			system:  "## Working Memory\n## Objetivo Financeiro\n\nReserva",
 			content: "Registro concluído.",

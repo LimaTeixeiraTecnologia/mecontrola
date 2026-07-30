@@ -87,7 +87,7 @@ func extractTreatmentNameFromWorkingMemory(content string) string {
 }
 
 func extractMarkdownSection(content string, heading string) string {
-	idx := strings.Index(content, heading)
+	idx := strings.LastIndex(content, heading)
 	if idx < 0 {
 		return ""
 	}
