@@ -330,7 +330,7 @@ func PaymentMethodReprompt() string {
 	return "Não reconheci essa forma de pagamento. 💳 Me diz uma destas: pix, débito, débito em conta, crédito, dinheiro, boleto, transferência, vale-refeição ou vale-alimentação."
 }
 
-const categoryOptionsShown = 12
+const categoryOptionsShown = 15
 
 func numberedCategoryOptions(b *strings.Builder, options []string) {
 	shown := min(len(options), categoryOptionsShown)

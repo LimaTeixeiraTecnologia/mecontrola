@@ -394,6 +394,9 @@ func resolveCategoryBySearch(ctx context.Context, cats categoryValidator, state 
 	if state.CategoryVersion == 0 && effectiveVersion > 0 {
 		state.CategoryVersion = effectiveVersion
 	}
+	if lockedRoot, locked := lockedRootID(state.Candidates); locked {
+		return resolveCategoryBySearchWithinLockedRoot(state, candidates, lockedRoot, text)
+	}
 	if len(candidates) == 1 && candidateHasLeafSubcategory(candidates[0]) {
 		out, _ := promoteTransactionCategoryToConfirmation(state, candidates[0])
 		return out, true
@@ -425,6 +428,16 @@ func resolveCategoryBySearch(ctx context.Context, cats categoryValidator, state 
 		return out, true
 	}
 	return workflow.StepOutput[TransactionWriteState]{}, false
+}
+
+func resolveCategoryBySearchWithinLockedRoot(state TransactionWriteState, candidates []PendingCategoryCandidate, lockedRoot uuid.UUID, text string) (workflow.StepOutput[TransactionWriteState], bool) {
+	decision := DecideCategorySearchFallback(candidates, lockedRoot, text)
+	if decision.Action == FallbackActionPromote {
+		out, _ := promoteTransactionCategoryToConfirmation(state, decision.Candidate)
+		return out, true
+	}
+	out, _ := transactionCategoryReprompt(state, buildCandidatesPrompt(state.Candidates))
+	return out, true
 }
 
 func listRootOnlyCandidates(ctx context.Context, cats categoryValidator, userID uuid.UUID, kind interfaces.CategoryKind) []PendingCategoryCandidate {

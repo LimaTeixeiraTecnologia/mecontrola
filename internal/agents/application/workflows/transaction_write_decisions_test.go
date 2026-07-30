@@ -544,3 +544,95 @@ func TestDecideTransactionCategoryChoice_ListaDeRaizes(t *testing.T) {
 		})
 	}
 }
+
+func TestLockedRootID(t *testing.T) {
+	custoFixoLeaves := []PendingCategoryCandidate{
+		{RootCategoryID: testRootCustoFixoID, RootSlug: "custo-fixo", SubcategoryID: testLeafCombustivel, SubcategorySlug: "combustivel", Path: "Custo Fixo > Combustível"},
+		{RootCategoryID: testRootCustoFixoID, RootSlug: "custo-fixo", SubcategoryID: testLeafSupermercado, SubcategorySlug: "supermercado", Path: "Custo Fixo > Supermercado"},
+	}
+	rootOnly := []PendingCategoryCandidate{
+		{RootCategoryID: testRootCustoFixoID, RootSlug: "custo-fixo", Path: "Custo Fixo"},
+		{RootCategoryID: testRootPrazeresID, RootSlug: "prazeres", Path: "Prazeres"},
+	}
+	mixedRoots := []PendingCategoryCandidate{
+		{RootCategoryID: testRootCustoFixoID, RootSlug: "custo-fixo", SubcategoryID: testLeafCombustivel, SubcategorySlug: "combustivel", Path: "Custo Fixo > Combustível"},
+		{RootCategoryID: testRootPrazeresID, RootSlug: "prazeres", SubcategoryID: testLeafSupermercado, SubcategorySlug: "esportes-e-academia", Path: "Prazeres > Esportes e Academia"},
+	}
+
+	scenarios := []struct {
+		name       string
+		candidates []PendingCategoryCandidate
+		wantLocked bool
+		wantRoot   uuid.UUID
+	}{
+		{name: "vazio", candidates: nil, wantLocked: false},
+		{name: "folhas de uma unica raiz", candidates: custoFixoLeaves, wantLocked: true, wantRoot: testRootCustoFixoID},
+		{name: "lista de raizes (ainda escolhendo raiz)", candidates: rootOnly, wantLocked: false},
+		{name: "folhas de raizes distintas", candidates: mixedRoots, wantLocked: false},
+	}
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			root, locked := lockedRootID(scenario.candidates)
+			if locked != scenario.wantLocked {
+				t.Fatalf("expected locked=%v, got %v", scenario.wantLocked, locked)
+			}
+			if locked && root != scenario.wantRoot {
+				t.Fatalf("expected root %s, got %s", scenario.wantRoot, root)
+			}
+		})
+	}
+}
+
+func TestDecideCategorySearchFallback_NaoTrocaRaizSilenciosamente(t *testing.T) {
+	esportesEmPrazeres := PendingCategoryCandidate{
+		RootCategoryID:  testRootPrazeresID,
+		RootSlug:        "prazeres",
+		SubcategoryID:   testLeafSupermercado,
+		SubcategorySlug: "esportes-e-academia",
+		Path:            "Prazeres > Esportes e Academia",
+	}
+	searchResults := []PendingCategoryCandidate{esportesEmPrazeres}
+
+	decision := DecideCategorySearchFallback(searchResults, testRootCustoFixoID, "Esportes e Academia")
+	if decision.Action != FallbackActionRepromptWithinLockedRoot {
+		t.Fatalf("expected reprompt dentro da raiz travada, got %v (candidate=%+v)", decision.Action, decision.Candidate)
+	}
+}
+
+func TestDecideCategorySearchFallback_PromoveQuandoFiltradoBateComRaizTravada(t *testing.T) {
+	combustivelEmCustoFixo := PendingCategoryCandidate{
+		RootCategoryID:  testRootCustoFixoID,
+		RootSlug:        "custo-fixo",
+		SubcategoryID:   testLeafCombustivel,
+		SubcategorySlug: "combustivel",
+		Path:            "Custo Fixo > Combustível",
+	}
+	searchResults := []PendingCategoryCandidate{combustivelEmCustoFixo}
+
+	decision := DecideCategorySearchFallback(searchResults, testRootCustoFixoID, "Combustível")
+	if decision.Action != FallbackActionPromote {
+		t.Fatalf("expected promote, got %v", decision.Action)
+	}
+	if decision.Candidate.SubcategoryID != testLeafCombustivel {
+		t.Fatalf("expected leaf %s, got %s", testLeafCombustivel, decision.Candidate.SubcategoryID)
+	}
+}
+
+func TestDecideCategorySearchFallback_HonraTrocaExplicitaDeRaiz(t *testing.T) {
+	esportesEmPrazeres := PendingCategoryCandidate{
+		RootCategoryID:  testRootPrazeresID,
+		RootSlug:        "prazeres",
+		SubcategoryID:   testLeafSupermercado,
+		SubcategorySlug: "esportes-e-academia",
+		Path:            "Prazeres > Esportes e Academia",
+	}
+	searchResults := []PendingCategoryCandidate{esportesEmPrazeres}
+
+	decision := DecideCategorySearchFallback(searchResults, testRootCustoFixoID, "Prazeres > Esportes e Academia")
+	if decision.Action != FallbackActionPromote {
+		t.Fatalf("expected promote (troca explicita de raiz), got %v", decision.Action)
+	}
+	if decision.Candidate.RootCategoryID != testRootPrazeresID {
+		t.Fatalf("expected root %s, got %s", testRootPrazeresID, decision.Candidate.RootCategoryID)
+	}
+}

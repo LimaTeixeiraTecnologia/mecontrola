@@ -301,6 +301,53 @@ func candidateRootMatches(c PendingCategoryCandidate, normalized string) bool {
 	return !candidateHasLeafSubcategory(c) && c.Path != "" && normalizeCategoryTerm(c.Path) == normalized
 }
 
+func lockedRootID(candidates []PendingCategoryCandidate) (uuid.UUID, bool) {
+	if len(candidates) == 0 || !candidateHasLeafSubcategory(candidates[0]) {
+		return uuid.UUID{}, false
+	}
+	root := candidates[0].RootCategoryID
+	for _, c := range candidates[1:] {
+		if c.RootCategoryID != root {
+			return uuid.UUID{}, false
+		}
+	}
+	return root, true
+}
+
+func DecideCategorySearchFallback(searchResults []PendingCategoryCandidate, lockedRoot uuid.UUID, text string) CategorySearchFallbackDecision {
+	if filtered := filterCandidatesByRoot(searchResults, lockedRoot); len(filtered) == 1 {
+		return CategorySearchFallbackDecision{Action: FallbackActionPromote, Candidate: filtered[0]}
+	}
+	if candidate, ok := explicitRootSwitchCandidate(searchResults, lockedRoot, text); ok {
+		return CategorySearchFallbackDecision{Action: FallbackActionPromote, Candidate: candidate}
+	}
+	return CategorySearchFallbackDecision{Action: FallbackActionRepromptWithinLockedRoot}
+}
+
+func explicitRootSwitchCandidate(candidates []PendingCategoryCandidate, lockedRoot uuid.UUID, text string) (PendingCategoryCandidate, bool) {
+	rootTerm, leafTerm, ok := splitCategoryTerm(normalizeCategoryTerm(text))
+	if !ok {
+		return PendingCategoryCandidate{}, false
+	}
+	var matches []PendingCategoryCandidate
+	for _, c := range candidates {
+		if c.RootCategoryID == lockedRoot || !candidateHasLeafSubcategory(c) {
+			continue
+		}
+		if normalizeCategoryTerm(c.RootSlug) != rootTerm {
+			continue
+		}
+		if normalizeCategoryTerm(candidateLeafName(c)) != leafTerm && normalizeCategoryTerm(c.SubcategorySlug) != leafTerm {
+			continue
+		}
+		matches = append(matches, c)
+	}
+	if len(matches) == 1 {
+		return matches[0], true
+	}
+	return PendingCategoryCandidate{}, false
+}
+
 func candidateLeafName(c PendingCategoryCandidate) string {
 	if _, leaf, ok := splitCandidatePath(c.Path); ok {
 		return leaf

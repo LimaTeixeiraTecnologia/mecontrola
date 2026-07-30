@@ -71,6 +71,18 @@ type CategoryChoiceDecision struct {
 	Candidate PendingCategoryCandidate
 }
 
+type CategorySearchFallbackAction int
+
+const (
+	FallbackActionPromote CategorySearchFallbackAction = iota + 1
+	FallbackActionRepromptWithinLockedRoot
+)
+
+type CategorySearchFallbackDecision struct {
+	Action    CategorySearchFallbackAction
+	Candidate PendingCategoryCandidate
+}
+
 var (
 	weekdayNames = map[string]time.Weekday{
 		"segunda": time.Monday,

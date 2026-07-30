@@ -86,6 +86,36 @@ func TestMotivationSeed_DifferentSeedsCanRotate(t *testing.T) {
 	assert.Greater(t, len(seen), 1, "rotação deve variar entre seeds distintos")
 }
 
+func TestCategorySubcategoryOptions_ShowsUpTo15WhenMoreExist(t *testing.T) {
+	options := make([]string, 0, 20)
+	for i := range 20 {
+		options = append(options, fmt.Sprintf("Subcategoria %02d", i+1))
+	}
+	got := messages.CategorySubcategoryOptions("Custo Fixo", options)
+	assert.Contains(t, got, "15. *Subcategoria 15*")
+	assert.NotContains(t, got, "16. *Subcategoria 16*")
+	assert.Contains(t, got, "Ou me diga o nome da subcategoria. 🙂")
+}
+
+func TestCategorySubcategoryOptions_ShowsAllWhenFewerThan15(t *testing.T) {
+	options := []string{"Salário", "Décimo Terceiro", "Bônus"}
+	got := messages.CategorySubcategoryOptions("Salário", options)
+	assert.Contains(t, got, "3. *Bônus*")
+	assert.NotContains(t, got, "4. *")
+	assert.Contains(t, got, "Responda o número ou o nome. 🙂")
+}
+
+func TestCategorySubcategoryOptions_ShowsAllWhenExactly15(t *testing.T) {
+	options := make([]string, 0, 15)
+	for i := range 15 {
+		options = append(options, fmt.Sprintf("Subcategoria %02d", i+1))
+	}
+	got := messages.CategorySubcategoryOptions("Custo Fixo", options)
+	assert.Contains(t, got, "15. *Subcategoria 15*")
+	assert.Contains(t, got, "Responda o número ou o nome. 🙂")
+	assert.NotContains(t, got, "Ou me diga o nome da subcategoria. 🙂")
+}
+
 func TestCategorySummaryBlock_Available(t *testing.T) {
 	got := messages.CategorySummaryBlock(messages.CategoryView{
 		Category: "Custo Fixo",
