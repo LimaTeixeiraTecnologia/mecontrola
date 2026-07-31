@@ -272,6 +272,84 @@ func goldenResolveCardNotFoundTool(sink ToolCaptureSink) tool.ToolHandle {
 	)
 }
 
+func goldenEditEntrySchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"entryId":           map[string]any{"type": "string", "description": "Id do lançamento a editar, quando já conhecido. Se ausente, searchAmountCents/searchTerm localizam o lançamento."},
+			"amountCents":       map[string]any{"type": "integer", "description": "Valor NOVO que o lançamento deve passar a ter, em centavos. Preencha apenas se o usuário quiser mudar o valor; omita para manter o valor atual."},
+			"description":       map[string]any{"type": "string", "description": "Descrição NOVA que o lançamento deve passar a ter. Preencha apenas se o usuário quiser mudar a descrição; omita para manter a atual."},
+			"occurredAt":        map[string]any{"type": "string", "description": "Data NOVA do lançamento, como expressão literal do usuário (ex.: 'ontem', 'semana passada', 'mês passado', 'dia 10', 'sexta passada'). Repasse o texto verbatim; NUNCA calcule a data nem envie formato ISO/AAAA-MM-DD — a resolução do calendário é feita pelo sistema. Preencha apenas se o usuário quiser mudar a data; omita para manter a atual."},
+			"searchAmountCents": map[string]any{"type": "integer", "description": "Valor ATUAL do lançamento em centavos, usado só como critério de busca quando entryId é desconhecido. NUNCA o valor novo pretendido."},
+			"searchTerm":        map[string]any{"type": "string", "description": "Termo (descrição atual ou apelido do item) usado só como critério de busca quando entryId é desconhecido."},
+		},
+		"additionalProperties": false,
+	}
+}
+
+type goldenEditEntryOutput struct {
+	NeedsConfirmation bool   `json:"needsConfirmation"`
+	ImpactNote        string `json:"impactNote"`
+	TargetRef         string `json:"targetRef"`
+	Outcome           string `json:"outcome"`
+}
+
+func goldenEditEntryOutputSchema(name string) llm.Schema {
+	return llm.Schema{
+		Name:   name,
+		Strict: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"needsConfirmation": map[string]any{"type": "boolean"},
+				"impactNote":        map[string]any{"type": "string"},
+				"targetRef":         map[string]any{"type": "string"},
+				"outcome":           map[string]any{"type": "string"},
+			},
+			"required":             []string{"needsConfirmation", "impactNote", "targetRef", "outcome"},
+			"additionalProperties": false,
+		},
+	}
+}
+
+func goldenEditEntryScenarioTool(note, outcome string, sink ToolCaptureSink) tool.ToolHandle {
+	in := llm.Schema{Name: "edit_entry_input", Strict: false, Schema: goldenEditEntrySchema()}
+	out := goldenEditEntryOutputSchema("edit_entry_output")
+	return tool.NewVerbatimTool[map[string]any, goldenEditEntryOutput](
+		"edit_entry",
+		"Solicita a edição de um lançamento financeiro (despesa ou receita); aceita valor NOVO (amountCents), critério de busca (searchAmountCents/searchTerm) e data NOVA (occurredAt) como expressão verbatim do usuário. A persistência só ocorre após confirmação explícita do usuário.",
+		in, out,
+		func(_ context.Context, in map[string]any) (goldenEditEntryOutput, error) {
+			sink("edit_entry", in)
+			return goldenEditEntryOutput{
+				NeedsConfirmation: true,
+				ImpactNote:        note,
+				TargetRef:         "",
+				Outcome:           outcome,
+			}, nil
+		},
+		func(o goldenEditEntryOutput) (string, bool) {
+			return o.ImpactNote, o.NeedsConfirmation && o.ImpactNote != ""
+		},
+	)
+}
+
+func goldenEditEntryTool(sink ToolCaptureSink) tool.ToolHandle {
+	return goldenEditEntryScenarioTool(GoldenEditEntryDefaultImpactNote, "clarify", sink)
+}
+
+func goldenEditEntryMultipleCandidatesTool(sink ToolCaptureSink) tool.ToolHandle {
+	return goldenEditEntryScenarioTool(GoldenEditEntryMultipleCandidatesNote, "clarify", sink)
+}
+
+func goldenEditEntryNotFoundTool(sink ToolCaptureSink) tool.ToolHandle {
+	return goldenEditEntryScenarioTool(GoldenEditEntryNotFoundNote, "not_found", sink)
+}
+
+func goldenEditEntryInvalidAmountTool(sink ToolCaptureSink) tool.ToolHandle {
+	return goldenEditEntryScenarioTool(GoldenEditEntryInvalidAmountNote, "invalid", sink)
+}
+
 func goldenEditTreatmentNameTool(sink ToolCaptureSink) tool.ToolHandle {
 	in := llm.Schema{Name: "edit_treatment_name_input", Strict: false, Schema: goldenBaseSchema("name")}
 	out := llm.Schema{
@@ -422,9 +500,10 @@ var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
 	"suggest_allocation": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("suggest_allocation", "Sugere distribuição de alocação", goldenBaseSchema("totalCents"), sink)
 	},
-	"edit_entry": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("edit_entry", "Inicia a edição de um lançamento pelo ID", goldenBaseSchema("entryId", "entryKind"), sink)
-	},
+	"edit_entry":                     goldenEditEntryTool,
+	"edit_entry_multiple_candidates": goldenEditEntryMultipleCandidatesTool,
+	"edit_entry_not_found":           goldenEditEntryNotFoundTool,
+	"edit_entry_invalid_amount":      goldenEditEntryInvalidAmountTool,
 	"delete_entry": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("delete_entry", "Solicita exclusão de lançamento ou 💳; entryId DEVE ser o id real do lançamento ou o cardId real do 💳 (obtido via resolve_card quando o 💳 for identificado por apelido), nunca um valor inventado", goldenBaseSchema("entryId", "entryKind", "version"), sink)
 	},

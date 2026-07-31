@@ -426,7 +426,8 @@ func TestBuildQueryMonthToolPreviousResolvesToPriorMonth(t *testing.T) {
 	loc, err := time.LoadLocation("America/Sao_Paulo")
 	require.NoError(t, err)
 	now := time.Now().In(loc)
-	prev := now.AddDate(0, -1, 0).Format("2006-01")
+	firstOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc)
+	prev := firstOfMonth.AddDate(0, -1, 0).Format("2006-01")
 
 	ledger.EXPECT().GetMonthlySummary(mock.Anything, testUserID, prev).
 		Return(interfaces.MonthlySummary{RefMonth: prev}, nil).Once()
@@ -449,7 +450,8 @@ func TestBuildQueryMonthToolNextResolvesToNextMonth(t *testing.T) {
 	loc, err := time.LoadLocation("America/Sao_Paulo")
 	require.NoError(t, err)
 	now := time.Now().In(loc)
-	next := now.AddDate(0, 1, 0).Format("2006-01")
+	firstOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc)
+	next := firstOfMonth.AddDate(0, 1, 0).Format("2006-01")
 
 	ledger.EXPECT().GetMonthlySummary(mock.Anything, testUserID, next).
 		Return(interfaces.MonthlySummary{RefMonth: next}, nil).Once()
@@ -1021,4 +1023,32 @@ func TestBuildRegisterIncomeToolCeilingRejectsWithoutRegistrarCall(t *testing.T)
 	assert.Equal(t, "clarify", result.Outcome, "8.2: teto income deve retornar clarify sem chamar o registrar")
 	assert.NotEmpty(t, result.Message, "8.2: mensagem de teto income deve ser não-vazia")
 	assert.Equal(t, 0, registrar.incomeCalls, "8.2: registrar NÃO deve ser chamado quando acima do teto (income)")
+}
+
+func occurredAtDescription(t *testing.T, params map[string]any) string {
+	t.Helper()
+	props, ok := params["properties"].(map[string]any)
+	require.True(t, ok, "schema deve expor properties")
+	occurredAt, ok := props["occurredAt"].(map[string]any)
+	require.True(t, ok, "schema deve expor occurredAt")
+	desc, _ := occurredAt["description"].(string)
+	return desc
+}
+
+func TestRegisterIncomeSchemaOccurredAtVerbatimContract(t *testing.T) {
+	registrar := &fakeRegistrar{}
+	handle := BuildRegisterIncomeTool(registrar)
+	desc := occurredAtDescription(t, handle.Parameters())
+	assert.NotEmpty(t, desc, "occurredAt deve descrever o contrato de data verbatim")
+	assert.Contains(t, desc, "semana passada")
+	assert.Contains(t, desc, "ISO")
+}
+
+func TestEditEntrySchemaOccurredAtVerbatimContract(t *testing.T) {
+	editor := &fakeEntryEditor{result: usecases.RegisterResult{Outcome: agent.ToolOutcomeClarify}}
+	handle := BuildEditEntryTool(editor)
+	desc := occurredAtDescription(t, handle.Parameters())
+	assert.NotEmpty(t, desc, "occurredAt deve descrever o contrato de data verbatim")
+	assert.Contains(t, desc, "semana passada")
+	assert.Contains(t, desc, "ISO")
 }

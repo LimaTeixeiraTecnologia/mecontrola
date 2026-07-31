@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-lancamento-edicao-receitas/3.0_execution_report.md
+summary: Linha 📅 Data condicional na confirmação de receita via IncomeConfirmationBlock + formatOptionalConfirmDate; validações verdes; review APPROVED.
+timestamp: 2026-07-31T00:17:56Z

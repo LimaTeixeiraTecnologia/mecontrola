@@ -233,6 +233,8 @@ type PaymentAnswer struct {
 
 var reRecurrenceDayOfMonth = regexp.MustCompile(`(?i)^\s*(?:todo\s+dia|dia)?\s*([0-9]{1,2})\s*$`)
 
+var reDayOfMonthExpr = regexp.MustCompile(`^\s*dia\s+([0-9]{1,2})\s*$`)
+
 func ParseRecurrenceDayOfMonth(text string) int {
 	match := reRecurrenceDayOfMonth.FindStringSubmatch(strings.TrimSpace(text))
 	if len(match) != 2 {
@@ -294,28 +296,100 @@ func parseWeekday(text string, now time.Time) (string, bool) {
 
 func ParseInputDate(text string, now time.Time) string {
 	lower := normalizeText(text)
-	switch lower {
-	case "hoje", "today":
-		return now.Format("2006-01-02")
-	case "ontem", "yesterday":
-		return now.Add(-24 * time.Hour).Format("2006-01-02")
-	case "anteontem":
-		return now.Add(-48 * time.Hour).Format("2006-01-02")
+	if d, ok := parseRelativeInputDate(lower, now); ok {
+		return d
 	}
 	if d, ok := parseWeekday(text, now); ok {
 		return d
 	}
+	if d, ok := parseLiteralInputDate(text, now); ok {
+		return d
+	}
+	if d, ok := parseNamedPastInputDate(lower, now); ok {
+		return d
+	}
+	if match := reDayOfMonthExpr.FindStringSubmatch(lower); match != nil {
+		if n, err := strconv.Atoi(match[1]); err == nil {
+			if d, ok := resolveMostRecentDayOfMonth(n, now); ok {
+				return d
+			}
+		}
+	}
+	return ""
+}
+
+func parseRelativeInputDate(lower string, now time.Time) (string, bool) {
+	switch lower {
+	case "hoje", "today":
+		return now.Format("2006-01-02"), true
+	case "ontem", "yesterday":
+		return now.Add(-24 * time.Hour).Format("2006-01-02"), true
+	case "anteontem":
+		return now.Add(-48 * time.Hour).Format("2006-01-02"), true
+	}
+	return "", false
+}
+
+func parseLiteralInputDate(text string, now time.Time) (string, bool) {
 	if len(text) == 5 && text[2] == '/' {
 		day, errD := strconv.Atoi(text[:2])
 		month, errM := strconv.Atoi(text[3:])
 		if errD == nil && errM == nil && day >= 1 && day <= 31 && month >= 1 && month <= 12 {
-			return time.Date(now.Year(), time.Month(month), day, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+			return time.Date(now.Year(), time.Month(month), day, 0, 0, 0, 0, now.Location()).Format("2006-01-02"), true
 		}
 	}
 	if t, err := time.Parse("2006-01-02", text); err == nil {
-		return t.Format("2006-01-02")
+		return t.Format("2006-01-02"), true
 	}
-	return ""
+	return "", false
+}
+
+func parseNamedPastInputDate(lower string, now time.Time) (string, bool) {
+	switch lower {
+	case "semana passada":
+		return now.AddDate(0, 0, -7).Format("2006-01-02"), true
+	case "mes passado":
+		return resolveSameDayPreviousMonth(now), true
+	}
+	return "", false
+}
+
+func daysInMonth(year int, month time.Month) int {
+	return time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC).Day()
+}
+
+func resolveSameDayPreviousMonth(now time.Time) string {
+	prevYear, prevMonth := now.Year(), now.Month()-1
+	if prevMonth < time.January {
+		prevMonth = time.December
+		prevYear--
+	}
+	day := now.Day()
+	if maxDay := daysInMonth(prevYear, prevMonth); day > maxDay {
+		day = maxDay
+	}
+	return time.Date(prevYear, prevMonth, day, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+}
+
+func resolveMostRecentDayOfMonth(n int, now time.Time) (string, bool) {
+	if n < 1 || n > 31 {
+		return "", false
+	}
+	year, month := now.Year(), now.Month()
+	for i := 0; i < 12; i++ {
+		if n <= daysInMonth(year, month) {
+			candidate := time.Date(year, month, n, 0, 0, 0, 0, now.Location())
+			if !candidate.After(now) {
+				return candidate.Format("2006-01-02"), true
+			}
+		}
+		month--
+		if month < time.January {
+			month = time.December
+			year--
+		}
+	}
+	return "", false
 }
 
 func isCategoryBusinessRejection(err error) bool {

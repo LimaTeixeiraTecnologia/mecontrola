@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-lancamento-edicao-receitas/1.0_execution_report.md
+summary: ParseInputDate resolve semana passada/mes passado/dia N com helpers puros; testes race verdes.
+timestamp: 2026-07-31T00:12:20Z

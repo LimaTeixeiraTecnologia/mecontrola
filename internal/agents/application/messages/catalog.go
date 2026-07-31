@@ -249,6 +249,12 @@ func ExpenseConfirmationBlock(v ConfirmationView) string {
 }
 
 func IncomeConfirmationBlock(v ConfirmationView) string {
+	if v.DateFormatted != "" {
+		return fmt.Sprintf(
+			"💰 Valor: %s\n📥 Origem: %s\n📅 Data: %s\n\nPosso registrar?",
+			v.AmountFormatted, v.Origin, v.DateFormatted,
+		)
+	}
 	return fmt.Sprintf(
 		"💰 Valor: %s\n📥 Origem: %s\n\nPosso registrar?",
 		v.AmountFormatted, v.Origin,

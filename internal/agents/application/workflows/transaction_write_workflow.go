@@ -1024,6 +1024,7 @@ func confirmSummaryIncome(state TransactionWriteState) string {
 	return messages.IncomeConfirmationBlock(messages.ConfirmationView{
 		AmountFormatted: money.FromCents(state.AmountCents).BRL(),
 		Origin:          state.Description,
+		DateFormatted:   formatOptionalConfirmDate(state.OccurredAt, time.Now().UTC()),
 	})
 }
 
@@ -1071,6 +1072,14 @@ func formatConfirmDate(occurredAt string, now time.Time) string {
 		return parsed.Format("02/01/2006")
 	}
 	return occurredAt
+}
+
+func formatOptionalConfirmDate(occurredAt string, now time.Time) string {
+	formatted := formatConfirmDate(occurredAt, now)
+	if formatted == "hoje" {
+		return ""
+	}
+	return formatted
 }
 
 func buildTransactionConfirmSummary(state TransactionWriteState) string {

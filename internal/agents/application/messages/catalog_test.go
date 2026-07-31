@@ -29,6 +29,16 @@ func TestIncomeConfirmationBlock(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
+func TestIncomeConfirmationBlock_WithDate(t *testing.T) {
+	got := messages.IncomeConfirmationBlock(messages.ConfirmationView{
+		AmountFormatted: "R$ 2.000,00",
+		Origin:          "Salário",
+		DateFormatted:   "23/07/2026",
+	})
+	want := "💰 Valor: R$ 2.000,00\n📥 Origem: Salário\n📅 Data: 23/07/2026\n\nPosso registrar?"
+	assert.Equal(t, want, got)
+}
+
 func TestWriteSuccess_Expense(t *testing.T) {
 	seed := messages.NewMotivationSeed("wamid-1")
 	got := messages.WriteSuccess(messages.WriteKindExpense, seed)

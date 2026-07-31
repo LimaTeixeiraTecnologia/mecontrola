@@ -1013,3 +1013,45 @@ func TestBuildRawUpdateForWrite_PreservesCardAndInstallmentsForCreditCard(t *tes
 		t.Fatalf("Installments = %d; want 1", raw.Installments)
 	}
 }
+
+func (s *TransactionWriteWorkflowSuite) TestConfirmSummaryIncome_SpecificDateShowsDateLine() {
+	state := TransactionWriteState{
+		OperationKind: TransactionOpRegisterIncome,
+		AmountCents:   200000,
+		Description:   "Salário",
+		OccurredAt:    "2026-01-15",
+	}
+
+	got := confirmSummaryIncome(state)
+
+	s.Contains(got, "📥 Origem: Salário")
+	s.Contains(got, "📅 Data: 15/01/2026")
+	s.Contains(got, "Posso registrar?")
+}
+
+func (s *TransactionWriteWorkflowSuite) TestConfirmSummaryIncome_TodayOmitsDateLine() {
+	state := TransactionWriteState{
+		OperationKind: TransactionOpRegisterIncome,
+		AmountCents:   200000,
+		Description:   "Salário",
+		OccurredAt:    time.Now().UTC().Format("2006-01-02"),
+	}
+
+	got := confirmSummaryIncome(state)
+
+	s.NotContains(got, "📅 Data:")
+	s.Contains(got, "📥 Origem: Salário")
+	s.Contains(got, "Posso registrar?")
+}
+
+func (s *TransactionWriteWorkflowSuite) TestConfirmSummaryIncome_EmptyDateOmitsDateLine() {
+	state := TransactionWriteState{
+		OperationKind: TransactionOpRegisterIncome,
+		AmountCents:   200000,
+		Description:   "Salário",
+	}
+
+	got := confirmSummaryIncome(state)
+
+	s.NotContains(got, "📅 Data:")
+}

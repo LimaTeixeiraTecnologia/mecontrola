@@ -8,6 +8,8 @@ import (
 func AllCases() []Case {
 	var cases []Case
 	cases = append(cases, expenseIncomeCases()...)
+	cases = append(cases, incomeNaturalLanguageCases()...)
+	cases = append(cases, incomeEditCases()...)
 	cases = append(cases, queryCases()...)
 	cases = append(cases, cardCases()...)
 	cases = append(cases, budgetCases()...)
