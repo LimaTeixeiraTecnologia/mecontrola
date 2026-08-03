@@ -15,7 +15,7 @@ Decisões materiais estão registradas em ADRs: `adr-001` (RegisterGlobal + runt
 Componentes modificados ou adicionados:
 
 - `cmd/server/server.go` (modificado): `otel.Config{RegisterGlobal: true}` + chamada a `runtime.Start()` após `otel.NewProvider`.
-- `cmd/worker/worker.go` (modificado): idem, com `ServiceNameWorker`.
+- `cmd/worker/worker.go` (modificado): idem, com `ServiceNameWorker`; adicionalmente emite um heartbeat de liveness (RF-11) — um gauge `worker.heartbeat` atualizado por um ticker cancelável no bootstrap do worker, usando `o11y.Metrics().Gauge`, com shutdown cooperativo junto ao lifecycle do worker.
 - `internal/platform/observability/runtimemetrics/` (novo pacote fino): função `Start(o11y, minInterval) error` que encapsula `runtime.Start(...)` e a decisão de intervalo, isolando a dependência da lib de contrib.
 - `deployment/telemetry/grafana/provisioning/alerting/rules.yaml` (modificado): novos grupos `slo` (burn-rate) e `runtime`; correção/remoção de alertas com métrica morta.
 - `deployment/telemetry/grafana/provisioning/alerting/contact-points.yaml` (modificado): novo contact-point de e-mail + política de roteamento por severidade.
@@ -102,7 +102,8 @@ Validação manual/observacional pós-deploy: confirmar no Grafana que os painé
 2. **Instrumentação de runtime (RF-01/02/03)** — pacote `runtimemetrics`, `RegisterGlobal: true` em server e worker, `runtime.Start` no bootstrap; confirmar nomes Prometheus.
 3. **SLO + burn-rate (RF-04/05/06)** — novos grupos de alerta derivados do error budget; depende de os nomes de série de latência/erro estarem confirmados.
 4. **Fonte canônica de RED (RF-08)** — migrar `mc-api-5xx` para a série do histograma ou justificar; depende de 3 para consistência de queries.
-5. **E-mail + roteamento (RF-09/10)** — contact-point e política por severidade; runbooks referenciados.
+5. **E-mail + roteamento (RF-09/10)** — contact-point `email-mecontrola` (receiver `email` nativo do Grafana via `GF_SMTP_*`) e política por severidade (página→Telegram, ticket→e-mail); runbooks referenciados.
+5b. **Worker heartbeat + staleness (RF-11)** — gauge `worker.heartbeat` por ticker cancelável no bootstrap do worker + alerta `absent()`/staleness em `rules.yaml`, espelhando `mc-api-down`. Independente das demais frentes.
 6. **Runtime nos dashboards (RF-19)** — delegado à skill de dashboards; depende de 2.
 7. **STANDARD.md + validação (RF-18)** — consolida topologia real, inventário de métricas, cardinalidade e decisões; roda `scripts/validate-standard.py`.
 
