@@ -115,19 +115,6 @@ func (s BudgetManageApplyScope) IsValid() bool {
 	return s >= BudgetManageApplyScopeCurrentOnly && s <= BudgetManageApplyScopeCurrentAndSubsequent
 }
 
-var errInvalidBudgetManageApplyScope = errors.New("workflows: budget manage apply scope inválido")
-
-func ParseBudgetManageApplyScope(s string) (BudgetManageApplyScope, error) {
-	switch s {
-	case "current_only":
-		return BudgetManageApplyScopeCurrentOnly, nil
-	case "current_and_subsequent":
-		return BudgetManageApplyScopeCurrentAndSubsequent, nil
-	default:
-		return 0, fmt.Errorf("%w: %q", errInvalidBudgetManageApplyScope, s)
-	}
-}
-
 type BudgetManageStatus int
 
 const (
