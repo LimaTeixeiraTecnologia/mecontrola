@@ -740,6 +740,10 @@ func TestBuildDeleteEntryTool(t *testing.T) {
 	assert.Equal(t, "card_purchase", result.TargetKind)
 	assert.NotEmpty(t, verbatimText)
 	assert.Equal(t, result.ImpactNote, verbatimText)
+	assert.Contains(t, result.ImpactNote, "Você confirma esta operação?")
+	assert.Contains(t, result.ImpactNote, "Responda *sim* para confirmar ou *não* para cancelar.")
+	assert.Contains(t, result.ImpactNote, "lançamento")
+	assert.NotContains(t, result.ImpactNote, "recorrência")
 }
 
 func TestRegisterExpenseOutput_OutcomeField_Routed(t *testing.T) {

@@ -191,7 +191,7 @@ func BuildDestructiveManageImpactNote(ctx context.Context, targetRef, targetKind
 		}
 		return "⚠️ Este 💳 possui compras parceladas em aberto. Removê-lo deixará as parcelas sem 💳 associado."
 	default:
-		return "Esta recorrência será removida permanentemente."
+		return "Este lançamento será removido permanentemente."
 	}
 }
 

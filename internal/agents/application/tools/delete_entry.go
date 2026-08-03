@@ -118,7 +118,7 @@ func buildDeleteEntryExec(engine wf.Engine[workflows.DestructiveManageState], de
 
 		return DeleteEntryOutput{
 			NeedsConfirmation: true,
-			ImpactNote:        impactNote,
+			ImpactNote:        workflows.DestructiveManageConfirmQuestionText(impactNote),
 			TargetRef:         in.EntryID,
 			TargetKind:        in.EntryKind,
 		}, nil

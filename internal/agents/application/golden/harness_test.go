@@ -199,9 +199,10 @@ func (s *HarnessSuite) TestEvaluateCaseIncludesPriorTurns() {
 	outcome := EvaluateCase(s.ctx, executor, c)
 
 	s.True(outcome.Passed)
-	s.Len(capturedMessages, 2)
-	s.Equal("gastei 40 reais no mercado", capturedMessages[0].Content)
-	s.Equal("confirma pagamento débito", capturedMessages[1].Content)
+	s.Len(capturedMessages, 3)
+	s.Equal("system", capturedMessages[0].Role)
+	s.Equal("gastei 40 reais no mercado", capturedMessages[1].Content)
+	s.Equal("confirma pagamento débito", capturedMessages[2].Content)
 }
 
 func (s *HarnessSuite) TestEvaluateCaseWithCaptureChecksExpectedArgs() {

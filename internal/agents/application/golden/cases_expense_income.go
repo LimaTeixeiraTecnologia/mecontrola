@@ -176,6 +176,19 @@ func expenseIncomeCases() []Case {
 			),
 			ResponseDescribe: "valor cru único de padaria roteia para register_expense, nunca aviso de múltiplos lançamentos",
 		},
+		{
+			Name:         "aporte roteia para despesa nao receita",
+			Category:     CategoryExpenseIncome,
+			Origin:       "producao (+5511986896322, 2026-08-03): \"Fiz um aporte\" era roteado para register_income e caía em Investimentos > Rendimentos; aporte é dinheiro saindo da conta para uma corretora (alocação de orçamento em Liberdade Financeira), não entrada de dinheiro",
+			Input:        "Fiz um aporte de R$ 2.774,88 no BTG",
+			ToolSubset:   []string{"register_expense", "register_income"},
+			ExpectedTool: "register_expense",
+			ExpectedArgs: map[string]any{
+				"amountCents": 277488.0,
+			},
+			ResponseProperty: nonEmptyResponse,
+			ResponseDescribe: "aporte roteia para register_expense, nunca register_income",
+		},
 	}
 }
 

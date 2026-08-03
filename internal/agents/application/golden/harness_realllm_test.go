@@ -537,7 +537,10 @@ var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
 	"category_detail": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("category_detail", "Detalha os lançamentos, planejado, gasto e disponível/excedente de uma categoria do orçamento no mês.", goldenMonthRefSchema("rootSlug"), sink)
 	},
-	"edit_treatment_name": goldenEditTreatmentNameTool,
+	"edit_treatment_name":           goldenEditTreatmentNameTool,
+	goldenQueryDayWithDataKey:       goldenQueryDayWithDataTool,
+	goldenQueryMonthWithDataKey:     goldenQueryMonthWithDataTool,
+	goldenGetTransactionWithDataKey: goldenGetTransactionWithDataTool,
 }
 
 func goldenSupportInfoTool(sink ToolCaptureSink) tool.ToolHandle {
@@ -607,12 +610,157 @@ func goldenCategoryDetailWithDataTool(sink ToolCaptureSink) tool.ToolHandle {
 	)
 }
 
+const (
+	goldenQueryDayWithDataKey       = "query_day_com_dados"
+	goldenQueryMonthWithDataKey     = "query_month_com_dados"
+	goldenGetTransactionWithDataKey = "get_transaction_com_dados"
+	goldenSyntheticTxID             = "golden-tx-1"
+)
+
+func goldenQueryDayWithDataTool(sink ToolCaptureSink) tool.ToolHandle {
+	in := llm.Schema{Name: "query_day_input", Strict: false, Schema: goldenDayRefSchema()}
+	out := llm.Schema{
+		Name:   "query_day_output",
+		Strict: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"outcome":      map[string]any{"type": "string"},
+				"day":          map[string]any{"type": "string"},
+				"incomeCents":  map[string]any{"type": "integer"},
+				"incomeBRL":    map[string]any{"type": "string"},
+				"outcomeCents": map[string]any{"type": "integer"},
+				"outcomeBRL":   map[string]any{"type": "string"},
+				"totalCents":   map[string]any{"type": "integer"},
+				"totalBRL":     map[string]any{"type": "string"},
+				"entries": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"amountBRL":   map[string]any{"type": "string"},
+							"direction":   map[string]any{"type": "string"},
+							"description": map[string]any{"type": "string"},
+						},
+					},
+				},
+			},
+			"required":             []string{"outcome", "day", "incomeCents", "incomeBRL", "outcomeCents", "outcomeBRL", "totalCents", "totalBRL", "entries"},
+			"additionalProperties": false,
+		},
+	}
+	type entry struct {
+		AmountBRL   string `json:"amountBRL"`
+		Direction   string `json:"direction"`
+		Description string `json:"description"`
+	}
+	type output struct {
+		Outcome      string  `json:"outcome"`
+		Day          string  `json:"day"`
+		IncomeCents  int64   `json:"incomeCents"`
+		IncomeBRL    string  `json:"incomeBRL"`
+		OutcomeCents int64   `json:"outcomeCents"`
+		OutcomeBRL   string  `json:"outcomeBRL"`
+		TotalCents   int64   `json:"totalCents"`
+		TotalBRL     string  `json:"totalBRL"`
+		Entries      []entry `json:"entries"`
+	}
+	return tool.NewTool[map[string]any, output]("query_day", "Consulta o total gasto, total recebido e lançamentos de hoje ou ontem. Use obrigatoriamente para 'quanto gastei hoje?' ou 'quanto gastei ontem?'.", in, out,
+		func(_ context.Context, in map[string]any) (output, error) {
+			sink("query_day", in)
+			return output{
+				Outcome: "ok", Day: "today",
+				IncomeCents: 0, IncomeBRL: "R$ 0,00",
+				OutcomeCents: 5000, OutcomeBRL: "R$ 50,00",
+				TotalCents: 5000, TotalBRL: "R$ 50,00",
+				Entries: []entry{{AmountBRL: "R$ 50,00", Direction: "outcome", Description: "mercado"}},
+			}, nil
+		},
+	)
+}
+
+func goldenQueryMonthWithDataTool(sink ToolCaptureSink) tool.ToolHandle {
+	in := llm.Schema{Name: "query_month_input", Strict: false, Schema: goldenMonthRefSchema("refMonth")}
+	out := llm.Schema{
+		Name:   "query_month_output",
+		Strict: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"outcome": map[string]any{"type": "string"},
+				"entries": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"id":          map[string]any{"type": "string"},
+							"description": map[string]any{"type": "string"},
+							"amountBRL":   map[string]any{"type": "string"},
+						},
+					},
+				},
+			},
+			"required":             []string{"outcome", "entries"},
+			"additionalProperties": false,
+		},
+	}
+	type entry struct {
+		ID          string `json:"id"`
+		Description string `json:"description"`
+		AmountBRL   string `json:"amountBRL"`
+	}
+	type output struct {
+		Outcome string  `json:"outcome"`
+		Entries []entry `json:"entries"`
+	}
+	return tool.NewTool[map[string]any, output]("query_month", "Consulta o resumo e os lançamentos do mês financeiro do usuário; use para perguntas do mês, 'como foi meu mês?', 'última transação' e 'últimas N transações'. Não use para hoje ou ontem.", in, out,
+		func(_ context.Context, in map[string]any) (output, error) {
+			sink("query_month", in)
+			return output{Outcome: "ok", Entries: []entry{{ID: goldenSyntheticTxID, Description: "mercado", AmountBRL: "R$ 50,00"}}}, nil
+		},
+	)
+}
+
+func goldenGetTransactionWithDataTool(sink ToolCaptureSink) tool.ToolHandle {
+	in := llm.Schema{Name: "get_transaction_input", Strict: false, Schema: goldenBaseSchema("txId")}
+	out := llm.Schema{
+		Name:   "get_transaction_output",
+		Strict: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"outcome":                 map[string]any{"type": "string"},
+				"description":             map[string]any{"type": "string"},
+				"amountBRL":               map[string]any{"type": "string"},
+				"categoryNameSnapshot":    map[string]any{"type": "string"},
+				"subcategoryNameSnapshot": map[string]any{"type": "string"},
+			},
+			"required":             []string{"outcome", "description", "amountBRL", "categoryNameSnapshot", "subcategoryNameSnapshot"},
+			"additionalProperties": false,
+		},
+	}
+	type output struct {
+		Outcome                 string `json:"outcome"`
+		Description             string `json:"description"`
+		AmountBRL               string `json:"amountBRL"`
+		CategoryNameSnapshot    string `json:"categoryNameSnapshot"`
+		SubcategoryNameSnapshot string `json:"subcategoryNameSnapshot"`
+	}
+	return tool.NewTool[map[string]any, output]("get_transaction", "Retorna os detalhes de um lançamento de transação pelo ID.", in, out,
+		func(_ context.Context, in map[string]any) (output, error) {
+			sink("get_transaction", in)
+			return output{Outcome: "ok", Description: "mercado", AmountBRL: "R$ 50,00", CategoryNameSnapshot: "Custo Fixo", SubcategoryNameSnapshot: "Supermercado"}, nil
+		},
+	)
+}
+
 func goldenToolsFor(c Case, sink ToolCaptureSink) []tool.ToolHandle {
 	names := c.ToolSubset
 	if len(names) == 0 {
 		names = make([]string, 0, len(goldenToolCatalog))
 		for name := range goldenToolCatalog {
-			if name == goldenCategoryDetailWithDataKey {
+			switch name {
+			case goldenCategoryDetailWithDataKey, goldenQueryDayWithDataKey, goldenQueryMonthWithDataKey, goldenGetTransactionWithDataKey:
 				continue
 			}
 			names = append(names, name)

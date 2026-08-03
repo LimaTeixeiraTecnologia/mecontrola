@@ -51,7 +51,7 @@ func journeyCases() []Case {
 			Name:               "jornada personalizacao invalida nao fecha cem por cento",
 			Category:           CategoryBudget,
 			Origin:             "synthetic journey-derived (distribuição que não fecha 100% deve pedir ajuste)",
-			Input:              "meu orçamento fica assim: 3000 de custo fixo, 500 de conhecimento, 500 de prazeres, 0 de metas e 500 de liberdade",
+			Input:              "meu orçamento de agosto de 2026 fica assim: 3000 de custo fixo, 500 de conhecimento, 500 de prazeres, 0 de metas e 500 de liberdade",
 			ToolSubset:         []string{"create_budget", "adjust_allocation", "suggest_allocation"},
 			ExpectedAnyOfTools: []string{"create_budget", "adjust_allocation"},
 			ResponseProperty:   nonEmptyResponse,
