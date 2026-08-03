@@ -518,17 +518,19 @@ tinham sido checados:
 | Mercadinho (em "Porto Mercadinho") | token | `Custo Fixo > Supermercado` |
 | Pizzaria (em "Pizzaria Bonna Notte") | token | `Prazeres > Bares e Lanches` |
 | Hamburgueria (em "Hamburgueria do Portuga") | token | `Prazeres > Bares e Lanches` |
-| Armazém Paraná, Bom demais, Github, Kimi, Varejão Paraná, Whey, Energético, Moonshot AI, Nasoar, Lavagem, Churrasquinho, Doces, Lacake | exato/token/fuzzy(≥0,4) | sem match em nenhum estágio |
+| Armazém Paraná, Bom demais, Github, Kimi, Varejão Paraná, Moonshot AI | exato/token/fuzzy(≥0,4) | sem match automático — categoria manual (seção 8.3) |
+| Whey, Energético, Nasoar, Lavagem, Churrasquinho, Doces, Lacake | exato/token/fuzzy(≥0,4) | sem match automático **no momento desta consulta** — cadastrados em `mecontrola.category_dictionary` na migration `000014_dictionary_ambiguous_gap_aug2026` (2026-08-03, decisão explícita do usuário); a partir do deploy dessa migration, esses termos passam a resolver por match exato |
 
 ### 8.3 Frases completas para o WhatsApp (formato de 2 mensagens, categoria real do mecontrola)
 
 Mesma decisão já confirmada: formato de 2 mensagens (guard-safe) +
-categoria da árvore real do mecontrola. Para os termos sem match
-automático, uso escolha manual/contextual **só quando o mapeamento é
-inequívoco** (ex.: assinatura de IA → Assinaturas Essenciais, supermercado
-→ Supermercado); quando o termo é ambíguo (ex.: "Nasoar", "Energético",
-"Whey", "Doces", "Churrasquinho", "Lacake", "Lavagem"), deixo sem 2ª
-mensagem — forçar uma categoria aqui seria inventar.
+categoria da árvore real do mecontrola. **Atualização (2026-08-03):** os 7
+termos que ficavam sem match automático (whey, energetico, nasoar,
+lavagem, churrasquinho, doces, lacake) foram cadastrados no
+`mecontrola.category_dictionary` via migration `000014_dictionary_ambiguous_gap_aug2026`
+(commit `9b1a3eb`), com a categoria que o usuário confirmou explicitamente
+(seção "Decisão" abaixo da tabela). Agora todos os 28 itens têm 2ª
+mensagem completa.
 
 | # | 1ª mensagem — registrar | Categoria completa | Origem |
 |---|---|---|---|
@@ -540,21 +542,21 @@ mensagem — forçar uma categoria aqui seria inventar.
 | 6 | `gastei 79,88 no Leve Mais no crédito XP` | `Custo Fixo > Supermercado` | manual — mesma decisão já usada para "Leve Mais" |
 | 7 | `gastei 47,00 no Porto Mercadinho no crédito XP` | `Custo Fixo > Supermercado` | algoritmo real — match token ("mercadinho") |
 | 8 | `gastei 121,66 no Varejão Paraná no crédito XP` | `Custo Fixo > Supermercado` | manual — legado marca Category=Supermercado |
-| 9 | `gastei 229,90 no Whey no crédito XP` | — | sem categoria real conhecida (termo ambíguo, não invento) |
-| 10 | `gastei 338,92 no Whey no crédito XP` | — | sem categoria real conhecida (mesmo termo "Whey") |
-| 11 | `gastei 42,49 no Energético no crédito XP` | — | sem categoria real conhecida (termo ambíguo) |
+| 9 | `gastei 229,90 no Whey no crédito XP` | `Custo Fixo > Supermercado` | cadastrado — migration 000014, decisão do usuário |
+| 10 | `gastei 338,92 no Whey no crédito XP` | `Custo Fixo > Supermercado` | cadastrado — migration 000014 (mesmo termo "Whey") |
+| 11 | `gastei 42,49 no Energético no crédito XP` | `Custo Fixo > Supermercado` | cadastrado — migration 000014, decisão do usuário |
 | 12 | `gastei 207,66 no Moonshot AI no crédito XP` | `Custo Fixo > Assinaturas Essenciais` | manual — assinatura de IA, mesmo padrão |
-| 13 | `gastei 178,08 no Nasoar no crédito XP` | — | sem categoria real conhecida (termo ambíguo) |
-| 14 | `gastei 17,57 no Energético no crédito XP` | — | sem categoria real conhecida (termo ambíguo) |
+| 13 | `gastei 178,08 no Nasoar no crédito XP` | `Custo Fixo > Medicamentos e Farmácia` | cadastrado — migration 000014; usuário confirmou: Nasoar é medicamento comprado em farmácia |
+| 14 | `gastei 17,57 no Energético no crédito XP` | `Custo Fixo > Supermercado` | cadastrado — migration 000014 (mesmo termo "Energético") |
 | 15 | `gastei 149,00 no Pizzaria Bonna Notte no crédito XP` | `Prazeres > Bares e Lanches` | algoritmo real — match token ("pizzaria") |
 | 16 | `gastei 39,97 no Armazém Paraná no crédito XP` | `Custo Fixo > Feira e Hortifruti` | manual — mesmo termo do item 1 |
-| 17 | `gastei 60,00 no Lavagem no crédito XP` | — | sem categoria real conhecida (termo ambíguo) |
+| 17 | `gastei 60,00 no Lavagem no crédito XP` | `Custo Fixo > Manutenção Veicular` | cadastrado — migration 000014, decisão do usuário (opção a) |
 | 18 | `gastei 150,93 no Varejão Paraná no crédito XP` | `Custo Fixo > Supermercado` | manual — mesmo termo do item 8 |
 | 19 | `gastei 257,56 no Abastecimento no crédito XP` | `Custo Fixo > Combustível` | algoritmo real — match exato |
-| 20 | `gastei 50,00 no Churrasquinho no crédito XP` | — | sem categoria real conhecida (termo ambíguo) |
-| 21 | `gastei 40,00 no Doces no crédito XP` | — | sem categoria real conhecida (termo ambíguo) |
+| 20 | `gastei 50,00 no Churrasquinho no crédito XP` | `Prazeres > Bares e Lanches` | cadastrado — migration 000014, decisão do usuário (opção a) |
+| 21 | `gastei 40,00 no Doces no crédito XP` | `Prazeres > Bares e Lanches` | cadastrado — migration 000014, decisão do usuário (opção a) |
 | 22 | `gastei 189,20 no Hamburgueria do Portuga no crédito XP` | `Prazeres > Bares e Lanches` | algoritmo real — match token ("hamburgueria") |
-| 23 | `gastei 15,00 no Lacake no crédito XP` | — | sem categoria real conhecida (termo ambíguo) |
+| 23 | `gastei 15,00 no Lacake no crédito XP` | `Custo Fixo > Padaria` | cadastrado — migration 000014, decisão do usuário (opção a) |
 | 24 | `gastei 28,38 no Porto Mercadinho no crédito XP` | `Custo Fixo > Supermercado` | algoritmo real — match token ("mercadinho") |
 | 25 | `gastei 77,00 no Corte de Cabelo no crédito XP` | `Prazeres > Beleza e Estética` | manual (já usada na seção 3) |
 | 26 | `gastei 48,42 no Leve Mais no crédito XP` | `Custo Fixo > Supermercado` | manual (já usada na seção 3) |

@@ -25,9 +25,9 @@ type CategoryWriteGate000004Suite struct {
 }
 
 const (
-	latestMigrationVersion                   = uint(13)
+	latestMigrationVersion                   = uint(14)
 	beforeCategoryWriteGateMigrationVersion  = uint(3)
-	stepsFromLatestToBeforeCategoryWriteGate = -10
+	stepsFromLatestToBeforeCategoryWriteGate = -11
 )
 
 func TestCategoryWriteGate000004Suite(t *testing.T) {
