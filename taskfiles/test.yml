@@ -75,7 +75,7 @@ tasks:
       Requer RUN_REAL_LLM=1 e OPENROUTER_API_KEY. Fora do gate de merge por-PR.
     cmds:
       - mkdir -p {{.COVERAGE_DIR}}
-      - RUN_REAL_LLM=1 go test -tags=integration -timeout=9m -v ./internal/agents/application/golden/...
+      - RUN_REAL_LLM=1 go test -tags=integration -timeout=14m -v ./internal/agents/application/golden/...
 
   watch:
     desc: Reexecuta os testes unitarios ao alterar arquivos.
