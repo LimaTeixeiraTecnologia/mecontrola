@@ -60,6 +60,38 @@ func (r *budgetRepository) GetByUserCompetence(ctx context.Context, userID uuid.
 	return budgets[0], nil
 }
 
+func (r *budgetRepository) GetActiveByUserCompetence(ctx context.Context, userID uuid.UUID, c valueobjects.Competence) (entities.Budget, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.budget.get_active_by_user_competence")
+	defer span.End()
+
+	const query = `
+		SELECT b.id, b.user_id, b.competence, b.total_cents, b.state,
+		       b.activated_at, b.auto_draft, b.created_at, b.updated_at,
+		       a.root_slug, a.basis_points, a.planned_cents
+		  FROM mecontrola.budgets b
+		  LEFT JOIN mecontrola.budgets_allocations a ON a.budget_id = b.id
+		 WHERE b.user_id = $1 AND b.competence = $2 AND b.state = $3
+		 ORDER BY a.root_slug
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, userID, c.String(), int(entities.BudgetStateActive))
+	if err != nil {
+		span.RecordError(err)
+		return entities.Budget{}, fmt.Errorf("budgets/postgres: get_active_by_user_competence: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	budgets, err := r.scanBudgetList(rows)
+	if err != nil {
+		span.RecordError(err)
+		return entities.Budget{}, err
+	}
+	if len(budgets) == 0 {
+		return entities.Budget{}, fmt.Errorf("budgets/postgres: get_active_by_user_competence: %w", interfaces.ErrBudgetNotFound)
+	}
+	return budgets[0], nil
+}
+
 func (r *budgetRepository) CreateDraft(ctx context.Context, b entities.Budget) error {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.budget.create_draft")
 	defer span.End()
@@ -154,6 +186,35 @@ func (r *budgetRepository) DeleteDraft(ctx context.Context, userID uuid.UUID, c 
 		return fmt.Errorf("budgets/postgres: delete_draft: %w", interfaces.ErrBudgetNotFound)
 	}
 	return nil
+}
+
+func (r *budgetRepository) ListFutureByUserCompetence(ctx context.Context, userID uuid.UUID, from valueobjects.Competence) ([]entities.Budget, error) {
+	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.budget.list_future_by_user_competence")
+	defer span.End()
+
+	const query = `
+		SELECT b.id, b.user_id, b.competence, b.total_cents, b.state,
+		       b.activated_at, b.auto_draft, b.created_at, b.updated_at,
+		       a.root_slug, a.basis_points, a.planned_cents
+		  FROM mecontrola.budgets b
+		  LEFT JOIN mecontrola.budgets_allocations a ON a.budget_id = b.id
+		 WHERE b.user_id = $1 AND b.competence > $2
+		 ORDER BY b.competence ASC, a.root_slug
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, userID, from.String())
+	if err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("budgets/postgres: list_future_by_user_competence: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	result, err := r.scanBudgetList(rows)
+	if err != nil {
+		span.RecordError(err)
+		return nil, err
+	}
+	return result, nil
 }
 
 func (r *budgetRepository) ListFutureNotActivated(ctx context.Context, userID uuid.UUID, from valueobjects.Competence, max int) ([]entities.Budget, error) {

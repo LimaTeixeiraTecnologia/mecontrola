@@ -68,13 +68,12 @@ func (uc *EditBudgetTotal) Execute(ctx context.Context, in input.EditBudgetTotal
 
 func (uc *EditBudgetTotal) persist(ctx context.Context, tx database.DBTX, cmd commands.EditBudgetTotalCommand) (entities.Budget, error) {
 	budgets := uc.factory.BudgetRepository(tx)
-	budget, err := budgets.GetByUserCompetence(ctx, cmd.UserID, cmd.Competence)
+	budget, err := budgets.GetActiveByUserCompetence(ctx, cmd.UserID, cmd.Competence)
+	if err != nil && errors.Is(err, interfaces.ErrBudgetNotFound) {
+		budget, err = budgets.GetByUserCompetence(ctx, cmd.UserID, cmd.Competence)
+	}
 	if err != nil {
 		return entities.Budget{}, err
-	}
-
-	if !budget.IsActive() {
-		return entities.Budget{}, entities.ErrBudgetNotActive
 	}
 
 	current := make([]services.AllocationInput, 0, len(budget.Allocations()))
@@ -92,7 +91,26 @@ func (uc *EditBudgetTotal) persist(ctx context.Context, tx database.DBTX, cmd co
 	}
 
 	if changeErr := budget.ChangeTotal(cmd.TotalCents, updatedAllocs, time.Now().UTC()); changeErr != nil {
-		return entities.Budget{}, changeErr
+		if !budget.IsActive() {
+			draftBudget := entities.HydrateBudget(
+				budget.ID(),
+				budget.UserID(),
+				budget.Competence(),
+				cmd.TotalCents,
+				entities.BudgetStateDraft,
+				nil,
+				budget.AutoDraft(),
+				updatedAllocs,
+				budget.CreatedAt(),
+				time.Now().UTC(),
+			)
+			if activateErr := draftBudget.Activate(time.Now().UTC()); activateErr != nil {
+				return entities.Budget{}, activateErr
+			}
+			budget = draftBudget
+		} else {
+			return entities.Budget{}, changeErr
+		}
 	}
 
 	if saveErr := budgets.Activate(ctx, budget); saveErr != nil {

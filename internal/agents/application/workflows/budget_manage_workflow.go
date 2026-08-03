@@ -80,6 +80,8 @@ func buildBudgetManageStep(a agent.Agent, planner interfaces.BudgetPlanner, metr
 			return handleBudgetManageTotalSlot(ctx, state, a)
 		case BudgetManageAwaitingDistribution:
 			return handleBudgetManageDistributionSlot(ctx, state, a)
+		case BudgetManageAwaitingApplyScope:
+			return handleBudgetManageApplyScopeSlot(state)
 		case BudgetManageAwaitingConfirm:
 			return handleBudgetManageConfirmSlot(ctx, state, planner, execMap, metrics)
 		default:
@@ -148,6 +150,11 @@ func enterBudgetManageEditTotal(ctx context.Context, state BudgetManageState, pl
 	if summary.TotalCents != nil {
 		state.PreviousTotalCents = *summary.TotalCents
 	}
+	if futureBudgets, futureErr := planner.ListFutureBudgets(ctx, state.UserID, state.Competence); futureErr != nil {
+		return budgetManageFail(state, fmt.Errorf("agents.budget_manage.edit_total: list_future_budgets: %w", futureErr))
+	} else {
+		state.HasFutureBudgets, state.HasFutureActive = budgetManageFutureFlags(futureBudgets)
+	}
 	state.Awaiting = BudgetManageAwaitingTotal
 	return budgetManageSuspend(state, budgetManageEditTotalPrompt(state.PreviousTotalCents))
 }
@@ -165,6 +172,11 @@ func enterBudgetManageEditDistribution(ctx context.Context, state BudgetManageSt
 	if summary.TotalCents != nil {
 		state.TotalCents = *summary.TotalCents
 		state.PreviousTotalCents = *summary.TotalCents
+	}
+	if futureBudgets, futureErr := planner.ListFutureBudgets(ctx, state.UserID, state.Competence); futureErr != nil {
+		return budgetManageFail(state, fmt.Errorf("agents.budget_manage.edit_distribution: list_future_budgets: %w", futureErr))
+	} else {
+		state.HasFutureBudgets, state.HasFutureActive = budgetManageFutureFlags(futureBudgets)
 	}
 	previous := make(map[string]int, len(summary.Allocations))
 	for _, alloc := range summary.Allocations {
@@ -240,6 +252,11 @@ func handleBudgetManageTotalSlot(ctx context.Context, state BudgetManageState, a
 
 	state.TotalCents = decision.TotalCents
 	if state.Operation == BudgetManageOpEditTotal {
+		if state.HasFutureBudgets {
+			state.Awaiting = BudgetManageAwaitingApplyScope
+			return budgetManageSuspend(state, budgetManageApplyScopePrompt())
+		}
+		state.ApplyScope = BudgetManageApplyScopeCurrentOnly
 		state.Awaiting = BudgetManageAwaitingConfirm
 		return budgetManageConfirmSuspend(state)
 	}
@@ -302,6 +319,11 @@ func handleBudgetManageDistributionSlot(ctx context.Context, state BudgetManageS
 	}
 
 	state.Allocations = decision.Allocations
+	if state.HasFutureBudgets {
+		state.Awaiting = BudgetManageAwaitingApplyScope
+		return budgetManageSuspend(state, budgetManageApplyScopePrompt())
+	}
+	state.ApplyScope = BudgetManageApplyScopeCurrentOnly
 	state.Awaiting = BudgetManageAwaitingConfirm
 	return budgetManageConfirmSuspend(state)
 }
@@ -315,6 +337,30 @@ func budgetManageRepromptDistribution(state BudgetManageState, reason string) (w
 
 func budgetManageConfirmSuspend(state BudgetManageState) (workflow.StepOutput[BudgetManageState], error) {
 	return budgetManageSuspend(state, budgetManageConfirmPrompt(state))
+}
+
+func budgetManageApplyScopePrompt() string {
+	return "Deseja atualizar somente o mês vigente ou também todos os meses subsequentes já recorrentes? Responda com algo como \"somente o mês atual\" ou \"todos os subsequentes\"."
+}
+
+func handleBudgetManageApplyScopeSlot(state BudgetManageState) (workflow.StepOutput[BudgetManageState], error) {
+	if state.ResumeText == "" {
+		return budgetManageSuspend(state, budgetManageApplyScopePrompt())
+	}
+	if isBudgetManageExpired(state, time.Now().UTC()) {
+		return budgetManageExpireStep(state)
+	}
+
+	decision := DecideBudgetManageApplyScope(state.ResumeText)
+	state.ResumeText = ""
+	if decision.Action == BudgetManageActionRepromptConfirm {
+		state.RepromptCount++
+		return budgetManageSuspend(state, "Não entendi o escopo. Responda apenas se quer *somente o mês vigente* ou *mês vigente e subsequentes*.")
+	}
+
+	state.ApplyScope = decision.ApplyScope
+	state.Awaiting = BudgetManageAwaitingConfirm
+	return budgetManageConfirmSuspend(state)
 }
 
 func budgetManageConfirmPrompt(state BudgetManageState) string {
@@ -344,6 +390,13 @@ func budgetManageConfirmPrompt(state BudgetManageState) string {
 			bp := state.Allocations[slug]
 			cents := state.TotalCents * int64(bp) / 10000
 			fmt.Fprintf(&b, "%s: %s (%d%%)\n", categoryLabels[slug], money.FromCents(cents).BRL(), bp/100)
+		}
+		b.WriteString("\n")
+	}
+	if state.ApplyScope == BudgetManageApplyScopeCurrentAndSubsequent {
+		b.WriteString("Escopo: mês vigente e meses subsequentes já recorrentes.\n")
+		if state.HasFutureActive {
+			b.WriteString("Meses subsequentes já ativos serão mantidos como estão.\n")
 		}
 		b.WriteString("\n")
 	}
@@ -460,6 +513,16 @@ func executeBudgetManageEditTotal(ctx context.Context, state BudgetManageState, 
 		state.ResponseText = "Não consegui alterar o valor total do orçamento. Tente novamente em breve."
 		return budgetManageFail(state, fmt.Errorf("agents.budget_manage.edit_total: edit_budget_total: %w", err))
 	}
+	if state.ApplyScope == BudgetManageApplyScopeCurrentAndSubsequent {
+		syncResult, syncErr := planner.SyncFutureBudgets(ctx, state.UserID, state.Competence)
+		if syncErr != nil {
+			state.ResponseText = "Não consegui sincronizar os meses subsequentes do orçamento. Tente novamente em breve."
+			return budgetManageFail(state, fmt.Errorf("agents.budget_manage.edit_total: sync_future_budgets: %w", syncErr))
+		}
+		state.Status = BudgetManageCompleted
+		state.ResponseText = budgetManageEditTotalSyncSuccessMessage(state, syncResult)
+		return budgetManageComplete(state)
+	}
 	state.Status = BudgetManageCompleted
 	state.ResponseText = budgetManageEditTotalSuccessMessage(state)
 	return budgetManageComplete(state)
@@ -479,6 +542,16 @@ func executeBudgetManageEditDistribution(ctx context.Context, state BudgetManage
 			return budgetManageFail(state, fmt.Errorf("agents.budget_manage.edit_distribution: edit_category_percentage: %w", err))
 		}
 	}
+	if state.ApplyScope == BudgetManageApplyScopeCurrentAndSubsequent {
+		syncResult, syncErr := planner.SyncFutureBudgets(ctx, state.UserID, state.Competence)
+		if syncErr != nil {
+			state.ResponseText = "Não consegui sincronizar os meses subsequentes do orçamento. Tente novamente em breve."
+			return budgetManageFail(state, fmt.Errorf("agents.budget_manage.edit_distribution: sync_future_budgets: %w", syncErr))
+		}
+		state.Status = BudgetManageCompleted
+		state.ResponseText = budgetManageEditDistributionSyncSuccessMessage(syncResult, state.MessageID)
+		return budgetManageComplete(state)
+	}
 	state.Status = BudgetManageCompleted
 	state.ResponseText = budgetManageEditDistributionSuccessMessage(state)
 	return budgetManageComplete(state)
@@ -486,6 +559,8 @@ func executeBudgetManageEditDistribution(ctx context.Context, state BudgetManage
 
 func budgetManageDomainErrorMessage(err error) string {
 	switch {
+	case errors.Is(err, interfaces.ErrBudgetNotFound):
+		return "❌ Você ainda não tem um orçamento ativo para essa competência."
 	case errors.Is(err, budgetsentities.ErrBudgetNotActive):
 		return "❌ Você ainda não tem um orçamento ativo para essa competência."
 	case errors.Is(err, budgetsentities.ErrBudgetTotalMustBePositive):
@@ -514,6 +589,36 @@ func budgetManageEditTotalSuccessMessage(state BudgetManageState) string {
 func budgetManageEditDistributionSuccessMessage(state BudgetManageState) string {
 	seed := messages.NewMotivationSeed(state.MessageID)
 	return fmt.Sprintf("✅ Distribuição do orçamento atualizada com sucesso!\n\n%s", messages.BudgetManageMotivation(seed))
+}
+
+func budgetManageEditTotalSyncSuccessMessage(state BudgetManageState, syncResult interfaces.FutureBudgetSyncResult) string {
+	seed := messages.NewMotivationSeed(state.MessageID)
+	if len(syncResult.SkippedActiveCompetences) == 0 {
+		return fmt.Sprintf("✅ Valor total do orçamento atualizado para %s, com sincronização dos meses subsequentes elegíveis.\n\n%s", money.FromCents(state.TotalCents).BRL(), messages.BudgetManageMotivation(seed))
+	}
+	return fmt.Sprintf("✅ Valor total do orçamento atualizado para %s. Meses subsequentes em rascunho foram sincronizados e meses já ativos foram mantidos.\n\n%s", money.FromCents(state.TotalCents).BRL(), messages.BudgetManageMotivation(seed))
+}
+
+func budgetManageEditDistributionSyncSuccessMessage(syncResult interfaces.FutureBudgetSyncResult, messageID string) string {
+	seed := messages.NewMotivationSeed(messageID)
+	if len(syncResult.SkippedActiveCompetences) == 0 {
+		return fmt.Sprintf("✅ Distribuição do orçamento atualizada com sucesso no mês vigente e nos meses subsequentes elegíveis.\n\n%s", messages.BudgetManageMotivation(seed))
+	}
+	return fmt.Sprintf("✅ Distribuição do orçamento atualizada no mês vigente. Meses subsequentes em rascunho foram sincronizados e meses já ativos foram mantidos.\n\n%s", messages.BudgetManageMotivation(seed))
+}
+
+func budgetManageFutureFlags(budgets []interfaces.FutureBudget) (bool, bool) {
+	if len(budgets) == 0 {
+		return false, false
+	}
+	hasActive := false
+	for _, item := range budgets {
+		if item.State == "active" {
+			hasActive = true
+			break
+		}
+	}
+	return true, hasActive
 }
 
 func ContinueBudgetManage(

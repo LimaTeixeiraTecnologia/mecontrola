@@ -168,9 +168,11 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		deps.BudgetsModule.CreateRecurrenceUC,
 		deps.BudgetsModule.EditCategoryPercentageUC,
 		deps.BudgetsModule.EditBudgetTotalUC,
+		deps.BudgetsModule.ListFutureBudgetsUC,
 		deps.BudgetsModule.GetMonthlySummaryUC,
 		deps.BudgetsModule.ListAlertsUC,
 		deps.BudgetsModule.SuggestAllocationUC,
+		deps.BudgetsModule.SyncFutureBudgetsUC,
 		deps.O11y,
 	)
 	txLedger := binding.NewTransactionsLedgerAdapter(

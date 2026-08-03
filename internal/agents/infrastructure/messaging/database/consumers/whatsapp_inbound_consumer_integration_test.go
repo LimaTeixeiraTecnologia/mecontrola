@@ -92,6 +92,10 @@ func (consumerIntegrationBudgetPlanner) CreateRecurrence(_ context.Context, _ uu
 	return nil
 }
 
+func (consumerIntegrationBudgetPlanner) ListFutureBudgets(_ context.Context, _ uuid.UUID, _ string) ([]agentsifaces.FutureBudget, error) {
+	return nil, nil
+}
+
 func (consumerIntegrationBudgetPlanner) EditCategoryPercentage(_ context.Context, _ uuid.UUID, _, _ string, _ int) error {
 	return nil
 }
@@ -118,6 +122,10 @@ func (consumerIntegrationBudgetPlanner) SuggestAllocation(_ context.Context, tot
 		})
 	}
 	return out, nil
+}
+
+func (consumerIntegrationBudgetPlanner) SyncFutureBudgets(_ context.Context, _ uuid.UUID, _ string) (agentsifaces.FutureBudgetSyncResult, error) {
+	return agentsifaces.FutureBudgetSyncResult{}, nil
 }
 
 type WhatsAppInboundConsumerIntegrationSuite struct {

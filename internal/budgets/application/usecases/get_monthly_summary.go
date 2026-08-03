@@ -52,7 +52,10 @@ func (uc *GetMonthlySummary) Execute(ctx context.Context, userID string, compete
 	result, execErr := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (output.MonthlySummaryOutput, error) {
 		budgets := uc.factory.BudgetRepository(tx)
 		expenses := uc.factory.ExpenseRepository(tx)
-		budget, findErr := budgets.GetByUserCompetence(ctx, cmd.UserID, cmd.Competence)
+		budget, findErr := budgets.GetActiveByUserCompetence(ctx, cmd.UserID, cmd.Competence)
+		if findErr != nil && errors.Is(findErr, interfaces.ErrBudgetNotFound) {
+			budget, findErr = budgets.GetByUserCompetence(ctx, cmd.UserID, cmd.Competence)
+		}
 		if findErr != nil {
 			if errors.Is(findErr, interfaces.ErrBudgetNotFound) {
 				return output.MonthlySummaryOutput{}, interfaces.ErrBudgetNotFound

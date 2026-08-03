@@ -53,6 +53,7 @@ type BudgetManageAwaitingSlot int
 const (
 	BudgetManageAwaitingTotal BudgetManageAwaitingSlot = iota + 1
 	BudgetManageAwaitingDistribution
+	BudgetManageAwaitingApplyScope
 	BudgetManageAwaitingConfirm
 )
 
@@ -62,6 +63,8 @@ func (a BudgetManageAwaitingSlot) String() string {
 		return "total"
 	case BudgetManageAwaitingDistribution:
 		return "distribution"
+	case BudgetManageAwaitingApplyScope:
+		return "apply_scope"
 	case BudgetManageAwaitingConfirm:
 		return "confirm"
 	default:
@@ -81,10 +84,47 @@ func ParseBudgetManageAwaitingSlot(s string) (BudgetManageAwaitingSlot, error) {
 		return BudgetManageAwaitingTotal, nil
 	case "distribution":
 		return BudgetManageAwaitingDistribution, nil
+	case "apply_scope":
+		return BudgetManageAwaitingApplyScope, nil
 	case "confirm":
 		return BudgetManageAwaitingConfirm, nil
 	default:
 		return 0, fmt.Errorf("%w: %q", errInvalidBudgetManageAwaitingSlot, s)
+	}
+}
+
+type BudgetManageApplyScope int
+
+const (
+	BudgetManageApplyScopeCurrentOnly BudgetManageApplyScope = iota + 1
+	BudgetManageApplyScopeCurrentAndSubsequent
+)
+
+func (s BudgetManageApplyScope) String() string {
+	switch s {
+	case BudgetManageApplyScopeCurrentOnly:
+		return "current_only"
+	case BudgetManageApplyScopeCurrentAndSubsequent:
+		return "current_and_subsequent"
+	default:
+		return "unknown"
+	}
+}
+
+func (s BudgetManageApplyScope) IsValid() bool {
+	return s >= BudgetManageApplyScopeCurrentOnly && s <= BudgetManageApplyScopeCurrentAndSubsequent
+}
+
+var errInvalidBudgetManageApplyScope = errors.New("workflows: budget manage apply scope inválido")
+
+func ParseBudgetManageApplyScope(s string) (BudgetManageApplyScope, error) {
+	switch s {
+	case "current_only":
+		return BudgetManageApplyScopeCurrentOnly, nil
+	case "current_and_subsequent":
+		return BudgetManageApplyScopeCurrentAndSubsequent, nil
+	default:
+		return 0, fmt.Errorf("%w: %q", errInvalidBudgetManageApplyScope, s)
 	}
 }
 
@@ -137,12 +177,15 @@ type BudgetManageState struct {
 	Status              BudgetManageStatus        `json:"status"`
 	Operation           BudgetManageOperationKind `json:"operation"`
 	Awaiting            BudgetManageAwaitingSlot  `json:"awaiting"`
+	ApplyScope          BudgetManageApplyScope    `json:"applyScope"`
 	UserID              uuid.UUID                 `json:"userId"`
 	Competence          string                    `json:"competence"`
 	TotalCents          int64                     `json:"totalCents"`
 	PreviousTotalCents  int64                     `json:"previousTotalCents"`
 	Allocations         map[string]int            `json:"allocations"`
 	PreviousAllocations map[string]int            `json:"previousAllocations"`
+	HasFutureBudgets    bool                      `json:"hasFutureBudgets"`
+	HasFutureActive     bool                      `json:"hasFutureActive"`
 	ResumeText          string                    `json:"resumeText"`
 	ResponseText        string                    `json:"responseText"`
 	RepromptCount       int                       `json:"repromptCount"`

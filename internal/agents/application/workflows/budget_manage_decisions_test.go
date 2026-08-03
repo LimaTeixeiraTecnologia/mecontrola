@@ -188,3 +188,22 @@ func (s *BudgetManageDecisionsSuite) TestDecideBudgetManageConfirmation() {
 		})
 	}
 }
+
+func (s *BudgetManageDecisionsSuite) TestDecideBudgetManageApplyScope() {
+	scenarios := []struct {
+		name   string
+		text   string
+		expect BudgetManageApplyScope
+	}{
+		{name: "mes vigente", text: "somente o mês vigente", expect: BudgetManageApplyScopeCurrentOnly},
+		{name: "subsequentes", text: "todos os subsequentes", expect: BudgetManageApplyScopeCurrentAndSubsequent},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			decision := DecideBudgetManageApplyScope(scenario.text)
+			s.Equal(BudgetManageActionAdvanceToConfirm, decision.Action)
+			s.Equal(scenario.expect, decision.ApplyScope)
+		})
+	}
+}

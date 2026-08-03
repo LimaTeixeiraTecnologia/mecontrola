@@ -50,7 +50,7 @@ func (s *EditBudgetTotalSuite) TestExecute_Success() {
 	budget := activeBudgetWithAllocations(userID, comp, 100000)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(mock.Anything, userID, comp).
+		GetActiveByUserCompetence(mock.Anything, userID, comp).
 		Return(budget, nil).
 		Once()
 
@@ -100,6 +100,10 @@ func (s *EditBudgetTotalSuite) TestExecute_BudgetNotFound() {
 	comp, _ := valueobjects.NewCompetence("2026-06")
 
 	s.repo.EXPECT().
+		GetActiveByUserCompetence(mock.Anything, userID, comp).
+		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
+		Once()
+	s.repo.EXPECT().
 		GetByUserCompetence(mock.Anything, userID, comp).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
@@ -120,21 +124,33 @@ func (s *EditBudgetTotalSuite) TestExecute_BudgetNotActive() {
 	draft := entities.HydrateBudget(
 		uuid.New(), userID, comp, 100000,
 		entities.BudgetStateDraft,
-		nil, false, nil, now, now,
+		nil, false,
+		activeBudgetWithAllocations(userID, comp, 100000).Allocations(),
+		now, now,
 	)
 
+	s.repo.EXPECT().
+		GetActiveByUserCompetence(mock.Anything, userID, comp).
+		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
+		Once()
 	s.repo.EXPECT().
 		GetByUserCompetence(mock.Anything, userID, comp).
 		Return(draft, nil).
 		Once()
+	s.repo.EXPECT().
+		Activate(mock.Anything, mock.Anything).
+		Return(nil).
+		Once()
 
-	_, err := s.useCase.Execute(s.ctx, input.EditBudgetTotalInput{
+	result, err := s.useCase.Execute(s.ctx, input.EditBudgetTotalInput{
 		UserID:     userID.String(),
 		Competence: "2026-06",
 		TotalCents: 200000,
 	})
 
-	s.ErrorIs(err, entities.ErrBudgetNotActive)
+	s.NoError(err)
+	s.Equal("active", result.State)
+	s.Equal(int64(200000), result.TotalCents)
 }
 
 func (s *EditBudgetTotalSuite) TestExecute_RepositoryError() {
@@ -143,7 +159,7 @@ func (s *EditBudgetTotalSuite) TestExecute_RepositoryError() {
 	budget := activeBudgetWithAllocations(userID, comp, 100000)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(mock.Anything, userID, comp).
+		GetActiveByUserCompetence(mock.Anything, userID, comp).
 		Return(budget, nil).
 		Once()
 

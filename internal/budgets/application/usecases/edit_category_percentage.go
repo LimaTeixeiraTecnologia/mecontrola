@@ -70,13 +70,12 @@ func (uc *EditCategoryPercentage) Execute(ctx context.Context, in input.EditCate
 
 func (uc *EditCategoryPercentage) persist(ctx context.Context, tx database.DBTX, cmd commands.EditCategoryPercentageCommand) (entities.Budget, error) {
 	budgets := uc.factory.BudgetRepository(tx)
-	budget, err := budgets.GetByUserCompetence(ctx, cmd.UserID, cmd.Competence)
+	budget, err := budgets.GetActiveByUserCompetence(ctx, cmd.UserID, cmd.Competence)
+	if err != nil && errors.Is(err, interfaces.ErrBudgetNotFound) {
+		budget, err = budgets.GetByUserCompetence(ctx, cmd.UserID, cmd.Competence)
+	}
 	if err != nil {
 		return entities.Budget{}, err
-	}
-
-	if !budget.IsActive() {
-		return entities.Budget{}, entities.ErrBudgetNotActive
 	}
 
 	current := make([]services.CategoryPercentageInput, 0, len(budget.Allocations()))
@@ -104,7 +103,26 @@ func (uc *EditCategoryPercentage) persist(ctx context.Context, tx database.DBTX,
 	}
 
 	if rebalanceErr := budget.RebalanceAllocations(updatedAllocs, time.Now().UTC()); rebalanceErr != nil {
-		return entities.Budget{}, rebalanceErr
+		if !budget.IsActive() {
+			draftBudget := entities.HydrateBudget(
+				budget.ID(),
+				budget.UserID(),
+				budget.Competence(),
+				budget.TotalCents(),
+				entities.BudgetStateDraft,
+				nil,
+				budget.AutoDraft(),
+				updatedAllocs,
+				budget.CreatedAt(),
+				time.Now().UTC(),
+			)
+			if activateErr := draftBudget.Activate(time.Now().UTC()); activateErr != nil {
+				return entities.Budget{}, activateErr
+			}
+			budget = draftBudget
+		} else {
+			return entities.Budget{}, rebalanceErr
+		}
 	}
 
 	if saveErr := budgets.Activate(ctx, budget); saveErr != nil {

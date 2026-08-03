@@ -14,6 +14,18 @@ type BudgetPlanner interface {
 	EditCategoryPercentage(ctx context.Context, userID uuid.UUID, competence, rootSlug string, percentage int) error
 	EditBudgetTotal(ctx context.Context, userID uuid.UUID, competence string, totalCents int64) error
 	GetMonthlySummary(ctx context.Context, userID uuid.UUID, competence string) (BudgetSummary, error)
+	ListFutureBudgets(ctx context.Context, userID uuid.UUID, competence string) ([]FutureBudget, error)
 	ListAlerts(ctx context.Context, userID uuid.UUID) ([]Alert, error)
 	SuggestAllocation(ctx context.Context, totalCents int64, allocations []AllocationBP) ([]AllocationCents, error)
+	SyncFutureBudgets(ctx context.Context, userID uuid.UUID, sourceCompetence string) (FutureBudgetSyncResult, error)
+}
+
+type FutureBudget struct {
+	Competence string
+	State      string
+}
+
+type FutureBudgetSyncResult struct {
+	UpdatedCompetences       []string
+	SkippedActiveCompetences []string
 }

@@ -56,6 +56,8 @@ func (s *GetMonthlySummarySuite) TestExecute_InvalidCompetence() {
 
 func (s *GetMonthlySummarySuite) TestExecute_BudgetNotFound() {
 	userID := uuid.New()
+	s.budgets.EXPECT().GetActiveByUserCompetence(mock.Anything, userID, mock.Anything).
+		Return(entities.Budget{}, interfaces.ErrBudgetNotFound)
 	s.budgets.EXPECT().GetByUserCompetence(mock.Anything, userID, mock.Anything).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound)
 
@@ -68,6 +70,8 @@ func (s *GetMonthlySummarySuite) TestExecute_AutoDraftReturnsSummaryWithNullFiel
 	comp, _ := valueobjects.NewCompetence("2025-01")
 	budget := entities.NewAutoDraftBudget(userID, comp, time.Now())
 
+	s.budgets.EXPECT().GetActiveByUserCompetence(mock.Anything, userID, mock.Anything).
+		Return(entities.Budget{}, interfaces.ErrBudgetNotFound)
 	s.budgets.EXPECT().GetByUserCompetence(mock.Anything, userID, mock.Anything).
 		Return(budget, nil)
 	s.expenses.EXPECT().SumByRoot(mock.Anything, userID, mock.Anything).
@@ -96,7 +100,7 @@ func (s *GetMonthlySummarySuite) TestExecute_ActiveBudgetWithExpenses() {
 		now, now,
 	)
 
-	s.budgets.EXPECT().GetByUserCompetence(mock.Anything, userID, mock.Anything).
+	s.budgets.EXPECT().GetActiveByUserCompetence(mock.Anything, userID, mock.Anything).
 		Return(budget, nil)
 	s.expenses.EXPECT().SumByRoot(mock.Anything, userID, mock.Anything).
 		Return(map[valueobjects.RootSlug]int64{valueobjects.RootSlugCustoFixo: 25000}, nil)
@@ -130,6 +134,8 @@ func (s *GetMonthlySummarySuite) TestExecute_AutoDraftShowsAllRootsWithSpentFrom
 		valueobjects.RootSlugLiberdadeFinanceira: 7800,
 	}
 
+	s.budgets.EXPECT().GetActiveByUserCompetence(mock.Anything, userID, mock.Anything).
+		Return(entities.Budget{}, interfaces.ErrBudgetNotFound)
 	s.budgets.EXPECT().GetByUserCompetence(mock.Anything, userID, mock.Anything).
 		Return(budget, nil)
 	s.expenses.EXPECT().SumByRoot(mock.Anything, userID, mock.Anything).

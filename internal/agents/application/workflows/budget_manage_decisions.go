@@ -40,6 +40,7 @@ type BudgetManageDecision struct {
 	Action      BudgetManageAction
 	TotalCents  int64
 	Allocations map[string]int
+	ApplyScope  BudgetManageApplyScope
 }
 
 type BudgetManageMessage struct {
@@ -67,6 +68,36 @@ func DecideBudgetManageDistribution(allocations map[string]int) BudgetManageDeci
 		return BudgetManageDecision{Action: BudgetManageActionRepromptDistribution, Allocations: allocations}
 	}
 	return BudgetManageDecision{Action: BudgetManageActionAdvanceToConfirm, Allocations: allocations}
+}
+
+func DecideBudgetManageApplyScope(text string) BudgetManageDecision {
+	normalized := normalizeText(text)
+	switch {
+	case normalized == "":
+		return BudgetManageDecision{Action: BudgetManageActionRepromptConfirm}
+	case strings.Contains(normalized, "subsequente"),
+		strings.Contains(normalized, "seguinte"),
+		strings.Contains(normalized, "proximo"),
+		strings.Contains(normalized, "todos"),
+		strings.Contains(normalized, "todas"):
+		return BudgetManageDecision{
+			Action:     BudgetManageActionAdvanceToConfirm,
+			ApplyScope: BudgetManageApplyScopeCurrentAndSubsequent,
+		}
+	case strings.Contains(normalized, "vigente"),
+		strings.Contains(normalized, "atual"),
+		strings.Contains(normalized, "esse mes"),
+		strings.Contains(normalized, "este mes"),
+		strings.Contains(normalized, "somente"),
+		strings.Contains(normalized, "apenas"),
+		strings.Contains(normalized, "so"):
+		return BudgetManageDecision{
+			Action:     BudgetManageActionAdvanceToConfirm,
+			ApplyScope: BudgetManageApplyScopeCurrentOnly,
+		}
+	default:
+		return BudgetManageDecision{Action: BudgetManageActionRepromptConfirm}
+	}
 }
 
 func isBudgetManageConfirmYes(text string) bool {

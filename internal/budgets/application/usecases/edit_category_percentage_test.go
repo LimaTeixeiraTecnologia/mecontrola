@@ -70,7 +70,7 @@ func (s *EditCategoryPercentageSuite) TestExecute_Success() {
 	budget := activeBudgetWithAllocations(userID, comp, 100000)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(mock.Anything, userID, comp).
+		GetActiveByUserCompetence(mock.Anything, userID, comp).
 		Return(budget, nil).
 		Once()
 
@@ -123,6 +123,10 @@ func (s *EditCategoryPercentageSuite) TestExecute_BudgetNotFound() {
 	comp, _ := valueobjects.NewCompetence("2026-06")
 
 	s.repo.EXPECT().
+		GetActiveByUserCompetence(mock.Anything, userID, comp).
+		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
+		Once()
+	s.repo.EXPECT().
 		GetByUserCompetence(mock.Anything, userID, comp).
 		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
 		Once()
@@ -144,22 +148,33 @@ func (s *EditCategoryPercentageSuite) TestExecute_BudgetNotActive() {
 	draft := entities.HydrateBudget(
 		uuid.New(), userID, comp, 100000,
 		entities.BudgetStateDraft,
-		nil, false, nil, now, now,
+		nil, false,
+		activeBudgetWithAllocations(userID, comp, 100000).Allocations(),
+		now, now,
 	)
 
+	s.repo.EXPECT().
+		GetActiveByUserCompetence(mock.Anything, userID, comp).
+		Return(entities.Budget{}, interfaces.ErrBudgetNotFound).
+		Once()
 	s.repo.EXPECT().
 		GetByUserCompetence(mock.Anything, userID, comp).
 		Return(draft, nil).
 		Once()
+	s.repo.EXPECT().
+		Activate(mock.Anything, mock.Anything).
+		Return(nil).
+		Once()
 
-	_, err := s.useCase.Execute(s.ctx, input.EditCategoryPercentageInput{
+	result, err := s.useCase.Execute(s.ctx, input.EditCategoryPercentageInput{
 		UserID:     userID.String(),
 		Competence: "2026-06",
 		RootSlug:   "expense.custo_fixo",
 		Percentage: 50,
 	})
 
-	s.ErrorIs(err, entities.ErrBudgetNotActive)
+	s.NoError(err)
+	s.Equal("active", result.State)
 }
 
 func (s *EditCategoryPercentageSuite) TestExecute_RepositoryError() {
@@ -168,7 +183,7 @@ func (s *EditCategoryPercentageSuite) TestExecute_RepositoryError() {
 	budget := activeBudgetWithAllocations(userID, comp, 100000)
 
 	s.repo.EXPECT().
-		GetByUserCompetence(mock.Anything, userID, comp).
+		GetActiveByUserCompetence(mock.Anything, userID, comp).
 		Return(budget, nil).
 		Once()
 

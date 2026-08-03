@@ -54,8 +54,10 @@ type BudgetsModule struct {
 	CreateRecurrenceUC         *usecases.CreateRecurrence
 	DeleteDraftBudgetUC        *usecases.DeleteDraftBudget
 	DeleteExpenseUC            *usecases.DeleteExpense
+	ListFutureBudgetsUC        *usecases.ListFutureBudgets
 	ListAlertsUC               *usecases.ListAlerts
 	GetMonthlySummaryUC        *usecases.GetMonthlySummary
+	SyncFutureBudgetsUC        *usecases.SyncFutureBudgets
 	UpsertExpenseUC            *usecases.UpsertExpense
 	EditCategoryPercentageUC   *usecases.EditCategoryPercentage
 	EditBudgetTotalUC          *usecases.EditBudgetTotal
@@ -88,7 +90,9 @@ type moduleUseCases struct {
 	createRecurrence        *usecases.CreateRecurrence
 	upsertExpense           *usecases.UpsertExpense
 	deleteExpense           *usecases.DeleteExpense
+	listFutureBudgets       *usecases.ListFutureBudgets
 	getMonthlySummary       *usecases.GetMonthlySummary
+	syncFutureBudgets       *usecases.SyncFutureBudgets
 	editCategoryPercentage  *usecases.EditCategoryPercentage
 	editBudgetTotal         *usecases.EditBudgetTotal
 	listAlerts              *usecases.ListAlerts
@@ -187,8 +191,10 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 		CreateRecurrenceUC:         useCases.createRecurrence,
 		DeleteDraftBudgetUC:        useCases.deleteDraftBudget,
 		DeleteExpenseUC:            useCases.deleteExpense,
+		ListFutureBudgetsUC:        useCases.listFutureBudgets,
 		ListAlertsUC:               useCases.listAlerts,
 		GetMonthlySummaryUC:        useCases.getMonthlySummary,
+		SyncFutureBudgetsUC:        useCases.syncFutureBudgets,
 		UpsertExpenseUC:            useCases.upsertExpense,
 		EditCategoryPercentageUC:   useCases.editCategoryPercentage,
 		EditBudgetTotalUC:          useCases.editBudgetTotal,
@@ -260,7 +266,9 @@ func (b *moduleBuilder) buildUseCases(repositories moduleRepositories, categorie
 		createRecurrence:       usecases.NewCreateRecurrence(repositories.factory, voidUoW, b.o11y),
 		upsertExpense:          upsertExpense,
 		deleteExpense:          deleteExpense,
+		listFutureBudgets:      usecases.NewListFutureBudgets(repositories.factory, monthlySummaryUoW, b.o11y),
 		getMonthlySummary:      usecases.NewGetMonthlySummary(repositories.factory, monthlySummaryUoW, b.o11y),
+		syncFutureBudgets:      usecases.NewSyncFutureBudgets(repositories.factory, voidUoW, b.o11y),
 		editCategoryPercentage: usecases.NewEditCategoryPercentage(repositories.factory, editCategoryUoW, b.o11y),
 		editBudgetTotal:        usecases.NewEditBudgetTotal(repositories.factory, editBudgetTotalUoW, b.o11y),
 		listAlerts:             usecases.NewListAlerts(repositories.factory, listAlertsUoW, b.o11y),

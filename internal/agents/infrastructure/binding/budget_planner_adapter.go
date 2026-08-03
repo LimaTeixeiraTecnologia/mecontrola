@@ -21,9 +21,11 @@ type budgetPlannerAdapter struct {
 	createRecurrence       *budgetsusecases.CreateRecurrence
 	editCategoryPercentage *budgetsusecases.EditCategoryPercentage
 	editBudgetTotal        *budgetsusecases.EditBudgetTotal
+	listFutureBudgets      *budgetsusecases.ListFutureBudgets
 	getMonthlySummary      *budgetsusecases.GetMonthlySummary
 	listAlerts             *budgetsusecases.ListAlerts
 	suggestAllocation      *budgetsusecases.SuggestAllocation
+	syncFutureBudgets      *budgetsusecases.SyncFutureBudgets
 	o11y                   observability.Observability
 }
 
@@ -34,9 +36,11 @@ func NewBudgetPlannerAdapter(
 	createRecurrence *budgetsusecases.CreateRecurrence,
 	editCategoryPercentage *budgetsusecases.EditCategoryPercentage,
 	editBudgetTotal *budgetsusecases.EditBudgetTotal,
+	listFutureBudgets *budgetsusecases.ListFutureBudgets,
 	getMonthlySummary *budgetsusecases.GetMonthlySummary,
 	listAlerts *budgetsusecases.ListAlerts,
 	suggestAllocation *budgetsusecases.SuggestAllocation,
+	syncFutureBudgets *budgetsusecases.SyncFutureBudgets,
 	o11y observability.Observability,
 ) agentsifaces.BudgetPlanner {
 	return &budgetPlannerAdapter{
@@ -46,9 +50,11 @@ func NewBudgetPlannerAdapter(
 		createRecurrence:       createRecurrence,
 		editCategoryPercentage: editCategoryPercentage,
 		editBudgetTotal:        editBudgetTotal,
+		listFutureBudgets:      listFutureBudgets,
 		getMonthlySummary:      getMonthlySummary,
 		listAlerts:             listAlerts,
 		suggestAllocation:      suggestAllocation,
+		syncFutureBudgets:      syncFutureBudgets,
 		o11y:                   o11y,
 	}
 }
@@ -201,6 +207,26 @@ func (a *budgetPlannerAdapter) GetMonthlySummary(ctx context.Context, userID uui
 	}, nil
 }
 
+func (a *budgetPlannerAdapter) ListFutureBudgets(ctx context.Context, userID uuid.UUID, competence string) ([]agentsifaces.FutureBudget, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.budget_planner.list_future_budgets")
+	defer span.End()
+
+	out, err := a.listFutureBudgets.Execute(ctx, userID.String(), competence)
+	if err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("agents/binding/budget_planner: listar orçamentos futuros: %w", err)
+	}
+
+	budgets := make([]agentsifaces.FutureBudget, 0, len(out.Budgets))
+	for _, item := range out.Budgets {
+		budgets = append(budgets, agentsifaces.FutureBudget{
+			Competence: item.Competence,
+			State:      item.State,
+		})
+	}
+	return budgets, nil
+}
+
 func (a *budgetPlannerAdapter) ListAlerts(ctx context.Context, userID uuid.UUID) ([]agentsifaces.Alert, error) {
 	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.budget_planner.list_alerts")
 	defer span.End()
@@ -226,6 +252,25 @@ func (a *budgetPlannerAdapter) ListAlerts(ctx context.Context, userID uuid.UUID)
 		})
 	}
 	return alerts, nil
+}
+
+func (a *budgetPlannerAdapter) SyncFutureBudgets(ctx context.Context, userID uuid.UUID, sourceCompetence string) (agentsifaces.FutureBudgetSyncResult, error) {
+	ctx, span := a.o11y.Tracer().Start(ctx, "agents.binding.budget_planner.sync_future_budgets")
+	defer span.End()
+
+	out, err := a.syncFutureBudgets.Execute(ctx, budgetsinput.SyncFutureBudgetsInput{
+		UserID:           userID.String(),
+		SourceCompetence: sourceCompetence,
+	})
+	if err != nil {
+		span.RecordError(err)
+		return agentsifaces.FutureBudgetSyncResult{}, fmt.Errorf("agents/binding/budget_planner: sincronizar orçamentos futuros: %w", err)
+	}
+
+	return agentsifaces.FutureBudgetSyncResult{
+		UpdatedCompetences:       out.UpdatedCompetences,
+		SkippedActiveCompetences: out.SkippedActiveCompetences,
+	}, nil
 }
 
 func (a *budgetPlannerAdapter) SuggestAllocation(ctx context.Context, totalCents int64, allocations []agentsifaces.AllocationBP) ([]agentsifaces.AllocationCents, error) {
