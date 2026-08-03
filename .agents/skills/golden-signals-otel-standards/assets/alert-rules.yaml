@@ -1,0 +1,90 @@
+# Regras de alerta Prometheus — Four Golden Signals + burn rate de SLO
+# Alertas orientados a SINTOMA. Substituir os placeholders {{...}} com base no SLO do serviço.
+# Métrica base: http.server.request.duration (exportada como http_server_request_duration_seconds_*).
+# Ajustar o label de serviço conforme o backend (ex.: service_name / job / service).
+
+groups:
+  - name: golden-signals-sintomas
+    rules:
+      # ERROS — sintoma: taxa de 5xx acima do limite
+      - alert: TaxaDeErroAlta
+        expr: |
+          sum(rate(http_server_request_duration_seconds_count{service_name="{{service}}",http_response_status_code=~"5.."}[5m]))
+          /
+          sum(rate(http_server_request_duration_seconds_count{service_name="{{service}}"}[5m]))
+          > 0.05
+        for: 5m
+        labels:
+          severity: page
+          signal: errors
+        annotations:
+          summary: "Taxa de erro > 5% em {{service}}"
+          description: "Sintoma: usuários recebendo 5xx. Investigar causa (dependências, saturação)."
+
+      # LATÊNCIA — sintoma: P95 acima do SLO de latência
+      - alert: LatenciaP95Alta
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name="{{service}}"}[5m]))
+          ) > {{slo_latencia_segundos}}
+        for: 10m
+        labels:
+          severity: page
+          signal: latency
+        annotations:
+          summary: "P95 acima do SLO em {{service}}"
+          description: "Sintoma: lentidão percebida. Correlacionar com saturação (indicador antecipado)."
+
+      # SATURAÇÃO — causa/indicador antecipado (ticket, não necessariamente página)
+      # NOTA: process_cpu_seconds_total é exemplo (exporter de runtime, fora do HTTP semconv).
+      # Ajustar ao nome real emitido pela stack (OTel system/process semconv, runtime.*, etc.).
+      - alert: SaturacaoRuntimeAlta
+        expr: |
+          avg(rate(process_cpu_seconds_total{service_name="{{service}}"}[5m])) > 0.8
+        for: 10m
+        labels:
+          severity: ticket
+          signal: saturation
+        annotations:
+          summary: "Saturação de CPU > 80% em {{service}}"
+          description: "Recurso limitante próximo do alvo. Latência crescente é indicador antecipado."
+
+  - name: slo-burn-rate
+    rules:
+      # BURN RATE rápido (página): budget queimando ~14.4x em 1h, confirmado em 5m
+      - alert: ErrorBudgetBurnRapido
+        expr: |
+          (
+            sum(rate(http_server_request_duration_seconds_count{service_name="{{service}}",http_response_status_code=~"5.."}[1h]))
+            / sum(rate(http_server_request_duration_seconds_count{service_name="{{service}}"}[1h]))
+          ) > (14.4 * {{error_budget}})
+          and
+          (
+            sum(rate(http_server_request_duration_seconds_count{service_name="{{service}}",http_response_status_code=~"5.."}[5m]))
+            / sum(rate(http_server_request_duration_seconds_count{service_name="{{service}}"}[5m]))
+          ) > (14.4 * {{error_budget}})
+        labels:
+          severity: page
+          signal: errors
+        annotations:
+          summary: "Burn rate rápido de error budget em {{service}}"
+          description: "Consumo acelerado do orçamento de erro (SLO em risco). Ação imediata."
+
+      # BURN RATE lento (ticket): budget queimando ~3x em 6h, confirmado em 30m
+      - alert: ErrorBudgetBurnLento
+        expr: |
+          (
+            sum(rate(http_server_request_duration_seconds_count{service_name="{{service}}",http_response_status_code=~"5.."}[6h]))
+            / sum(rate(http_server_request_duration_seconds_count{service_name="{{service}}"}[6h]))
+          ) > (3 * {{error_budget}})
+          and
+          (
+            sum(rate(http_server_request_duration_seconds_count{service_name="{{service}}",http_response_status_code=~"5.."}[30m]))
+            / sum(rate(http_server_request_duration_seconds_count{service_name="{{service}}"}[30m]))
+          ) > (3 * {{error_budget}})
+        labels:
+          severity: ticket
+          signal: errors
+        annotations:
+          summary: "Burn rate lento de error budget em {{service}}"
+          description: "Degradação lenta consumindo o orçamento de erro. Abrir investigação."

@@ -1,0 +1,41 @@
+# OpenTelemetry Collector — PEQUENO porte
+# Agent único, pipeline enxuto. Sem tail sampling.
+# Portas OTLP padrão: gRPC 4317, HTTP 4318.
+# Substituir ${OTLP_ENDPOINT} pelo backend real (Grafana/Prometheus, Coralogix ou OTLP genérico).
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+
+exporters:
+  otlp:
+    endpoint: ${OTLP_ENDPOINT}
+    tls:
+      insecure: false
+  # Habilitar em desenvolvimento local para inspecionar telemetria:
+  # debug:
+  #   verbosity: normal
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp]
