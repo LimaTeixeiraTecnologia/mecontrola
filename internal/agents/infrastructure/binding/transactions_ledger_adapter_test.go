@@ -161,6 +161,33 @@ func (s *TransactionsLedgerAdapterSuite) TestListMonthlyEntries_RepoError() {
 	}
 }
 
+func (s *TransactionsLedgerAdapterSuite) TestListMonthlyEntries_CardInvoiceItemKind_Success() {
+	rm, _ := valueobjects.NewRefMonth("2026-08")
+
+	s.factory.EXPECT().MonthlySummaryRepository(mock.Anything).Return(s.summMock).Once()
+	s.summMock.EXPECT().
+		ListEntries(mock.Anything, s.userID, rm, mock.Anything, mock.Anything).
+		Return([]txifaces.MonthlyEntry{
+			{
+				Kind:        "card_invoice_item",
+				ID:          uuid.NewString(),
+				UserID:      s.userID,
+				RefMonth:    "2026-08",
+				AmountCents: 22562,
+				Direction:   "outcome",
+				Description: "Internet",
+			},
+		}, txifaces.Cursor{}, nil).
+		Once()
+
+	adapter := s.buildAdapter()
+	entries, err := adapter.ListMonthlyEntries(s.ctx, s.userID, "2026-08", "", 10)
+
+	s.NoError(err)
+	s.Require().Len(entries, 1)
+	s.Equal(agentsifaces.EntryKindCardInvoiceItem, entries[0].Kind)
+}
+
 func (s *TransactionsLedgerAdapterSuite) buildCardInvoiceAdapter(invoiceRepo *txifacemocks.CardInvoiceRepository) agentsifaces.TransactionsLedger {
 	o11y := fake.NewProvider()
 	getCI := txusecases.NewGetCardInvoice(s.factory, uowMocks.NewUnitOfWorkCardInvoiceOutput(s.T()), o11y)

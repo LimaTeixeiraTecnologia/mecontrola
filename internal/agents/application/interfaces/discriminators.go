@@ -17,6 +17,7 @@ const (
 	EntryKindTransaction EntryKind = iota + 1
 	EntryKindRecurringTemplate
 	EntryKindCard
+	EntryKindCardInvoiceItem
 )
 
 func ParseEntryKind(s string) (EntryKind, error) {
@@ -27,6 +28,8 @@ func ParseEntryKind(s string) (EntryKind, error) {
 		return EntryKindRecurringTemplate, nil
 	case "card":
 		return EntryKindCard, nil
+	case "card_invoice_item":
+		return EntryKindCardInvoiceItem, nil
 	default:
 		return 0, fmt.Errorf("agents: %q: %w", s, ErrInvalidEntryKind)
 	}
@@ -40,6 +43,8 @@ func (k EntryKind) String() string {
 		return "recurring_template"
 	case EntryKindCard:
 		return "card"
+	case EntryKindCardInvoiceItem:
+		return "card_invoice_item"
 	default:
 		return ""
 	}
@@ -47,7 +52,7 @@ func (k EntryKind) String() string {
 
 func (k EntryKind) IsValid() bool {
 	switch k {
-	case EntryKindTransaction, EntryKindRecurringTemplate, EntryKindCard:
+	case EntryKindTransaction, EntryKindRecurringTemplate, EntryKindCard, EntryKindCardInvoiceItem:
 		return true
 	default:
 		return false

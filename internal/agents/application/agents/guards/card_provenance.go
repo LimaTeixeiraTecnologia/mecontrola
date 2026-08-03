@@ -82,6 +82,9 @@ func consumerWithoutPriorResolution(calls []agent.ToolCallRecord) bool {
 }
 
 func needsCardForConsumer(tool string, args map[string]any) bool {
+	if extractCardID(args) != "" {
+		return false
+	}
 	switch tool {
 	case "query_card_invoice":
 		return true
@@ -91,6 +94,20 @@ func needsCardForConsumer(tool string, args map[string]any) bool {
 	default:
 		return false
 	}
+}
+
+func extractCardID(args map[string]any) string {
+	if args == nil {
+		return ""
+	}
+	raw, ok := args["cardId"]
+	if !ok {
+		return ""
+	}
+	if s, ok := raw.(string); ok {
+		return s
+	}
+	return ""
 }
 
 func extractPaymentMethod(args map[string]any) string {

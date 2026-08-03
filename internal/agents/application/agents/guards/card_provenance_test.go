@@ -126,6 +126,55 @@ func (s *CardProvenanceGuardSuite) TestInspect_QueryCardInvoice_WithoutResolutio
 	s.True(decision.Handled)
 }
 
+func (s *CardProvenanceGuardSuite) TestInspect_RegisterExpenseCreditCard_WithCardIDWithoutResolverCall() {
+	guard := NewCardProvenanceGuard()
+	decision := guard.Inspect(s.ctx, agent.Request{}, agent.Result{
+		Content: "JJ, 💰 Valor: R$ 99,90\nPosso registrar?",
+		ToolCalls: []agent.ToolCallRecord{
+			{
+				Tool:          "register_expense",
+				Outcome:       agent.ToolCallOutcomeSuccess,
+				Content:       `{"outcome":"clarify","message":"JJ, 💰 Valor: R$ 99,90\nPosso registrar?"}`,
+				ArgumentsJSON: map[string]any{"paymentMethod": "credit_card", "cardId": "21f8489c-e311-4a0c-bacb-46376530fe34"},
+			},
+		},
+	})
+	s.False(decision.Handled)
+}
+
+func (s *CardProvenanceGuardSuite) TestInspect_CreateRecurrenceCreditCard_WithCardIDWithoutResolverCall() {
+	guard := NewCardProvenanceGuard()
+	decision := guard.Inspect(s.ctx, agent.Request{}, agent.Result{
+		Content: "Recorrência agendada.",
+		ToolCalls: []agent.ToolCallRecord{
+			{
+				Tool:          "create_recurrence",
+				Outcome:       agent.ToolCallOutcomeSuccess,
+				Content:       `{"outcome":"routed"}`,
+				ArgumentsJSON: map[string]any{"paymentMethod": "credit_card", "cardId": "21f8489c-e311-4a0c-bacb-46376530fe34"},
+			},
+		},
+	})
+	s.False(decision.Handled)
+}
+
+func (s *CardProvenanceGuardSuite) TestInspect_RegisterExpenseCreditCard_EmptyCardIDStillFiresGuard() {
+	guard := NewCardProvenanceGuard()
+	decision := guard.Inspect(s.ctx, agent.Request{}, agent.Result{
+		Content: "Lançamento registrado.",
+		ToolCalls: []agent.ToolCallRecord{
+			{
+				Tool:          "register_expense",
+				Outcome:       agent.ToolCallOutcomeSuccess,
+				Content:       `{"outcome":"routed"}`,
+				ArgumentsJSON: map[string]any{"paymentMethod": "credit_card", "cardId": ""},
+			},
+		},
+	})
+	s.True(decision.Handled)
+	s.Equal(cardProvenanceFallbackMessage, decision.Result.Content)
+}
+
 func (s *CardProvenanceGuardSuite) TestInspect_WithPriorResolution() {
 	scenarios := []struct {
 		name  string
