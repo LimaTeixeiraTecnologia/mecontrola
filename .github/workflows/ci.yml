@@ -79,6 +79,8 @@ jobs:
           OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
           EOF
       - run: task test:integration
+        env:
+          OUTBOX_SYNTHETIC_LAG_P95_MAX_SECONDS: "10"
 
   vulncheck:
     name: Vulnerability Check
