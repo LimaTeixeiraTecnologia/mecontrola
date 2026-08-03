@@ -324,6 +324,9 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 	if queryDay := findTool(tools, "query_day"); queryDay != nil {
 		pre = append(pre, guards.NewQueryDayShortcutGuard(queryDay))
 	}
+	if adjustAllocation := findTool(tools, "adjust_allocation"); adjustAllocation != nil || findTool(tools, "edit_budget_total") != nil {
+		pre = append(pre, guards.NewBudgetWriteShortcutGuard(adjustAllocation, findTool(tools, "edit_budget_total")))
+	}
 	if editEntry := findTool(tools, editEntryToolID); editEntry != nil {
 		pre = append(pre, guards.NewEditEntryCorrectionShortcutGuard(editEntry))
 	}
