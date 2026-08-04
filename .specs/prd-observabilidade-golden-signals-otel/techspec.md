@@ -58,13 +58,25 @@ Não há entidades de domínio. Os "modelos" são as séries de métrica emitida
 | `go.goroutine.count` | `go_goroutine_count` | {goroutine} | goroutine leak |
 | `go.memory.used` | `go_memory_used_bytes` | By | pressão de heap/stack (attr `go.memory.type`) |
 | `go.memory.limit` | `go_memory_limit_bytes` | By | limite `GOMEMLIMIT` |
-| `go.memory.allocated` | `go_memory_allocated_bytes` | By | alocação acumulada |
-| `go.memory.allocations` | `go_memory_allocations` | {allocation} | contagem de alocações |
+| `go.memory.allocated` | `go_memory_allocated_bytes_total` | By | alocação acumulada |
+| `go.memory.allocations` | `go_memory_allocations_total` | {allocation} | contagem de alocações |
 | `go.memory.gc.goal` | `go_memory_gc_goal_bytes` | By | alvo de heap do GC |
 | `go.processor.limit` | `go_processor_limit` | {thread} | GOMAXPROCS |
-| `go.config.gogc` | `go_config_gogc` | % | GOGC |
+| `go.config.gogc` | `go_config_gogc_percent` | % | GOGC |
 
 O nome Prometheus exato depende do exporter do Collector (sufixos de unidade). A implementação DEVE confirmar o nome renderizado no Prometheus antes de fixá-lo nos alertas/dashboards e registrá-lo no `STANDARD.md` (RF-14).
+
+> **Erratum (confirmado empiricamente pela Tarefa 6.0, 2026-08-04):** os nomes acima foram
+> corrigidos após query real contra Prometheus embutido em `grafana/otel-lgtm:0.7.5` local,
+> alimentado pelo pacote de produção `internal/platform/observability/runtimemetrics` via OTLP
+> HTTP real. Os nomes inicialmente estimados nesta techspec (`go_memory_allocated_bytes`,
+> `go_memory_allocations`, `go_config_gogc`, sem sufixo) NÃO correspondem ao nome renderizado real
+> — a lib `contrib/instrumentation/runtime` gera os sufixos `_total` (instrumento Counter
+> monotônico, para `go.memory.allocated`/`go.memory.allocations`) e `_percent` (unidade `%`, para
+> `go.config.gogc`) durante a conversão OTel→Prometheus, o que esta tabela não previu. Nenhuma
+> dessas 3 métricas foi usada em alerta/dashboard na Tarefa 6.0/8.0 (excluídas deliberadamente até
+> a confirmação, ver `6.0_execution_report.md`), portanto o erro não teve impacto operacional. Os
+> nomes reais também estão documentados em `observability/STANDARD.md` seção 8.2.
 
 ### Endpoints de API
 

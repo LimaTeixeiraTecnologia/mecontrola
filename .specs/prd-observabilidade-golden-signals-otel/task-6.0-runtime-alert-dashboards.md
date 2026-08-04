@@ -17,10 +17,10 @@ Adicionar em `deployment/telemetry/grafana/provisioning/alerting/rules.yaml` um 
 
 ## Subtarefas
 
-- [ ] 6.1 Confirmar no ambiente os nomes de série `go.*` renderizados no Prometheus (ex.: `go.goroutine.count`, `go.memory.used`) antes de fixar queries de alerta/painel.
-- [ ] 6.2 Adicionar em `rules.yaml` o alerta de causa de saturação de runtime com `severity: warning`, sem roteamento de página, no schema do Grafana unified alerting já usado no arquivo.
-- [ ] 6.3 Estender os dashboards (`mecontrola-api.json` e/ou novo painel) com a saturação de runtime do processo e a visão de SLO/burn-rate, delegando a geração/edição do JSON à skill `otel-grafana-dashboards`.
-- [ ] 6.4 Confirmar que o painel de runtime popula com dados e que o alerta de causa avalia sem erro e não tem severidade de página.
+- [x] 6.1 Confirmar no ambiente os nomes de série `go.*` renderizados no Prometheus (ex.: `go.goroutine.count`, `go.memory.used`) antes de fixar queries de alerta/painel.
+- [x] 6.2 Adicionar em `rules.yaml` o alerta de causa de saturação de runtime com `severity: warning`, sem roteamento de página, no schema do Grafana unified alerting já usado no arquivo.
+- [x] 6.3 Estender os dashboards (`mecontrola-api.json` e/ou novo painel) com a saturação de runtime do processo e a visão de SLO/burn-rate, delegando a geração/edição do JSON à skill `otel-grafana-dashboards`.
+- [x] 6.4 Confirmar que o painel de runtime popula com dados e que o alerta de causa avalia sem erro e não tem severidade de página.
 
 ## Detalhes de Implementação
 

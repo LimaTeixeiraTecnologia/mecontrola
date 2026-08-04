@@ -12,14 +12,14 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Reconciliação alerta↔métrica + gate de CI de auditoria | pending | — | Com 2.0 | — |
-| 2.0 | Saturação de runtime do processo Go (server + worker) | pending | — | Com 1.0 | — |
-| 3.0 | Heartbeat de liveness do worker + alerta de staleness | pending | 2.0 | Não | — |
-| 4.0 | SLO + alertas de burn-rate multi-janela + alerta de latência SLO | pending | 1.0, 5.0 | Não | golden-signals-otel-standards |
-| 5.0 | Fonte canônica de RED (série do histograma) | pending | 1.0 | Não | golden-signals-otel-standards |
-| 6.0 | Alerta de causa de runtime + painéis de runtime e SLO | pending | 2.0, 4.0 | Não | golden-signals-otel-standards, otel-grafana-dashboards |
-| 7.0 | Contact-point de e-mail + roteamento por severidade + runbooks | pending | 1.0 | Não | — |
-| 8.0 | STANDARD.md + assets + validação + cardinalidade/sampling | pending | 2.0, 4.0, 5.0, 6.0, 7.0 | Não | golden-signals-otel-standards |
+| 1.0 | Reconciliação alerta↔métrica + gate de CI de auditoria | done | — | Com 2.0 | — |
+| 2.0 | Saturação de runtime do processo Go (server + worker) | done | — | Com 1.0 | — |
+| 3.0 | Heartbeat de liveness do worker + alerta de staleness | done | 2.0 | Não | — |
+| 4.0 | SLO + alertas de burn-rate multi-janela + alerta de latência SLO | done | 1.0, 5.0 | Não | golden-signals-otel-standards |
+| 5.0 | Fonte canônica de RED (série do histograma) | done | 1.0 | Não | golden-signals-otel-standards |
+| 6.0 | Alerta de causa de runtime + painéis de runtime e SLO | done | 2.0, 4.0 | Não | golden-signals-otel-standards, otel-grafana-dashboards |
+| 7.0 | Contact-point de e-mail + roteamento por severidade + runbooks | done | 1.0 | Não | — |
+| 8.0 | STANDARD.md + assets + validação + cardinalidade/sampling | done | 2.0, 4.0, 5.0, 6.0, 7.0 | Não | golden-signals-otel-standards |
 
 ## Dependências Críticas
 - 1.0 deixa o `rules.yaml` provisionado íntegro (sem alertas de métrica morta) antes de qualquer nova regra; todas as tarefas que editam `rules.yaml` (3.0, 4.0, 5.0, 6.0) dependem direta ou transitivamente dela.

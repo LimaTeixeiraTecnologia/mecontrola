@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-observabilidade-golden-signals-otel/3.0_execution_report.md
+summary: Heartbeat worker_heartbeat via ticker cancelavel + alerta mc-worker-down absent(); fix de gate audit-alert-metrics (cmd/) e de dependencia otel/log v0.20.0 para build limpo.
+timestamp: 2026-08-04T00:00:00Z

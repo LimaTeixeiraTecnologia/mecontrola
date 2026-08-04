@@ -1,0 +1,38 @@
+{
+  "problem": "Adicionar entrada de audio WhatsApp que baixa midia, transcreve via OpenRouter STT e encaminha texto canonico ao fluxo agentivo existente, sem novo agente, sem provider paralelo e sem duplicar regras financeiras.",
+  "signals": [
+    "external_interface_mismatch",
+    "remote_boundary",
+    "prefer_direct_solution",
+    "single_variant_only",
+    "low_change_frequency"
+  ],
+  "constraints": [
+    "avoid_global_state",
+    "avoid_inheritance",
+    "minimize_class_count",
+    "minimize_indirection",
+    "preserve_public_contract",
+    "tight_latency_budget",
+    "team_needs_low_cognitive_load"
+  ],
+  "force_reject": [
+    "abstract-factory",
+    "builder",
+    "bridge",
+    "composite",
+    "decorator",
+    "facade",
+    "flyweight",
+    "mediator",
+    "memento",
+    "observer",
+    "prototype",
+    "proxy",
+    "singleton",
+    "state",
+    "strategy",
+    "template-method",
+    "visitor"
+  ]
+}

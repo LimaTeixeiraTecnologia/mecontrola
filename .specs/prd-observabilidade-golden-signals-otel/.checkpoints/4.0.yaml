@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-observabilidade-golden-signals-otel/4.0_execution_report.md
+summary: "Grupo slo (4 burn-rate + latencia P95) adicionado a rules.yaml e SLO documentado no STANDARD.md"
+timestamp: "2026-08-04T14:20:20Z"

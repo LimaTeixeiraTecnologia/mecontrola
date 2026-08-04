@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-observabilidade-golden-signals-otel/8.0_execution_report.md
+summary: STANDARD.md consolidado (topologia real, sampling, cardinalidade, inventario go.*, log-trace) + promql-golden-signals.md + alert-rules-slo.yaml; validate-standard.py SUCCESS; risco residual da 5.0 fechado empiricamente
+timestamp: 2026-08-04T14:55:08Z

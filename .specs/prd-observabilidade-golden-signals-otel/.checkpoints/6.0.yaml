@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-observabilidade-golden-signals-otel/6.0_execution_report.md
+summary: "Alerta de causa de runtime (severity warning) + paineis de runtime e SLO nos dashboards, com nomes go_* confirmados ao vivo."
+timestamp: "2026-08-04T14:41:11Z"
