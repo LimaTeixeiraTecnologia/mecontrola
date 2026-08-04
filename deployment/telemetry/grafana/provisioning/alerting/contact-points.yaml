@@ -13,6 +13,17 @@ contactPoints:
           disable_web_page_preview: true
           message: |
             {{ template "mc.telegram.message" . }}
+  - orgId: 1
+    name: email-mecontrola
+    receivers:
+      - uid: email-mecontrola-receiver
+        type: email
+        settings:
+          addresses: "jailton.junior94@outlook.com"
+          singleEmail: true
+          subject: '{{ template "mc.email.subject" . }}'
+          message: |
+            {{ template "mc.email.message" . }}
 
 policies:
   - orgId: 1
@@ -24,7 +35,10 @@ policies:
     routes:
       - receiver: telegram-mecontrola
         matchers:
-          - severity =~ "critical|warning"
+          - severity = "critical"
+      - receiver: email-mecontrola
+        matchers:
+          - severity = "warning"
 
 templates:
   - name: mc.telegram.message
@@ -62,4 +76,37 @@ templates:
       {{- else if .Labels.severity -}}{{ .Labels.severity }}
       {{- else -}}Nao informada
       {{- end -}}
+      {{- end }}
+  - name: mc.email.subject
+    template: |
+      {{ define "mc.email.subject" -}}
+      [MeControla][{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}
+      {{- end }}
+  - name: mc.email.message
+    template: |
+      {{ define "mc.email.message" -}}
+      {{- range .Alerts.Firing }}
+      {{ template "mc.email.firing" . }}
+      {{- end }}
+      {{- range .Alerts.Resolved }}
+      {{ template "mc.email.resolved" . }}
+      {{- end }}
+      {{- end }}
+
+      {{ define "mc.email.firing" -}}
+      Disparado: {{ .Labels.alertname }}
+      Severidade: {{ .Labels.severity }}
+      Resumo: {{ .Annotations.summary }}
+      Contexto: {{ .Annotations.description }}
+      Desde: {{ .StartsAt.Format "02/01 15:04 UTC" }}
+
+      {{- end }}
+
+      {{ define "mc.email.resolved" -}}
+      Resolvido: {{ .Labels.alertname }}
+      Severidade: {{ .Labels.severity }}
+      Resumo: {{ .Annotations.summary }}
+      Contexto: {{ .Annotations.description }}
+      Encerrado: {{ .EndsAt.Format "02/01 15:04 UTC" }}
+
       {{- end }}

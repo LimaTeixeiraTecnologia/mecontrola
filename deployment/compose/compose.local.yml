@@ -34,6 +34,11 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${OTEL_LGTM_ADMIN_PASSWORD:-admin@dev}
       ALERT_TELEGRAM_BOT_TOKEN: ${ALERT_TELEGRAM_BOT_TOKEN:-}
       ALERT_TELEGRAM_CHAT_ID: ${ALERT_TELEGRAM_CHAT_ID:-}
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: mailpit:1025
+      GF_SMTP_SKIP_VERIFY: "true"
+      GF_SMTP_FROM_ADDRESS: alerts@mecontrola.local
+      GF_SMTP_FROM_NAME: MeControla Alertas
     ports:
       - "127.0.0.1:3000:3000"
       - "127.0.0.1:4317:4317"

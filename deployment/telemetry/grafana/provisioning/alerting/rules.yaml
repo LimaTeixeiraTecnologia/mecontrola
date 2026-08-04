@@ -15,7 +15,7 @@ groups:
         labels: { severity: critical }
         annotations:
           summary: "Sem métricas HTTP da API por mais de 5 minutos."
-          description: "A API provavelmente caiu, travou ou parou de exportar métricas. Verifique processo, container e logs recentes."
+          description: "A API provavelmente caiu, travou ou parou de exportar métricas. Verifique processo, container e logs recentes. Runbook: deployment/runbooks/rollback.md."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -38,6 +38,38 @@ groups:
                   query: { params: [C] }
                   evaluator: { type: gt, params: [0] }
 
+      - uid: mc-worker-down
+        title: Worker sem heartbeat
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Sem heartbeat do worker por mais de 5 minutos."
+          description: "O worker caiu, travou ou parou de exportar métricas. Cobre dois modos de falha: série ausente (processo morto/sem export) e série presente porém congelada (ticker de heartbeat parado com o processo vivo). Verifique processo, container e logs recentes. Runbook: deployment/runbooks/rollback.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'absent(worker_heartbeat{job="mecontrola-worker"}) or (changes(worker_heartbeat{job="mecontrola-worker"}[10m]) == bool 0)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0] }
+
       - uid: mc-api-5xx
         title: Erro 5xx alto na API
         condition: C
@@ -47,7 +79,7 @@ groups:
         labels: { severity: critical }
         annotations:
           summary: "Taxa de respostas 5xx da API acima de 5% por 5 minutos."
-          description: "A API esta respondendo com erro em volume anormal. Verifique endpoints com falha, traces e logs recentes."
+          description: "A API esta respondendo com erro em volume anormal. Verifique endpoints com falha, traces e logs recentes. RECONCILIACAO ADR-004 (RF-08): fonte migrada do counter auxiliar http_server_request_count_total para a serie canonica do histograma http_server_request_duration_seconds_count (mesmo histograma ja usado por mc-api-latency-p99). Runbook: deployment/runbooks/rollback.md."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -56,7 +88,7 @@ groups:
               refId: A
               editorMode: code
               instant: true
-              expr: '100 * sum(rate(http_server_request_count_total{job="mecontrola-api", http_response_status_code=~"5.."}[5m])) / clamp_min(sum(rate(http_server_request_count_total{job="mecontrola-api"}[5m])), 1)'
+              expr: '100 * sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[5m])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[5m])), 1)'
           - refId: C
             datasourceUid: __expr__
             model:
@@ -133,6 +165,400 @@ groups:
                   operator: { type: and }
                   query: { params: [C] }
                   evaluator: { type: gt, params: [1] }
+
+  - orgId: 1
+    name: slo
+    folder: MeControla Alerts
+    interval: 1m
+    rules:
+      - uid: mc-slo-burn-fast
+        title: "SLO burn-rate: 14,4x (pagina, 1h+5m)"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Consumo do error budget de disponibilidade a 14,4x (2% do orcamento de 0,1% em 1h, confirmado em 5m)."
+          description: "SLO de disponibilidade 99,9% (budget 0,1%, janela 30d, ADR-002/Google SRE Workbook). Consumo agudo do orcamento: nesse ritmo o budget mensal esgota em pouco mais de 2h. SLI = serie canonica do histograma http_server_request_duration_seconds_count (ADR-004), erro filtrado por http_response_status_code=~\"5..\". Verifique endpoints com falha, traces e logs recentes. Runbook: deployment/runbooks/rollback.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 7200, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[1h])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[1h])), 1)'
+          - refId: B
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: B
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[5m])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[5m])), 1)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: classic_conditions
+              conditions:
+                - type: query
+                  query: { params: [A] }
+                  reducer: { type: last }
+                  operator: { type: and }
+                  evaluator: { type: gt, params: [0.0144] }
+                - type: query
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  operator: { type: and }
+                  evaluator: { type: gt, params: [0.0144] }
+
+      - uid: mc-slo-burn-6x
+        title: "SLO burn-rate: 6x (pagina, 6h+30m)"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Consumo do error budget de disponibilidade a 6x (5% do orcamento de 0,1% em 6h, confirmado em 30m)."
+          description: "SLO de disponibilidade 99,9% (budget 0,1%, janela 30d, ADR-002/Google SRE Workbook). Nesse ritmo o budget mensal esgota em cerca de 5 dias. SLI = serie canonica do histograma http_server_request_duration_seconds_count (ADR-004), erro filtrado por http_response_status_code=~\"5..\". Verifique endpoints com falha, traces e logs recentes. Runbook: deployment/runbooks/rollback.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 43200, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[6h])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[6h])), 1)'
+          - refId: B
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: B
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[30m])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[30m])), 1)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: classic_conditions
+              conditions:
+                - type: query
+                  query: { params: [A] }
+                  reducer: { type: last }
+                  operator: { type: and }
+                  evaluator: { type: gt, params: [0.006] }
+                - type: query
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  operator: { type: and }
+                  evaluator: { type: gt, params: [0.006] }
+
+      - uid: mc-slo-burn-3x
+        title: "SLO burn-rate: 3x (ticket, 1d+2h)"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Consumo do error budget de disponibilidade a 3x (10% do orcamento de 0,1% em 1d, confirmado em 2h)."
+          description: "SLO de disponibilidade 99,9% (budget 0,1%, janela 30d, ADR-002/Google SRE Workbook). Degradacao lenta que ainda estoura o orcamento se sustentada. SLI = serie canonica do histograma http_server_request_duration_seconds_count (ADR-004), erro filtrado por http_response_status_code=~\"5..\". Investigar tendencia de erro; nao necessariamente incidente agudo."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 172800, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[1d])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[1d])), 1)'
+          - refId: B
+            relativeTimeRange: { from: 14400, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: B
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[2h])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[2h])), 1)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: classic_conditions
+              conditions:
+                - type: query
+                  query: { params: [A] }
+                  reducer: { type: last }
+                  operator: { type: and }
+                  evaluator: { type: gt, params: [0.003] }
+                - type: query
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  operator: { type: and }
+                  evaluator: { type: gt, params: [0.003] }
+
+      - uid: mc-slo-burn-1x
+        title: "SLO burn-rate: 1x (ticket, 3d+6h)"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Consumo do error budget de disponibilidade a 1x (10% do orcamento de 0,1% em 3d, confirmado em 6h)."
+          description: "SLO de disponibilidade 99,9% (budget 0,1%, janela 30d, ADR-002/Google SRE Workbook). Burn rate 1x consome todo o orcamento exatamente ao fim dos 30 dias; sinaliza tendencia sustentada de consumo do budget. SLI = serie canonica do histograma http_server_request_duration_seconds_count (ADR-004), erro filtrado por http_response_status_code=~\"5..\". Investigar tendencia de erro; nao necessariamente incidente agudo."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 518400, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[3d])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[3d])), 1)'
+          - refId: B
+            relativeTimeRange: { from: 43200, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: B
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[6h])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[6h])), 1)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: classic_conditions
+              conditions:
+                - type: query
+                  query: { params: [A] }
+                  reducer: { type: last }
+                  operator: { type: and }
+                  evaluator: { type: gt, params: [0.001] }
+                - type: query
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  operator: { type: and }
+                  evaluator: { type: gt, params: [0.001] }
+
+      - uid: mc-slo-latency-p95
+        title: Latência P95 acima do SLO (500ms)
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "P95 de latência da API acima do SLO de 500ms por 10 minutos."
+          description: "SLO de latência P95 < 500ms em janela de 30 dias (RF-04/RF-06). Complementa mc-api-latency-p99 (threshold estático de causa aguda); este alerta liga o sintoma percebido pelo usuário ao SLO formal. Verifique pressão em banco, dependências externas e endpoints mais lentos."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{job="mecontrola-api"}[5m])))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0.5] }
+
+  - orgId: 1
+    name: runtime
+    folder: MeControla Alerts
+    interval: 1m
+    rules:
+      - uid: mc-runtime-goroutine-growth
+        title: Crescimento sustentado de goroutines (causa de saturação)
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Contagem de goroutines acima do alvo operacional por 15 minutos ou mais em algum processo (api ou worker)."
+          description: "Alerta de CAUSA (RF-03), nao de sintoma: crescimento sustentado de go.goroutine.count (serie Prometheus go_goroutine_count, OTel semconv v1.41.0 goconv, contrib/instrumentation/runtime v0.69.0) costuma preceder saturacao de CPU/memoria por goroutine leak (ex.: consumer/producer sem cancelamento, workflow suspenso sem limpeza, goroutine de background sem shutdown cooperativo). Threshold de 3000 e baseline operacional inicial, nao um SLO formal; ajustar apos observar a distribuicao real pos-deploy. Nao pagina isoladamente (severity warning -> email/ticket, ver contact-points.yaml); serve para diagnostico e abertura de ticket. Verifique o painel de runtime do processo (Go) em deployment/dashboards/mecontrola-infra.json e o pprof/goroutine dump do processo indicado no label job. Runbook: docs/runbooks/infra-saturation-triage.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'max(go_goroutine_count{job=~"mecontrola-.+"})'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [3000] }
+
+  # Meta-alertas de presenca de sinal (blindness detection).
+  #
+  # Motivacao (defeito real, 2026-08-04): quatro alertas ficaram cegos porque a serie que
+  # consultavam deixou de existir com o nome esperado (gauge com unidade OTel "1" e renomeado
+  # para *_ratio pelo tradutor OTLP->Prometheus). Como esses alertas usam noDataState: OK, a
+  # ausencia da serie produz silencio, nao alarme — o modo de falha mais perigoso possivel.
+  #
+  # O gate `task ci:audit-alert-metrics` cobre isso estaticamente em CI; este grupo cobre em
+  # runtime. Cada regra dispara apenas quando a serie sumiu E o processo que a emite esta
+  # comprovadamente vivo, evitando duplicar os alertas de queda (mc-api-down/mc-worker-down).
+  # Severidade warning (ticket): e defeito de configuracao/regressao, nao incidente de produto.
+  - orgId: 1
+    name: observabilidade
+    folder: MeControla Alerts
+    interval: 1m
+    rules:
+      - uid: mc-signal-missing-red
+        title: "Sinal ausente: serie canonica de RED"
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "A serie canonica de RED sumiu enquanto a API continua viva."
+          description: "http_server_request_duration_seconds_count deixou de existir com a API ainda emitindo http_server_request_active. Enquanto isso durar, mc-api-5xx, mc-slo-latency-p95 e os quatro alertas de burn-rate estao CEGOS (noDataState: OK = silencio). Causa tipica: mudanca de nome/unidade da metrica ou quebra do pipeline OTLP. Confirme com `task ci:audit-alert-metrics` e compare o nome renderizado no Prometheus. Runbook: docs/runbooks/infra-saturation-triage.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'absent(http_server_request_duration_seconds_count) and on() (count(http_server_request_active) > 0)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0] }
+
+      - uid: mc-signal-missing-runtime
+        title: "Sinal ausente: saturacao de runtime Go"
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "go_goroutine_count sumiu enquanto api ou worker continuam vivos."
+          description: "A instrumentacao de runtime (contrib/instrumentation/runtime) parou de exportar com pelo menos um processo vivo. Enquanto isso durar, mc-runtime-goroutine-growth e os paineis de runtime em mecontrola-infra.json estao CEGOS. Causa tipica: runtimemetrics.Start falhando no bootstrap (ver ErrGlobalMeterProviderNotRegistered) ou RegisterGlobal desativado. Runbook: docs/runbooks/infra-saturation-triage.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'absent(go_goroutine_count) and on() ((count(http_server_request_active) > 0) or (count(worker_heartbeat) > 0))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0] }
+
+      - uid: mc-signal-missing-outbox
+        title: "Sinal ausente: profundidade da fila do outbox"
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "outbox_pending_jobs sumiu enquanto o worker continua vivo."
+          description: "O gauge de profundidade da fila deixou de existir com worker_heartbeat presente. Enquanto isso durar, mc-outbox-queue-high esta CEGO. Este e exatamente o defeito de 2026-08-04: unidade OTel \"1\" fez a serie ser publicada como outbox_pending_jobs_ratio. Verifique a unidade em registerOutboxMetrics (cmd/worker/worker.go) e o nome renderizado no Prometheus. Runbook: docs/runbooks/infra-saturation-triage.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'absent(outbox_pending_jobs) and on() (count(worker_heartbeat) > 0)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0] }
+
+      - uid: mc-signal-missing-onboarding
+        title: "Sinal ausente: tokens de onboarding nao consumidos"
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "onboarding_tokens_paid_unconsumed_overdue sumiu enquanto o worker continua vivo."
+          description: "O gauge de tokens pagos nao consumidos deixou de existir com worker_heartbeat presente. Enquanto isso durar, mc-onboarding-unconsumed esta CEGO — e esse alerta cobre receita ja paga sem entrega. Verifique a unidade em internal/onboarding/module.go e o nome renderizado no Prometheus. Runbook: docs/runbooks/infra-saturation-triage.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'absent(onboarding_tokens_paid_unconsumed_overdue) and on() (count(worker_heartbeat) > 0)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0] }
 
   - orgId: 1
     name: infraestrutura
@@ -244,7 +670,7 @@ groups:
         labels: { severity: critical }
         annotations:
           summary: "WAL lag acima de 15 minutos no PostgreSQL."
-          description: "pgBackRest ou arquivamento de WAL está atrasado. Risco de PITR comprometido; verifique conectividade S3 e processo de archive-push."
+          description: "pgBackRest ou arquivamento de WAL está atrasado. Risco de PITR comprometido; verifique conectividade S3 e processo de archive-push. Runbook: deployment/runbooks/backup-schedule.md."
         data:
           - refId: A
             relativeTimeRange: { from: 1200, to: 0 }
@@ -275,6 +701,13 @@ groups:
                   query: { params: [C] }
                   evaluator: { type: gt, params: [900] }
 
+      # RECONCILIACAO ADR-003 (RF-07/RF-20): alerta "mc-outbox-queue-high" RESTAURADO.
+      # A remocao anterior partiu de premissa factualmente errada ("metrica nunca emitida",
+      # baseada em grep restrito a internal/platform/outbox/). A metrica E emitida em
+      # cmd/worker/worker.go (registerOutboxMetrics). O sintoma de "serie ausente" vinha do
+      # sufixo `_ratio` aplicado pelo tradutor OTLP->Prometheus a gauges com unit "1";
+      # corrigido na origem trocando a unit para a anotacao `{job}` (nome renderizado volta a
+      # ser `outbox_pending_jobs`, confirmado empiricamente contra grafana/otel-lgtm:0.7.5).
       - uid: mc-outbox-queue-high
         title: Fila de jobs outbox alta
         condition: C
@@ -284,7 +717,7 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "Fila de jobs outbox acima de 1000 por 5 minutos."
-          description: "Workers não estão acompanhando a produção de eventos. Verifique saúde dos workers, latência de handlers e disponibilidade de banco."
+          description: "Workers não estão acompanhando a produção de eventos. Verifique saúde dos workers, latência de handlers e disponibilidade de banco. Runbook: docs/runbooks/infra-saturation-triage.md."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -454,7 +887,7 @@ groups:
         labels: { severity: critical }
         annotations:
           summary: "Collector falhando ao exportar metricas por 5 minutos."
-          description: "O otelcol nao esta conseguindo enviar metricas ao Prometheus de forma continua. Verifique conectividade, filas internas e logs do collector."
+          description: "O otelcol nao esta conseguindo enviar metricas ao Prometheus de forma continua. Verifique conectividade, filas internas e logs do collector. Runbook: docs/runbooks/infra-saturation-triage.md."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -482,69 +915,20 @@ groups:
     folder: MeControla Alerts
     interval: 1m
     rules:
-      - uid: mc-agent-parse-unknown
-        title: Parser de intent caindo em unknown
-        condition: C
-        for: 15m
-        noDataState: OK
-        execErrState: Error
-        labels: { severity: critical }
-        annotations:
-          summary: "Parser de intent caindo em unknown/fallback acima de 30%."
-          description: "Modelo (primario ou fallback) provavelmente parou de honrar response_format json_schema. Ver runbook docs/runbooks/agent-parser-policy.md."
-        data:
-          - refId: A
-            relativeTimeRange: { from: 600, to: 0 }
-            datasourceUid: prometheus
-            model:
-              refId: A
-              editorMode: code
-              instant: true
-              expr: '100 * sum(rate(agent_intent_parsed_total{job="mecontrola-api", outcome=~"provider_error|fallback_invalid_json|fallback_missing_kind|fallback_domain_invariant"}[10m])) / clamp_min(sum(rate(agent_intent_parsed_total{job="mecontrola-api"}[10m])), 1)'
-          - refId: C
-            datasourceUid: __expr__
-            model:
-              refId: C
-              type: threshold
-              expression: A
-              conditions:
-                - type: query
-                  reducer: { type: last }
-                  operator: { type: and }
-                  query: { params: [C] }
-                  evaluator: { type: gt, params: [30] }
+      # RECONCILIACAO ADR-003 (RF-07/RF-20): alerta "mc-agent-parse-unknown" removido.
+      # `agent_intent_parsed_total` (com labels outcome=provider_error/fallback_*) e
+      # heranca do parser de intent do `internal/agent` descontinuado (emenda 2026-06-29).
+      # O agente atual (`internal/agents`, `internal/platform/agent`) roteia por tool-calling
+      # loop, sem esse conceito de outcome de parsing; nao ha metrica viva equivalente com a
+      # mesma taxonomia de causa. Confirmado por `grep` no codigo: 0 ocorrencias.
 
-      - uid: mc-agent-fallback-exhausted
-        title: Cadeia de fallback de LLM esgotada
-        condition: C
-        for: 5m
-        noDataState: OK
-        execErrState: Error
-        labels: { severity: critical }
-        annotations:
-          summary: "Cadeia de fallback de LLM esgotada (todos os providers falharam)."
-          description: "Nenhum provider respondeu. Verifique OPENROUTER_API_KEY, creditos, circuit breaker aberto e status do OpenRouter."
-        data:
-          - refId: A
-            relativeTimeRange: { from: 600, to: 0 }
-            datasourceUid: prometheus
-            model:
-              refId: A
-              editorMode: code
-              instant: true
-              expr: 'sum(increase(agent_llm_fallback_exhausted_total{job="mecontrola-api"}[10m]))'
-          - refId: C
-            datasourceUid: __expr__
-            model:
-              refId: C
-              type: threshold
-              expression: A
-              conditions:
-                - type: query
-                  reducer: { type: last }
-                  operator: { type: and }
-                  query: { params: [C] }
-                  evaluator: { type: gt, params: [0] }
+      # RECONCILIACAO ADR-003 (RF-07/RF-20): alerta "mc-agent-fallback-exhausted" removido.
+      # `agent_llm_fallback_exhausted_total` referenciava uma cadeia de fallback entre
+      # providers LLM que nao existe mais: OpenRouter e o unico provider sancionado
+      # (R-AGENT-WF-001.4), sem fallback chain nem circuit breaker. A taxa de erro do
+      # provider LLM ja e coberta, com metrica viva, pelo alerta "mc-agent-llm-error-rate"
+      # abaixo (`agent_llm_provider_errors_total` / `agent_llm_provider_call_total`,
+      # emitidos em internal/platform/llm/openrouter.go). Confirmado por `grep`: 0 ocorrencias.
 
       - uid: mc-agent-llm-error-rate
         title: Taxa de erro dos providers LLM alta
@@ -578,37 +962,11 @@ groups:
                   query: { params: [C] }
                   evaluator: { type: gt, params: [20] }
 
-      - uid: mc-agent-policy-block-rate
-        title: Politica de confianca bloqueando muitas escritas
-        condition: C
-        for: 15m
-        noDataState: OK
-        execErrState: Error
-        labels: { severity: warning }
-        annotations:
-          summary: "Politica de confianca bloqueando acima de 25% das escritas."
-          description: "Pode indicar degradacao do modelo (confidence baixa) ou AGENT_POLICY_MIN_CONFIDENCE mal calibrado. Ver agent_intent_confidence_histogram."
-        data:
-          - refId: A
-            relativeTimeRange: { from: 900, to: 0 }
-            datasourceUid: prometheus
-            model:
-              refId: A
-              editorMode: code
-              instant: true
-              expr: '100 * sum(rate(agent_policy_blocks_total{job="mecontrola-api"}[15m])) / clamp_min(sum(rate(agent_intent_routed_total{job="mecontrola-api"}[15m])), 1)'
-          - refId: C
-            datasourceUid: __expr__
-            model:
-              refId: C
-              type: threshold
-              expression: A
-              conditions:
-                - type: query
-                  reducer: { type: last }
-                  operator: { type: and }
-                  query: { params: [C] }
-                  evaluator: { type: gt, params: [25] }
+      # RECONCILIACAO ADR-003 (RF-07/RF-20): alerta "mc-agent-policy-block-rate" removido.
+      # `agent_policy_blocks_total` e `agent_intent_routed_total` sao heranca da politica de
+      # confianca (AGENT_POLICY_MIN_CONFIDENCE) do parser de intent do `internal/agent`
+      # descontinuado. O agente atual nao possui esse gate de confianca sobre um score de
+      # parsing; nao ha metrica viva equivalente. Confirmado por `grep`: 0 ocorrencias.
 
       - uid: mc-agent-idempotency-replay
         title: Replays idempotentes acima do esperado
@@ -619,7 +977,7 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "Replays idempotentes acima do esperado."
-          description: "Reentrega de webhook ou tentativa de duplicacao elevada. Confirme que o guard evita dupla execucao; investigue origem das mensagens repetidas."
+          description: "Reentrega de webhook ou tentativa de duplicacao elevada. Confirme que o guard evita dupla execucao; investigue origem das mensagens repetidas. RECONCILIACAO ADR-003: migrado de `agent_idempotency_replay_total` (0 ocorrencias no codigo atual) para `agents_write_total{outcome=\"replay\"}`, emitido em internal/agents/application/usecases/idempotent_write.go."
         data:
           - refId: A
             relativeTimeRange: { from: 300, to: 0 }
@@ -628,7 +986,7 @@ groups:
               refId: A
               editorMode: code
               instant: true
-              expr: 'sum(rate(agent_idempotency_replay_total{job="mecontrola-api"}[5m]))'
+              expr: 'sum(rate(agents_write_total{job="mecontrola-api", outcome="replay"}[5m]))'
           - refId: C
             datasourceUid: __expr__
             model:
@@ -688,7 +1046,7 @@ groups:
         labels: { severity: critical }
         annotations:
           summary: "Conexoes reais ao Postgres acima de 80% do MAX_DB_CONNECTIONS (30)."
-          description: "pgBouncer esta proximo do teto de conexoes reais. Pressao de pool sustentada pode causar timeouts de query. Verifique DB_MAX_CONNS dos processos, background jobs e queries lentas que seguram conexoes."
+          description: "pgBouncer esta proximo do teto de conexoes reais. Pressao de pool sustentada pode causar timeouts de query. Verifique DB_MAX_CONNS dos processos, background jobs e queries lentas que seguram conexoes. Runbook: docs/runbooks/infra-saturation-triage.md."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -853,7 +1211,7 @@ groups:
         labels: { severity: critical }
         annotations:
           summary: "Exporter nao conseguiu executar pgbackrest info."
-          description: "A idade dos backups pode estar indisponivel ou com sentinela. Verifique container postgres, stanza, credenciais e logs do pgBackRest."
+          description: "A idade dos backups pode estar indisponivel ou com sentinela. Verifique container postgres, stanza, credenciais e logs do pgBackRest. Runbook: deployment/runbooks/backup-schedule.md."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -885,7 +1243,7 @@ groups:
         labels: { severity: critical }
         annotations:
           summary: "Textfile collector sem metricas pgBackRest recentes."
-          description: "A ultima coleta pgBackRest tem mais de 1 hora ou a serie esta ausente. Verifique pgbackrest-metrics.timer/cron, node_exporter e permissao do textfile collector."
+          description: "A ultima coleta pgBackRest tem mais de 1 hora ou a serie esta ausente. Verifique pgbackrest-metrics.timer/cron, node_exporter e permissao do textfile collector. Runbook: deployment/runbooks/backup-schedule.md."
         data:
           - refId: A
             relativeTimeRange: { from: 7200, to: 0 }
@@ -922,7 +1280,7 @@ groups:
         labels: { severity: critical }
         annotations:
           summary: "Disco da VPS com menos de 10 GiB livres por 5 minutos."
-          description: "Espaco absoluto em disco critico. Execute docker-prune.sh imediatamente e verifique logs, build cache e imagens antigas. Referencia: deployment/scripts/docker-prune.sh."
+          description: "Espaco absoluto em disco critico. Execute docker-prune.sh imediatamente e verifique logs, build cache e imagens antigas. Referencia: deployment/scripts/docker-prune.sh. Runbook: docs/runbooks/infra-saturation-triage.md."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
