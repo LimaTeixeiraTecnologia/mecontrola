@@ -150,6 +150,121 @@
       "targets": [
         { "refId": "A", "expr": "sum(outbox_pending_jobs)", "legendFormat": "pending" }
       ]
+    },
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Runtime do processo (Go) — saturação",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Goroutines — API",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 19 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1500 }, { "color": "red", "value": 3000 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "max(go_goroutine_count{job=\"mecontrola-api\"})" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Goroutines — Worker",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 19 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1500 }, { "color": "red", "value": 3000 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "max(go_goroutine_count{job=\"mecontrola-worker\"})" }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "GOMAXPROCS por processo",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 19 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "legendFormat": "{{job}}", "expr": "max by (job) (go_processor_limit{job=~\"mecontrola-.+\"})" }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "GC heap goal — API (bytes)",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 19 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "bytes", "decimals": 1 }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "max(go_memory_gc_goal_bytes{job=\"mecontrola-api\"})" }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Goroutines por processo (go.goroutine.count)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "{{job}}", "expr": "max by (job) (go_goroutine_count{job=~\"mecontrola-.+\"})" }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Memória em uso por processo e tipo (go.memory.used)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "fillOpacity": 20, "stacking": { "mode": "normal" }, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "{{job}} / {{go_memory_type}}", "expr": "max by (job, go_memory_type) (go_memory_used_bytes{job=~\"mecontrola-.+\"})" }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "GC heap goal por processo (go.memory.gc.goal)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 31 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "{{job}}", "expr": "max by (job) (go_memory_gc_goal_bytes{job=~\"mecontrola-.+\"})" }
+      ]
     }
   ]
 }

@@ -1,0 +1,364 @@
+# Regras de alerta — Golden Signals (RED) + SLO/burn-rate + saturação de runtime.
+# Extrato DOCUMENTAL e literal (mesmo expr/labels/annotations) do provisioning real,
+# para consulta rapida sem abrir o arquivo completo de 1129 linhas.
+#
+# FONTE DE VERDADE (Grafana provisiona a partir daqui, nao deste extrato):
+#   deployment/telemetry/grafana/provisioning/alerting/rules.yaml
+#
+# Este arquivo NAO e lido pelo Collector nem pelo Grafana; e um asset de documentacao
+# da Tarefa 8.0 (RF-18), consolidando os grupos "tecnico" (subset RED), "slo" (burn-rate)
+# e "runtime" (causa de saturacao). Grupos de infraestrutura (disco/CPU/RAM/backup/pgbouncer/
+# etc.) permanecem apenas na fonte de verdade — fora do escopo de golden signals HTTP.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: tecnico
+    folder: MeControla Alerts
+    interval: 1m
+    rules:
+      - uid: mc-api-down
+        title: API sem métricas
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Sem métricas HTTP da API por mais de 5 minutos."
+          description: "A API provavelmente caiu, travou ou parou de exportar métricas. Verifique processo, container e logs recentes. Runbook: deployment/runbooks/rollback.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'absent(http_server_request_active{job="mecontrola-api"})'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0] }
+
+      - uid: mc-api-5xx
+        title: Erro 5xx alto na API
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Taxa de respostas 5xx da API acima de 5% por 5 minutos."
+          description: "A API esta respondendo com erro em volume anormal. RECONCILIACAO ADR-004 (RF-08): fonte migrada do counter auxiliar http_server_request_count_total para a serie canonica do histograma http_server_request_duration_seconds_count. Runbook: deployment/runbooks/rollback.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: '100 * sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[5m])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[5m])), 1)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [5] }
+
+      - uid: mc-api-latency-p99
+        title: Latência p99 alta na API
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "p99 de latência da API acima de 1 segundo por 10 minutos."
+          description: "Ha lentidao sustentada nas requisicoes mais demoradas. Verifique pressao em banco, dependencias externas e endpoints mais lentos."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{job="mecontrola-api"}[5m])))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [1] }
+
+  - orgId: 1
+    name: slo
+    folder: MeControla Alerts
+    interval: 1m
+    rules:
+      - uid: mc-slo-burn-fast
+        title: "SLO burn-rate: 14,4x (pagina, 1h+5m)"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Consumo do error budget de disponibilidade a 14,4x (2% do orcamento de 0,1% em 1h, confirmado em 5m)."
+          description: "SLO de disponibilidade 99,9% (budget 0,1%, janela 30d, ADR-002/Google SRE Workbook). SLI = serie canonica do histograma http_server_request_duration_seconds_count (ADR-004), erro filtrado por http_response_status_code=~\"5..\". Runbook: deployment/runbooks/rollback.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 7200, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[1h])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[1h])), 1)'
+          - refId: B
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: B
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[5m])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[5m])), 1)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: classic_conditions
+              conditions:
+                - type: query
+                  query: { params: [A] }
+                  reducer: { type: last }
+                  operator: { type: and }
+                  evaluator: { type: gt, params: [0.0144] }
+                - type: query
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  operator: { type: and }
+                  evaluator: { type: gt, params: [0.0144] }
+
+      - uid: mc-slo-burn-6x
+        title: "SLO burn-rate: 6x (pagina, 6h+30m)"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Consumo do error budget de disponibilidade a 6x (5% do orcamento de 0,1% em 6h, confirmado em 30m)."
+          description: "SLO de disponibilidade 99,9% (budget 0,1%, janela 30d, ADR-002/Google SRE Workbook). SLI = serie canonica do histograma http_server_request_duration_seconds_count (ADR-004). Runbook: deployment/runbooks/rollback.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 43200, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[6h])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[6h])), 1)'
+          - refId: B
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: B
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[30m])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[30m])), 1)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: classic_conditions
+              conditions:
+                - type: query
+                  query: { params: [A] }
+                  reducer: { type: last }
+                  operator: { type: and }
+                  evaluator: { type: gt, params: [0.006] }
+                - type: query
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  operator: { type: and }
+                  evaluator: { type: gt, params: [0.006] }
+
+      - uid: mc-slo-burn-3x
+        title: "SLO burn-rate: 3x (ticket, 1d+2h)"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Consumo do error budget de disponibilidade a 3x (10% do orcamento de 0,1% em 1d, confirmado em 2h)."
+          description: "SLO de disponibilidade 99,9% (budget 0,1%, janela 30d, ADR-002/Google SRE Workbook). Degradacao lenta; nao necessariamente incidente agudo."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 172800, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[1d])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[1d])), 1)'
+          - refId: B
+            relativeTimeRange: { from: 14400, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: B
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[2h])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[2h])), 1)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: classic_conditions
+              conditions:
+                - type: query
+                  query: { params: [A] }
+                  reducer: { type: last }
+                  operator: { type: and }
+                  evaluator: { type: gt, params: [0.003] }
+                - type: query
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  operator: { type: and }
+                  evaluator: { type: gt, params: [0.003] }
+
+      - uid: mc-slo-burn-1x
+        title: "SLO burn-rate: 1x (ticket, 3d+6h)"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Consumo do error budget de disponibilidade a 1x (10% do orcamento de 0,1% em 3d, confirmado em 6h)."
+          description: "SLO de disponibilidade 99,9% (budget 0,1%, janela 30d, ADR-002/Google SRE Workbook). Burn rate 1x consome todo o orcamento exatamente ao fim dos 30 dias."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 518400, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[3d])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[3d])), 1)'
+          - refId: B
+            relativeTimeRange: { from: 43200, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: B
+              editorMode: code
+              instant: true
+              expr: 'sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api", http_response_status_code=~"5.."}[6h])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job="mecontrola-api"}[6h])), 1)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: classic_conditions
+              conditions:
+                - type: query
+                  query: { params: [A] }
+                  reducer: { type: last }
+                  operator: { type: and }
+                  evaluator: { type: gt, params: [0.001] }
+                - type: query
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  operator: { type: and }
+                  evaluator: { type: gt, params: [0.001] }
+
+      - uid: mc-slo-latency-p95
+        title: Latência P95 acima do SLO (500ms)
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "P95 de latência da API acima do SLO de 500ms por 10 minutos."
+          description: "SLO de latência P95 < 500ms em janela de 30 dias (RF-04/RF-06). Complementa mc-api-latency-p99 (threshold estático de causa aguda)."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{job="mecontrola-api"}[5m])))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0.5] }
+
+  - orgId: 1
+    name: runtime
+    folder: MeControla Alerts
+    interval: 1m
+    rules:
+      - uid: mc-runtime-goroutine-growth
+        title: Crescimento sustentado de goroutines (causa de saturação)
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Contagem de goroutines acima do alvo operacional por 15 minutos ou mais em algum processo (api ou worker)."
+          description: "Alerta de CAUSA (RF-03), nao de sintoma: crescimento sustentado de go.goroutine.count (serie Prometheus go_goroutine_count) costuma preceder saturacao de CPU/memoria por goroutine leak. Threshold de 3000 e baseline operacional inicial. Nao pagina isoladamente (severity warning -> email/ticket)."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'max(go_goroutine_count{job=~"mecontrola-.+"})'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [3000] }

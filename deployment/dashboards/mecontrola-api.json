@@ -22,7 +22,7 @@
         "label": "Service",
         "type": "query",
         "datasource": { "type": "prometheus", "uid": "${datasource}" },
-        "query": "label_values(http_server_request_count_total, job)",
+        "query": "label_values(http_server_request_duration_seconds_count, job)",
         "current": { "text": "mecontrola-api", "value": "mecontrola-api" },
         "includeAll": false,
         "refresh": 2,
@@ -40,7 +40,7 @@
       "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 }, "overrides": [] },
       "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
-        { "refId": "A", "expr": "sum(rate(http_server_request_count_total{job=\"$job\"}[$__rate_interval]))" }
+        { "refId": "A", "expr": "sum(rate(http_server_request_duration_seconds_count{job=\"$job\"}[$__rate_interval]))" }
       ]
     },
     {
@@ -58,7 +58,7 @@
       },
       "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
-        { "refId": "A", "expr": "100 * sum(rate(http_server_request_count_total{job=\"$job\", http_response_status_code=~\"5..\"}[$__rate_interval])) / clamp_min(sum(rate(http_server_request_count_total{job=\"$job\"}[$__rate_interval])), 1)" }
+        { "refId": "A", "expr": "100 * sum(rate(http_server_request_duration_seconds_count{job=\"$job\", http_response_status_code=~\"5..\"}[$__rate_interval])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job=\"$job\"}[$__rate_interval])), 1)" }
       ]
     },
     {
@@ -100,7 +100,7 @@
       "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
-        { "refId": "A", "legendFormat": "{{http_request_method}} {{http_route}}", "expr": "sum by (http_route, http_request_method) (rate(http_server_request_count_total{job=\"$job\"}[$__rate_interval]))" }
+        { "refId": "A", "legendFormat": "{{http_request_method}} {{http_route}}", "expr": "sum by (http_route, http_request_method) (rate(http_server_request_duration_seconds_count{job=\"$job\"}[$__rate_interval]))" }
       ]
     },
     {
@@ -126,7 +126,7 @@
       "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" }, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
-        { "refId": "A", "legendFormat": "{{http_response_status_code}}", "expr": "sum by (http_response_status_code) (rate(http_server_request_count_total{job=\"$job\"}[$__rate_interval]))" }
+        { "refId": "A", "legendFormat": "{{http_response_status_code}}", "expr": "sum by (http_response_status_code) (rate(http_server_request_duration_seconds_count{job=\"$job\"}[$__rate_interval]))" }
       ]
     },
     {
@@ -163,9 +163,127 @@
       "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 3 }, "overrides": [] },
       "options": { "showHeader": true },
       "targets": [
-        { "refId": "A", "format": "table", "instant": true, "expr": "topk(15, sum by (http_route, http_request_method) (rate(http_server_request_count_total{job=\"$job\"}[$__rate_interval])))" }
+        { "refId": "A", "format": "table", "instant": true, "expr": "topk(15, sum by (http_route, http_request_method) (rate(http_server_request_duration_seconds_count{job=\"$job\"}[$__rate_interval])))" }
       ],
       "transformations": [ { "id": "labelsToFields", "options": {} } ]
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "SLO & error budget (99,9% disponibilidade, P95 < 500ms — ADR-002)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 28 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Burn-rate 1h (limiar página 14,4x)",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 29 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short", "decimals": 2,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 6 }, { "color": "red", "value": 14.4 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "(sum(rate(http_server_request_duration_seconds_count{job=\"$job\", http_response_status_code=~\"5..\"}[1h])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job=\"$job\"}[1h])), 1)) / 0.001" }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Burn-rate 6h (limiar página 6x)",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 29 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short", "decimals": 2,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 3 }, { "color": "red", "value": 6 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "(sum(rate(http_server_request_duration_seconds_count{job=\"$job\", http_response_status_code=~\"5..\"}[6h])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job=\"$job\"}[6h])), 1)) / 0.001" }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Error budget consumido (30d)",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 29 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "decimals": 1,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 100 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "100 * (sum(rate(http_server_request_duration_seconds_count{job=\"$job\", http_response_status_code=~\"5..\"}[30d])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job=\"$job\"}[30d])), 1)) / 0.001" }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "P95 vs SLO (500ms)",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 29 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s", "decimals": 3,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.4 }, { "color": "red", "value": 0.5 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{job=\"$job\"}[5m])))" }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Burn-rate multi-janela (1h / 6h / 1d / 3d)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line", "fillOpacity": 0, "showPoints": "never" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 3 }, { "color": "red", "value": 6 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "burn-rate 1h", "expr": "(sum(rate(http_server_request_duration_seconds_count{job=\"$job\", http_response_status_code=~\"5..\"}[1h])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job=\"$job\"}[1h])), 1)) / 0.001" },
+        { "refId": "B", "legendFormat": "burn-rate 6h", "expr": "(sum(rate(http_server_request_duration_seconds_count{job=\"$job\", http_response_status_code=~\"5..\"}[6h])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job=\"$job\"}[6h])), 1)) / 0.001" },
+        { "refId": "C", "legendFormat": "burn-rate 1d", "expr": "(sum(rate(http_server_request_duration_seconds_count{job=\"$job\", http_response_status_code=~\"5..\"}[1d])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job=\"$job\"}[1d])), 1)) / 0.001" },
+        { "refId": "D", "legendFormat": "burn-rate 3d", "expr": "(sum(rate(http_server_request_duration_seconds_count{job=\"$job\", http_response_status_code=~\"5..\"}[3d])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{job=\"$job\"}[3d])), 1)) / 0.001" }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "P95 de latência vs limiar de SLO (500ms)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 0, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "p95", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{job=\"$job\"}[$__rate_interval])))" },
+        { "refId": "B", "legendFormat": "limiar SLO (500ms)", "expr": "vector(0.5)" }
+      ]
     }
   ]
 }
