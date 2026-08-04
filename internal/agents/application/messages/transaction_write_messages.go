@@ -128,3 +128,18 @@ func RecurrenceDayPrompt() string {
 func ActiveWriteExists() string {
 	return "Ainda tenho um lançamento em aberto aguardando você. Me responda para concluí-lo ou envie \"cancelar\" para descartá-lo, aí seguimos com o próximo. 🙂"
 }
+
+func NoDeleteCandidateFound() string {
+	return "Não encontrei um lançamento compatível para excluir. Pode me dar mais detalhes (valor ou descrição)?"
+}
+
+func DeleteCandidatesPrompt(paths []string) string {
+	list := ""
+	for i, p := range paths {
+		if i > 0 {
+			list += "\n"
+		}
+		list += fmt.Sprintf("%d. %s", i+1, p)
+	}
+	return "Encontrei mais de um lançamento compatível. Qual deles você quer excluir?\n\n" + list
+}

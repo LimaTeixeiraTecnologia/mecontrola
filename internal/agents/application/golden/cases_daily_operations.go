@@ -23,6 +23,18 @@ func dailyOperationsCases() []Case {
 			ResponseDescribe: "inicia edição de lançamento de receita buscando candidatos por termo/valor",
 		},
 		{
+			Name:             "exclusao lancamento por descricao e valor nao inventa entryId",
+			Category:         CategoryExpenseIncome,
+			Origin:           "production-2026-08-04 (usuário pediu 'Apague o lançamento internet de 225,62'; LLM inventou entryId='22562' a partir do valor e a confirmação quebrou com 'invalid UUID length: 5')",
+			Input:            "Apague o lançamento internet de 225,62",
+			ToolSubset:       []string{"delete_entry"},
+			ExpectedTool:     "delete_entry",
+			AbsentArgs:       []string{"entryId"},
+			ExpectedArgs:     map[string]any{"searchAmountCents": 22562.0},
+			ResponseProperty: nonEmptyResponse,
+			ResponseDescribe: "chama delete_entry sem entryId, usando searchAmountCents/searchTerm para localizar o lançamento em vez de inventar um id a partir do valor citado",
+		},
+		{
 			Name:             "correcao com valor certo e valor antigo nao e multi-item",
 			Category:         CategoryExpenseIncome,
 			Origin:           "synthetic incident-derived (2026-07-28: 'no cartão eu gastei 35 e não 30' recebeu falso bloqueio multi-item e re-ask genérico)",

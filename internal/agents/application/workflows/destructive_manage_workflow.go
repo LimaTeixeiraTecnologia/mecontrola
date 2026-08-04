@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/google/uuid"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/messages"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/money"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
 )
 
@@ -61,6 +64,9 @@ func buildDestructiveManageStep(cards interfaces.CardManager, recurrences interf
 	execMap := destructiveManageExecMap(cards, recurrences, ledger)
 	return func(ctx context.Context, state DestructiveManageState) (workflow.StepOutput[DestructiveManageState], error) {
 		if state.ResumeText == "" {
+			if state.Operation == DestructiveOpDeleteEntry && state.TargetRef == "" {
+				return handleDestructiveEntrySearch(ctx, state, ledger)
+			}
 			state.ResponseText = destructiveManageConfirmQuestion(state)
 			return destructiveManageSuspend(state, state.ResponseText), nil
 		}
@@ -70,6 +76,10 @@ func buildDestructiveManageStep(cards interfaces.CardManager, recurrences interf
 			state.Expired = true
 			state.ResponseText = ""
 			return workflow.StepOutput[DestructiveManageState]{State: state, Status: workflow.StepStatusCompleted}, nil
+		}
+
+		if len(state.Candidates) > 0 {
+			return handleDestructiveEntryCandidateResume(state)
 		}
 
 		msg := PendingMessage{Text: state.ResumeText, MessageID: state.IncomingMessageID}
@@ -101,6 +111,86 @@ func buildDestructiveManageStep(cards interfaces.CardManager, recurrences interf
 			return destructiveManageSuspend(state, state.ResponseText), nil
 		}
 	}
+}
+
+func handleDestructiveEntrySearch(ctx context.Context, state DestructiveManageState, ledger interfaces.TransactionsLedger) (workflow.StepOutput[DestructiveManageState], error) {
+	entries, err := ledger.SearchEditCandidates(ctx, state.UserID, interfaces.EditCandidateQuery{
+		AmountCents: state.SearchAmountCents,
+		Term:        state.SearchTerm,
+		Limit:       defaultEditCandidateLimit,
+	})
+	if err != nil {
+		return workflow.StepOutput[DestructiveManageState]{State: state, Status: workflow.StepStatusFailed}, fmt.Errorf("workflows.destructive_manage.delete_entry: search_edit_candidates: %w", err)
+	}
+
+	candidates := make([]TransactionEditCandidate, 0, len(entries))
+	for _, e := range entries {
+		candidates = append(candidates, transactionEditCandidateFromEntry(e))
+	}
+
+	if len(candidates) == 0 {
+		state.Status = DestructiveManageCancelled
+		state.ResponseText = messages.NoDeleteCandidateFound()
+		return workflow.StepOutput[DestructiveManageState]{State: state, Status: workflow.StepStatusCompleted}, nil
+	}
+
+	if len(candidates) == 1 {
+		return promoteDestructiveEntryCandidate(state, candidates[0]), nil
+	}
+
+	state.Candidates = candidates
+	state.ResponseText = buildDestructiveEntryCandidatesPrompt(candidates)
+	return destructiveManageSuspend(state, state.ResponseText), nil
+}
+
+func handleDestructiveEntryCandidateResume(state DestructiveManageState) (workflow.StepOutput[DestructiveManageState], error) {
+	if isDestructiveManageExpired(state, time.Now().UTC()) {
+		state.Status = DestructiveManageExpired
+		state.Expired = true
+		state.ResponseText = ""
+		return workflow.StepOutput[DestructiveManageState]{State: state, Status: workflow.StepStatusCompleted}, nil
+	}
+
+	text := strings.TrimSpace(state.ResumeText)
+	state.ResumeText = ""
+
+	if isNao(strings.ToLower(text)) {
+		state.Status = DestructiveManageCancelled
+		state.ResponseText = "🚫 Operação cancelada conforme solicitado."
+		return workflow.StepOutput[DestructiveManageState]{State: state, Status: workflow.StepStatusCompleted}, nil
+	}
+
+	idx, ok := DecideEditCandidateChoice(state.Candidates, text)
+	if !ok {
+		if state.RepromptDone {
+			state.Status = DestructiveManageCancelled
+			state.ResponseText = "🚫 Operação cancelada conforme solicitado."
+			return workflow.StepOutput[DestructiveManageState]{State: state, Status: workflow.StepStatusCompleted}, nil
+		}
+		state.RepromptDone = true
+		state.ResponseText = buildDestructiveEntryCandidatesPrompt(state.Candidates)
+		return destructiveManageSuspend(state, state.ResponseText), nil
+	}
+
+	return promoteDestructiveEntryCandidate(state, state.Candidates[idx]), nil
+}
+
+func promoteDestructiveEntryCandidate(state DestructiveManageState, candidate TransactionEditCandidate) workflow.StepOutput[DestructiveManageState] {
+	state.TargetRef = candidate.TransactionID.String()
+	state.Version = candidate.Version
+	state.Candidates = nil
+	state.RepromptDone = false
+	state.ImpactNote = "Este lançamento será removido permanentemente."
+	state.ResponseText = destructiveManageConfirmQuestion(state)
+	return destructiveManageSuspend(state, state.ResponseText)
+}
+
+func buildDestructiveEntryCandidatesPrompt(candidates []TransactionEditCandidate) string {
+	paths := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		paths = append(paths, fmt.Sprintf("%s - %s (%s)", money.FromCents(c.AmountCents).BRL(), c.Description, c.OccurredAt))
+	}
+	return messages.DeleteCandidatesPrompt(paths)
 }
 
 func destructiveManageSuspend(state DestructiveManageState, prompt string) workflow.StepOutput[DestructiveManageState] {

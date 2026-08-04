@@ -99,18 +99,21 @@ func ParseDestructiveManageStatus(s string) (DestructiveManageStatus, error) {
 }
 
 type DestructiveManageState struct {
-	Status            DestructiveManageStatus  `json:"status"`
-	Operation         DestructiveOperationKind `json:"operation"`
-	UserID            uuid.UUID                `json:"userId"`
-	TargetRef         string                   `json:"targetRef"`
-	ImpactNote        string                   `json:"impactNote"`
-	RepromptDone      bool                     `json:"repromptDone"`
-	MessageID         string                   `json:"messageId"`
-	IncomingMessageID string                   `json:"incomingMessageId"`
-	SuspendedAt       time.Time                `json:"suspendedAt"`
-	ResumeText        string                   `json:"resumeText"`
-	ResponseText      string                   `json:"responseText"`
-	Version           int64                    `json:"version"`
-	Expired           bool                     `json:"expired"`
-	UpdatePayload     string                   `json:"updatePayload"`
+	Status            DestructiveManageStatus    `json:"status"`
+	Operation         DestructiveOperationKind   `json:"operation"`
+	UserID            uuid.UUID                  `json:"userId"`
+	TargetRef         string                     `json:"targetRef"`
+	ImpactNote        string                     `json:"impactNote"`
+	RepromptDone      bool                       `json:"repromptDone"`
+	MessageID         string                     `json:"messageId"`
+	IncomingMessageID string                     `json:"incomingMessageId"`
+	SuspendedAt       time.Time                  `json:"suspendedAt"`
+	ResumeText        string                     `json:"resumeText"`
+	ResponseText      string                     `json:"responseText"`
+	Version           int64                      `json:"version"`
+	Expired           bool                       `json:"expired"`
+	UpdatePayload     string                     `json:"updatePayload"`
+	SearchAmountCents int64                      `json:"searchAmountCents"`
+	SearchTerm        string                     `json:"searchTerm"`
+	Candidates        []TransactionEditCandidate `json:"candidates"`
 }

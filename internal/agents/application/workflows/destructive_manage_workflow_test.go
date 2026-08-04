@@ -207,3 +207,98 @@ func (s *DestructiveManageWorkflowSuite) TestBuildDestructiveManageReaper() {
 	reaper := BuildDestructiveManageReaper(nil, fake.NewProvider())
 	s.NotNil(reaper)
 }
+
+func (s *DestructiveManageWorkflowSuite) TestDeleteEntrySearch_NoCandidates_CompletesWithoutCrash() {
+	s.ledgerMock.EXPECT().
+		SearchEditCandidates(mock.Anything, s.userID, interfaces.EditCandidateQuery{Term: "internet", Limit: defaultEditCandidateLimit}).
+		Return(nil, nil).Once()
+
+	def := BuildDestructiveManageWorkflow(s.cardsMock, s.recurrencesMock, s.ledgerMock)
+	state := DestructiveManageState{
+		UserID:     s.userID,
+		Operation:  DestructiveOpDeleteEntry,
+		Version:    1,
+		SearchTerm: "internet",
+	}
+
+	out, err := def.Root.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+	s.Equal(DestructiveManageCancelled, out.State.Status)
+	s.Contains(out.State.ResponseText, "Não encontrei")
+}
+
+func (s *DestructiveManageWorkflowSuite) TestDeleteEntrySearch_SingleCandidate_ResolvesAndAsksConfirmation() {
+	entryID := uuid.New()
+	s.ledgerMock.EXPECT().
+		SearchEditCandidates(mock.Anything, s.userID, interfaces.EditCandidateQuery{AmountCents: 22562, Term: "internet", Limit: defaultEditCandidateLimit}).
+		Return([]interfaces.Entry{
+			{ID: entryID.String(), CategoryID: uuid.New().String(), AmountCents: 22562, Description: "Internet", Version: 5, OccurredAt: time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)},
+		}, nil).Once()
+
+	def := BuildDestructiveManageWorkflow(s.cardsMock, s.recurrencesMock, s.ledgerMock)
+	state := DestructiveManageState{
+		UserID:            s.userID,
+		Operation:         DestructiveOpDeleteEntry,
+		Version:           1,
+		SearchAmountCents: 22562,
+		SearchTerm:        "internet",
+	}
+
+	out, err := def.Root.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusSuspended, out.Status)
+	s.Equal(entryID.String(), out.State.TargetRef)
+	s.Equal(int64(5), out.State.Version)
+	s.Contains(out.Suspend.Prompt, "Você confirma esta operação?")
+}
+
+func (s *DestructiveManageWorkflowSuite) TestDeleteEntrySearch_MultipleCandidates_SuspendsForDisambiguationThenDeletesChoice() {
+	entryID1 := uuid.New()
+	entryID2 := uuid.New()
+	s.ledgerMock.EXPECT().
+		SearchEditCandidates(mock.Anything, s.userID, interfaces.EditCandidateQuery{AmountCents: 22562, Term: "internet", Limit: defaultEditCandidateLimit}).
+		Return([]interfaces.Entry{
+			{ID: entryID1.String(), CategoryID: uuid.New().String(), AmountCents: 22562, Description: "Internet", Version: 1, OccurredAt: time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)},
+			{ID: entryID2.String(), CategoryID: uuid.New().String(), AmountCents: 22562, Description: "Internet Claro", Version: 1, OccurredAt: time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)},
+		}, nil).Once()
+
+	def := BuildDestructiveManageWorkflow(s.cardsMock, s.recurrencesMock, s.ledgerMock)
+	state := DestructiveManageState{
+		UserID:            s.userID,
+		Operation:         DestructiveOpDeleteEntry,
+		Version:           1,
+		SearchAmountCents: 22562,
+		SearchTerm:        "internet",
+	}
+
+	out, err := def.Root.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusSuspended, out.Status)
+	s.Len(out.State.Candidates, 2)
+	s.Contains(out.Suspend.Prompt, "Internet Claro")
+
+	s.ledgerMock.EXPECT().
+		DeleteTransaction(mock.Anything, interfaces.EntryRef{ID: entryID2}, int64(1)).
+		Return(nil).Once()
+
+	choiceState := out.State
+	choiceState.SuspendedAt = time.Now().UTC()
+	choiceState.ResumeText = "2"
+	confirmOut, err := def.Root.Execute(s.ctx, choiceState)
+	s.NoError(err)
+	s.Equal(workflow.StepStatusSuspended, confirmOut.Status)
+	s.Empty(confirmOut.State.Candidates)
+	s.Equal(entryID2.String(), confirmOut.State.TargetRef)
+
+	deleteState := confirmOut.State
+	deleteState.SuspendedAt = time.Now().UTC()
+	deleteState.ResumeText = "sim"
+	deleteOut, err := def.Root.Execute(s.ctx, deleteState)
+	s.NoError(err)
+	s.Equal(workflow.StepStatusCompleted, deleteOut.Status)
+	s.Contains(deleteOut.State.ResponseText, "Lançamento removido")
+}

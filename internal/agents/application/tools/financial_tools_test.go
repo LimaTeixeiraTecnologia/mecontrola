@@ -23,9 +23,11 @@ import (
 type fakeDestructiveManageEngine struct {
 	startResult wf.RunResult[workflows.DestructiveManageState]
 	startErr    error
+	startState  workflows.DestructiveManageState
 }
 
-func (f *fakeDestructiveManageEngine) Start(_ context.Context, _ wf.Definition[workflows.DestructiveManageState], _ string, _ workflows.DestructiveManageState) (wf.RunResult[workflows.DestructiveManageState], error) {
+func (f *fakeDestructiveManageEngine) Start(_ context.Context, _ wf.Definition[workflows.DestructiveManageState], _ string, state workflows.DestructiveManageState) (wf.RunResult[workflows.DestructiveManageState], error) {
+	f.startState = state
 	return f.startResult, f.startErr
 }
 
@@ -744,6 +746,28 @@ func TestBuildDeleteEntryTool(t *testing.T) {
 	assert.Contains(t, result.ImpactNote, "Responda *sim* para confirmar ou *não* para cancelar.")
 	assert.Contains(t, result.ImpactNote, "lançamento")
 	assert.NotContains(t, result.ImpactNote, "recorrência")
+}
+
+func TestBuildDeleteEntryTool_MalformedEntryID_FallsBackToSearch(t *testing.T) {
+	cardMock := imocks.NewCardManager(t)
+	engine := &fakeDestructiveManageEngine{
+		startResult: wf.RunResult[workflows.DestructiveManageState]{
+			Status: wf.RunStatusSuspended,
+			State:  workflows.DestructiveManageState{ResponseText: "Encontrei mais de um lançamento compatível."},
+		},
+	}
+	handle := BuildDeleteEntryTool(engine, fakeDestructiveManageDef(), cardMock)
+
+	argsJSON, _ := json.Marshal(DeleteEntryInput{EntryID: "22562", EntryKind: "entry", Version: 1, SearchAmountCents: 22562, SearchTerm: "internet"})
+	out, _, err := handle.Invoke(inboundCtx(), argsJSON)
+	require.NoError(t, err)
+
+	var result DeleteEntryOutput
+	require.NoError(t, json.Unmarshal(out, &result))
+	assert.Empty(t, engine.startState.TargetRef)
+	assert.Equal(t, int64(22562), engine.startState.SearchAmountCents)
+	assert.Equal(t, "internet", engine.startState.SearchTerm)
+	assert.Equal(t, "Encontrei mais de um lançamento compatível.", result.ImpactNote)
 }
 
 func TestRegisterExpenseOutput_OutcomeField_Routed(t *testing.T) {
