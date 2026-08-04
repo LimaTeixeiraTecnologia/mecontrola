@@ -64,3 +64,20 @@ tasks:
     desc: "Gate de integridade das skills obrigatorias instaladas."
     cmds:
       - task: :gates:skills-valid
+
+  audit-alert-metrics:
+    desc: |
+      Gate de reconciliacao alerta<->metrica (RF-07, RF-20, ADR-003). Bloqueia merge se
+      qualquer alerta provisionado em rules.yaml referenciar metrica nao emitida pelo
+      codigo atual nem coberta pela allowlist devkit/exporters de infraestrutura.
+    cmds:
+      - bash scripts/observability/audit-alert-metrics
+
+  audit-alert-slo-drift:
+    desc: |
+      Gate de reconciliacao entre o asset documental observability/alert-rules-slo.yaml
+      (Tarefa 8.0) e a fonte de verdade deployment/telemetry/grafana/provisioning/alerting/rules.yaml.
+      Bloqueia merge se labels, for, expr (por refId) ou thresholds divergirem entre os dois
+      arquivos para qualquer uid presente no asset documental.
+    cmds:
+      - bash scripts/observability/audit-alert-slo-drift

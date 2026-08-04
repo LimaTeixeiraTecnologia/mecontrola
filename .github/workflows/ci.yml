@@ -115,6 +115,8 @@ jobs:
       - run: task ci:init-prohibited
       - run: task ci:zero-comments
       - run: task ci:skills-valid
+      - run: task ci:audit-alert-metrics
+      - run: task ci:audit-alert-slo-drift
 
   build:
     name: Build
