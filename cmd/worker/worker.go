@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/otel"
 	"github.com/jmoiron/sqlx"
+	contribruntime "go.opentelemetry.io/contrib/instrumentation/runtime"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
@@ -33,6 +35,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
 	onboardingpostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/repositories/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/observability/runtimemetrics"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup"
 	deduphandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup/jobs/handlers"
@@ -40,6 +43,24 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
 )
+
+const workerHeartbeatInterval = 15 * time.Second
+
+func buildO11yConfig(cfg *configs.Config, hostname string) *otel.Config {
+	return &otel.Config{
+		Environment:        cfg.AppConfig.Environment,
+		ServiceName:        cfg.HTTPConfig.ServiceNameWorker,
+		ServiceVersion:     cfg.O11yConfig.ServiceVersion,
+		TraceSampleRate:    cfg.O11yConfig.TraceSampleRate,
+		OTLPEndpoint:       cfg.O11yConfig.NormalizedExporterEndpoint(),
+		Insecure:           cfg.O11yConfig.ExporterInsecure,
+		LogLevel:           observability.LogLevel(cfg.O11yConfig.LogLevel),
+		OTLPProtocol:       otel.OTLPProtocol(cfg.O11yConfig.ExporterProtocol),
+		LogFormat:          observability.LogFormat(cfg.O11yConfig.LogFormat),
+		ResourceAttributes: map[string]string{"service.instance.id": hostname},
+		RegisterGlobal:     true,
+	}
+}
 
 func New() *cobra.Command {
 	return &cobra.Command{
@@ -65,21 +86,19 @@ func Run() error { //nolint:revive // bootstrap do worker agrega lifecycle de pr
 	if hostnameErr != nil {
 		hostname = "unknown"
 	}
-	o11yConfig := &otel.Config{
-		Environment:        cfg.AppConfig.Environment,
-		ServiceName:        cfg.HTTPConfig.ServiceNameWorker,
-		ServiceVersion:     cfg.O11yConfig.ServiceVersion,
-		TraceSampleRate:    cfg.O11yConfig.TraceSampleRate,
-		OTLPEndpoint:       cfg.O11yConfig.NormalizedExporterEndpoint(),
-		Insecure:           cfg.O11yConfig.ExporterInsecure,
-		LogLevel:           observability.LogLevel(cfg.O11yConfig.LogLevel),
-		OTLPProtocol:       otel.OTLPProtocol(cfg.O11yConfig.ExporterProtocol),
-		LogFormat:          observability.LogFormat(cfg.O11yConfig.LogFormat),
-		ResourceAttributes: map[string]string{"service.instance.id": hostname},
-	}
+	o11yConfig := buildO11yConfig(cfg, hostname)
 	o11y, err := otel.NewProvider(context.Background(), o11yConfig)
 	if err != nil {
 		return fmt.Errorf("worker: failed to create observability provider: %w", err)
+	}
+
+	if err := runtimemetrics.Start(contribruntime.DefaultMinimumReadMemStatsInterval); err != nil {
+		return fmt.Errorf("worker: failed to start runtime metrics: %w", err)
+	}
+
+	heartbeat, err := startWorkerHeartbeat(ctx, o11y, workerHeartbeatInterval)
+	if err != nil {
+		return fmt.Errorf("worker: failed to start heartbeat: %w", err)
 	}
 
 	dbManager, err := postgres.New(
@@ -98,7 +117,7 @@ func Run() error { //nolint:revive // bootstrap do worker agrega lifecycle de pr
 		)
 	}
 
-	runtime := workerRuntime{cfg: cfg, o11y: o11y, dbManager: dbManager, db: sqlx.NewDb(dbManager.DB(), "pgx")}
+	runtime := workerRuntime{cfg: cfg, o11y: o11y, dbManager: dbManager, db: sqlx.NewDb(dbManager.DB(), "pgx"), heartbeatDone: heartbeat.done}
 	registerOutboxMetrics(o11y, runtime.db)
 
 	workerManager, err := runtime.newManager(ctx)
@@ -161,7 +180,7 @@ func registerOutboxMetrics(o11y observability.Observability, db *sqlx.DB) {
 	_ = o11y.Metrics().Gauge(
 		"outbox_pending_jobs",
 		"Total de eventos pendentes na fila do outbox",
-		"1",
+		"{job}",
 		func(ctx context.Context) float64 {
 			count, err := factory.OutboxRepository(db).CountPending(ctx)
 			if err != nil {
@@ -172,12 +191,48 @@ func registerOutboxMetrics(o11y observability.Observability, db *sqlx.DB) {
 	)
 }
 
+type workerHeartbeat struct {
+	beats atomic.Int64
+	done  chan struct{}
+}
+
+func startWorkerHeartbeat(ctx context.Context, o11y observability.Observability, interval time.Duration) (*workerHeartbeat, error) {
+	hb := &workerHeartbeat{done: make(chan struct{})}
+	hb.beats.Store(1)
+
+	if err := o11y.Metrics().Gauge(
+		"worker_heartbeat",
+		"Liveness heartbeat do worker, incrementado por um ticker cancelavel no bootstrap",
+		"{beat}",
+		func(context.Context) float64 { return float64(hb.beats.Load()) },
+	); err != nil {
+		return nil, err
+	}
+
+	go func() {
+		defer close(hb.done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				hb.beats.Add(1)
+			}
+		}
+	}()
+
+	return hb, nil
+}
+
 type workerRuntime struct {
 	cfg            *configs.Config
 	o11y           observability.Observability
 	dbManager      *postgres.Database
 	db             *sqlx.DB
 	agentsShutdown func(context.Context)
+	heartbeatDone  <-chan struct{}
 }
 
 func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error) { //nolint:revive // composition root agrega bootstrap de módulos; refatorar fragmentaria a ordem de lifecycle crítica
@@ -339,6 +394,14 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 
 func (r *workerRuntime) shutdown(workerManager *worker.Manager, health *healthServer) error {
 	var shutdownErrs []error
+
+	if r.heartbeatDone != nil {
+		select {
+		case <-r.heartbeatDone:
+		case <-time.After(5 * time.Second):
+			shutdownErrs = append(shutdownErrs, errors.New("worker: heartbeat goroutine did not stop in time"))
+		}
+	}
 
 	healthCtx, healthCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer healthCancel()
