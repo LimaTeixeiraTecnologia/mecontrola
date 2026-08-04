@@ -302,39 +302,6 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 		opts...,
 	)
 
-	var pre []guards.PreGuard
-	pre = append(pre, guards.NewOnboardingInitialGuard())
-	if createCard := findTool(tools, "create_card"); createCard != nil {
-		pre = append(pre, guards.NewCreateCardShortcutGuard(createCard))
-	}
-	if listCards := findTool(tools, "list_cards"); listCards != nil {
-		pre = append(pre, guards.NewListCardsShortcutGuard(listCards))
-	}
-	if hasEntryRegistrationTool(tools) {
-		pre = append(pre, guards.NewMultiItemGuard())
-	}
-	if registerExpense := findTool(tools, registerExpenseToolID); registerExpense != nil {
-		pre = append(pre, guards.NewCardExpenseShortcutGuard(registerExpense, findTool(tools, "resolve_card")))
-		pre = append(pre, guards.NewRegisterExpenseShortcutGuard(registerExpense))
-	}
-	if registerIncome := findTool(tools, registerIncomeToolID); registerIncome != nil {
-		pre = append(pre, guards.NewRegisterIncomeShortcutGuard(registerIncome))
-	}
-	if createRecurrence := findTool(tools, "create_recurrence"); createRecurrence != nil {
-		pre = append(pre, guards.NewCreateRecurrenceShortcutGuard(createRecurrence))
-	}
-	if queryDay := findTool(tools, "query_day"); queryDay != nil {
-		pre = append(pre, guards.NewQueryDayShortcutGuard(queryDay))
-	}
-	if adjustAllocation := findTool(tools, "adjust_allocation"); adjustAllocation != nil || findTool(tools, "edit_budget_total") != nil {
-		pre = append(pre, guards.NewBudgetWriteShortcutGuard(adjustAllocation, findTool(tools, "edit_budget_total")))
-	}
-	if editEntry := findTool(tools, editEntryToolID); editEntry != nil {
-		pre = append(pre, guards.NewEditEntryCorrectionShortcutGuard(editEntry))
-	}
-	if updateRecurrence := findTool(tools, "update_recurrence"); updateRecurrence != nil {
-		pre = append(pre, guards.NewRecurrenceManageShortcutGuard(updateRecurrence, findTool(tools, "delete_recurrence"), findTool(tools, "list_recurrences"), o11y))
-	}
 	post := []guards.PostGuard{
 		guards.NewVerbatimRelayGuard(),
 		guards.NewEmptyAnswerGuard(),
@@ -349,7 +316,53 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 		guards.NewWhatsappFormatSanitizerGuard(),
 		guards.NewTreatmentNamePersonalizerGuard(),
 	}
-	return WithGuardChain(built, o11y, pre, post)
+	return WithGuardChain(built, o11y, buildMecontrolaPreGuards(tools, o11y), post)
+}
+
+func buildMecontrolaPreGuards(tools []tool.ToolHandle, o11y observability.Observability) []guards.PreGuard {
+	var pre []guards.PreGuard
+	resolveCard := findTool(tools, "resolve_card")
+	listCards := findTool(tools, "list_cards")
+	editBudgetTotal := findTool(tools, "edit_budget_total")
+	deleteRecurrence := findTool(tools, "delete_recurrence")
+	listRecurrences := findTool(tools, "list_recurrences")
+
+	pre = append(pre, guards.NewOnboardingInitialGuard())
+	if createCard := findTool(tools, "create_card"); createCard != nil {
+		pre = append(pre, guards.NewCreateCardShortcutGuard(createCard))
+	}
+	if listCards != nil {
+		pre = append(pre, guards.NewListCardsShortcutGuard(listCards))
+	}
+	if hasEntryRegistrationTool(tools) {
+		pre = append(pre, guards.NewMultiItemGuard())
+	}
+	if registerExpense := findTool(tools, registerExpenseToolID); registerExpense != nil {
+		pre = append(pre, guards.NewCardExpenseShortcutGuard(registerExpense, resolveCard))
+		pre = append(pre, guards.NewRegisterExpenseShortcutGuard(registerExpense))
+	}
+	if registerIncome := findTool(tools, registerIncomeToolID); registerIncome != nil {
+		pre = append(pre, guards.NewRegisterIncomeShortcutGuard(registerIncome))
+	}
+	if queryCardInvoice := findTool(tools, "query_card_invoice"); queryCardInvoice != nil {
+		pre = append(pre, guards.NewQueryCardInvoiceShortcutGuard(resolveCard, queryCardInvoice, listCards))
+	}
+	if createRecurrence := findTool(tools, "create_recurrence"); createRecurrence != nil {
+		pre = append(pre, guards.NewCreateRecurrenceShortcutGuard(createRecurrence))
+	}
+	if queryDay := findTool(tools, "query_day"); queryDay != nil {
+		pre = append(pre, guards.NewQueryDayShortcutGuard(queryDay))
+	}
+	if adjustAllocation := findTool(tools, "adjust_allocation"); adjustAllocation != nil || editBudgetTotal != nil {
+		pre = append(pre, guards.NewBudgetWriteShortcutGuard(adjustAllocation, editBudgetTotal))
+	}
+	if editEntry := findTool(tools, editEntryToolID); editEntry != nil {
+		pre = append(pre, guards.NewEditEntryCorrectionShortcutGuard(editEntry))
+	}
+	if updateRecurrence := findTool(tools, "update_recurrence"); updateRecurrence != nil {
+		pre = append(pre, guards.NewRecurrenceManageShortcutGuard(updateRecurrence, deleteRecurrence, listRecurrences, o11y))
+	}
+	return pre
 }
 
 func findTool(tools []tool.ToolHandle, id string) tool.ToolHandle {
