@@ -505,7 +505,17 @@ var goldenToolCatalog = map[string]func(sink ToolCaptureSink) tool.ToolHandle{
 	"edit_entry_not_found":           goldenEditEntryNotFoundTool,
 	"edit_entry_invalid_amount":      goldenEditEntryInvalidAmountTool,
 	"delete_entry": func(sink ToolCaptureSink) tool.ToolHandle {
-		return goldenCaptureTool("delete_entry", "Solicita exclusão de lançamento ou 💳; entryId DEVE ser o id real do lançamento ou o cardId real do 💳 (obtido via resolve_card quando o 💳 for identificado por apelido), nunca um valor inventado", goldenBaseSchema("entryId", "entryKind", "version"), sink)
+		return goldenCaptureTool("delete_entry", "Solicita exclusão de lançamento ou 💳; quando o lançamento não tiver entryId conhecido, omita entryId e use searchAmountCents/searchTerm para localizar o item. Para 💳 por apelido, use o cardId real retornado por resolve_card.", map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"entryId":           map[string]any{"type": "string"},
+				"entryKind":         map[string]any{"type": "string"},
+				"version":           map[string]any{"type": "integer"},
+				"searchAmountCents": map[string]any{"type": "integer"},
+				"searchTerm":        map[string]any{"type": "string"},
+			},
+			"additionalProperties": false,
+		}, sink)
 	},
 	"update_card": func(sink ToolCaptureSink) tool.ToolHandle {
 		return goldenCaptureTool("update_card", "Solicita atualização de 💳", goldenBaseSchema("cardId", "nickname", "dueDay"), sink)

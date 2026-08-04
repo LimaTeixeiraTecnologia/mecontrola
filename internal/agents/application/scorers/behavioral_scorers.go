@@ -35,7 +35,6 @@ var mecontrolaRequiredArgsByTool = map[string][]string{
 	"create_recurrence": {"direction", "paymentMethod", "amountCents", "description", "frequency", "dayOfMonth"},
 	"adjust_allocation": {"competence", "rootSlug", "percentage"},
 	"edit_entry":        {"entryId"},
-	"delete_entry":      {"entryId", "entryKind", "version"},
 	"update_card":       {"cardId", "version"},
 	"update_recurrence": {"templateId", "version"},
 	"delete_recurrence": {"templateId", "version"},
@@ -235,6 +234,16 @@ func (s *requiredArgsScorer) Kind() scorer.ScorerKind { return scorer.ScorerKind
 
 func (s *requiredArgsScorer) Score(_ context.Context, sample scorer.RunSample) (scorer.ScoreResult, error) {
 	for _, tc := range sample.ToolCalls {
+		if tc.Name == "delete_entry" {
+			if missing := validateDeleteEntryRequiredArgs(tc.Args); len(missing) > 0 {
+				return scorer.ScoreResult{
+					Score:    0.0,
+					Reason:   fmt.Sprintf("write-tool %s sem args obrigatórios: %v", tc.Name, missing),
+					Metadata: map[string]any{"tool": tc.Name, "missing": missing},
+				}, nil
+			}
+			continue
+		}
 		required, ok := mecontrolaRequiredArgsByTool[tc.Name]
 		if !ok {
 			continue
@@ -255,6 +264,26 @@ func (s *requiredArgsScorer) Score(_ context.Context, sample scorer.RunSample) (
 		}
 	}
 	return scorer.ScoreResult{Score: 1.0, Reason: "args obrigatórios presentes em todas as write-tools chamadas"}, nil
+}
+
+func validateDeleteEntryRequiredArgs(args map[string]any) []string {
+	missing := make([]string, 0, 3)
+	if isZeroArgValue(args["entryKind"]) {
+		missing = append(missing, "entryKind")
+	}
+	if isZeroArgValue(args["version"]) {
+		missing = append(missing, "version")
+	}
+	if len(missing) > 0 {
+		return missing
+	}
+	if !isZeroArgValue(args["entryId"]) {
+		return nil
+	}
+	if !isZeroArgValue(args["searchAmountCents"]) || !isZeroArgValue(args["searchTerm"]) {
+		return nil
+	}
+	return []string{"entryId|searchAmountCents|searchTerm"}
 }
 
 var rePaymentLaunchVerbs = regexp.MustCompile(`(?i)\b(gastei|paguei|comprei|parcelei)\b`)

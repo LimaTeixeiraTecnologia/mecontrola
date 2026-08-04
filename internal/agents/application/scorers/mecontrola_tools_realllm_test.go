@@ -257,7 +257,22 @@ func buildAllFakeTools(userID string) ([]tool.ToolHandle, map[string]**captureRe
 		buildCaptureTool("adjust_allocation", "Ajusta alocação de categoria", baseSchema("rootSlug", "basisPoints"), makeCapture("adjust_allocation")),
 		buildCaptureTool("suggest_allocation", "Sugere distribuição de alocação", baseSchema("totalCents"), makeCapture("suggest_allocation")),
 		buildCaptureTool("edit_entry", "Inicia a edição de um lançamento pelo ID; chame imediatamente quando o usuário disser que quer editar um lançamento identificado, mesmo sem saber ainda o que mudar, pois a própria ferramenta retorna a confirmação necessária", baseSchema("entryId", "entryKind"), makeCapture("edit_entry")),
-		buildCaptureTool("delete_entry", "Solicita exclusão de lançamento ou 💳", baseSchema("targetRef", "targetKind"), makeCapture("delete_entry")),
+		buildCaptureTool(
+			"delete_entry",
+			"Solicita exclusão de lançamento ou 💳; quando o lançamento não tiver entryId conhecido, omita entryId e use searchAmountCents/searchTerm para localizar o item. Nunca invente um entryId a partir do valor.",
+			map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"entryId":           map[string]any{"type": "string"},
+					"entryKind":         map[string]any{"type": "string"},
+					"version":           map[string]any{"type": "string"},
+					"searchAmountCents": map[string]any{"type": "string"},
+					"searchTerm":        map[string]any{"type": "string"},
+				},
+				"additionalProperties": false,
+			},
+			makeCapture("delete_entry"),
+		),
 		buildCaptureTool("update_card", "Solicita atualização de 💳", baseSchema("cardId", "nickname", "dueDay"), makeCapture("update_card")),
 		buildCaptureTool("resolve_card", "Resolve o 💳 de crédito do usuário pelo apelido informado, retornando o cardId; use como etapa obrigatória antes de registrar compra no crédito OU antes de consultar a fatura do 💳 (query_card_invoice).", baseSchema("nickname"), makeCapture("resolve_card")),
 	}

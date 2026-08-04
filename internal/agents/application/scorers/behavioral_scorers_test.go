@@ -489,6 +489,42 @@ func (s *BehavioralScorersSuite) TestRequiredArgsScorer() {
 				s.InDelta(0.0, result.Score, 0.001)
 			},
 		},
+		{
+			name: "deve retornar score 1 quando delete_entry usa entryId conhecido",
+			args: args{sample: scorer.RunSample{ToolCalls: []scorer.ToolCallRecord{
+				{Name: "delete_entry", Args: map[string]any{
+					"entryId": "11111111-1111-1111-1111-111111111111", "entryKind": "entry", "version": float64(2),
+				}},
+			}}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(1.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve retornar score 1 quando delete_entry usa busca por termo e valor sem entryId",
+			args: args{sample: scorer.RunSample{ToolCalls: []scorer.ToolCallRecord{
+				{Name: "delete_entry", Args: map[string]any{
+					"entryKind": "entry", "version": float64(1), "searchAmountCents": float64(22562), "searchTerm": "internet",
+				}},
+			}}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(1.0, result.Score, 0.001)
+			},
+		},
+		{
+			name: "deve retornar score 0 quando delete_entry nao tem entryId nem criterios de busca",
+			args: args{sample: scorer.RunSample{ToolCalls: []scorer.ToolCallRecord{
+				{Name: "delete_entry", Args: map[string]any{
+					"entryKind": "entry", "version": float64(1),
+				}},
+			}}},
+			expect: func(result scorer.ScoreResult, err error) {
+				s.NoError(err)
+				s.InDelta(0.0, result.Score, 0.001)
+			},
+		},
 	}
 
 	for _, scenario := range scenarios {

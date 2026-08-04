@@ -35,6 +35,18 @@ func dailyOperationsCases() []Case {
 			ResponseDescribe: "chama delete_entry sem entryId, usando searchAmountCents/searchTerm para localizar o lançamento em vez de inventar um id a partir do valor citado",
 		},
 		{
+			Name:             "exclusao lancamento de aporte por valor e dia nao inventa entryId",
+			Category:         CategoryExpenseIncome,
+			Origin:           "production-2026-08-03 (usuário pediu 'Apague o lançamento de aporte de R$ 2.774,88 de hoje'; o sistema precisava tratar como delete_entry de lançamento, nunca delete_recurrence, e sem inventar entryId)",
+			Input:            "Apague o lançamento de aporte de R$ 2.774,88 de hoje",
+			ToolSubset:       []string{"delete_entry", "delete_recurrence"},
+			ExpectedTool:     "delete_entry",
+			AbsentArgs:       []string{"entryId"},
+			ExpectedArgs:     map[string]any{"searchAmountCents": 277488.0, "searchTerm": "aporte"},
+			ResponseProperty: nonEmptyResponse,
+			ResponseDescribe: "chama delete_entry sem entryId, usando busca por valor e termo para localizar o lançamento de aporte, nunca delete_recurrence",
+		},
+		{
 			Name:             "correcao com valor certo e valor antigo nao e multi-item",
 			Category:         CategoryExpenseIncome,
 			Origin:           "synthetic incident-derived (2026-07-28: 'no cartão eu gastei 35 e não 30' recebeu falso bloqueio multi-item e re-ask genérico)",
