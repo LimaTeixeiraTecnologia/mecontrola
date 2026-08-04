@@ -64,7 +64,7 @@ func New(o11y observability.Observability) *Limiter {
 	_ = o11y.Metrics().Gauge(
 		"whatsapp_ratelimit_buckets_count",
 		"Numero de buckets ativos no rate limiter de WhatsApp",
-		"1",
+		"{bucket}",
 		func(_ context.Context) float64 {
 			var count float64
 			l.buckets.Range(func(_, _ any) bool {

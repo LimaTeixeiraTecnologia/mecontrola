@@ -368,7 +368,7 @@ func registerMetrics(
 	_ = o11y.Metrics().Gauge(
 		"onboarding_tokens_paid_unconsumed",
 		"Total de tokens no estado PAID ainda nao consumidos",
-		"1",
+		"{token}",
 		func(ctx context.Context) float64 {
 			current, err := stats(ctx)
 			if err != nil {
@@ -380,7 +380,7 @@ func registerMetrics(
 	_ = o11y.Metrics().Gauge(
 		"onboarding_tokens_paid_unconsumed_overdue",
 		"Total de tokens PAID ainda nao consumidos apos a janela operacional",
-		"1",
+		"{token}",
 		func(ctx context.Context) float64 {
 			current, err := stats(ctx)
 			if err != nil {
