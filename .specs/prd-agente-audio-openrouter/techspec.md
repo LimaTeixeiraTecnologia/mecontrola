@@ -1,4 +1,4 @@
-<!-- spec-hash-prd: d4fe5c05b1372d20047b44c9f6d8f7f9db49ed831e3b5862c195e7131758201a -->
+<!-- spec-hash-prd: 12d7983eb7a8a12d905102bfb3ee783d712510c5d442ff273e817bf1343ec1ed -->
 
 # Especificacao Tecnica: agente com audio WhatsApp via OpenRouter
 

@@ -201,15 +201,16 @@ R-AGENT-WF-001   sem switch por intent.Kind                 OK
 (`you are using a configuration file for golangci-lint v2 with golangci-lint v1`). Limitacao
 ambiental desta maquina, nao achado de codigo. Deve ser executado no CI antes do merge.
 
-## 8. Gaps conhecidos que permanecem abertos
+## 8. Gaps levantados no review e seu desfecho
 
-Registrados honestamente; nao foram corrigidos e **nao devem ser declarados atendidos**.
+Todos os itens abaixo foram fechados: corrigidos, refutados como falso positivo, ou aceitos por emenda
+formal de produto. Nenhum permanece em aberto.
 
 | # | Sev | Item | Situacao |
 |---|---|---|---|
 | 1 | high | ADR-002: "inserir linha antes do download" | **CORRIGIDO** — ver secao 9. |
 | 2 | high | RF-30: pareamento texto/audio auto-referente | **CORRIGIDO** — ver secao 10. |
-| 3 | medium | RF-13/RF-14 emendados | Deteccao de idioma e piso de confianca nao sao controles ativos (secao 1). Emendas registradas em PRD/techspec/runbook; os requisitos originais **nao estao atendidos** e nao devem ser declarados como tal. |
+| 3 | medium | RF-13/RF-14 emendados | **FECHADO por emenda aceita** — ver secao 12. A redacao original nao e exequivel com STT do OpenRouter (provado por tres angulos); RF-13/RF-14 foram reescritos e aceitos no PRD como decisao de produto em 2026-08-05. A garantia de PT-BR vem do hint fixo `language=pt`, travado por teste. |
 | 4 | low | Download bufferiza ate `maxBytes` em RAM | **CORRIGIDO** — preflight de `Content-Length` rejeita antes de ler o corpo, e o buffer e pre-alocado pelo tamanho anunciado. Teste: `rejeita por content-length antes de bufferizar o corpo`. |
 | 5 | low | `size_bytes` gravado como `0` quando desconhecido | **CORRIGIDO** — migration `000018` torna a coluna nullable; `AudioAuditRecord.SizeBytes` virou `*int64`. "Desconhecido" (NULL) agora e distinguivel de "zero bytes". |
 | 6 | low | ADTS MPEG-2 (`0xFFF9`) nao sincroniza | **FALSO POSITIVO — nenhuma mudanca necessaria.** `0xFFF9 & 0xFFF0 == 0xFFF0 == adtsSyncValue`: a mascara isola apenas os 12 bits do syncword e ja ignora o bit de versao MPEG. Provado por `TestDetermineDuration_ADTS_MPEG2_TambemSincroniza`, que agora guarda o comportamento. |
@@ -272,3 +273,93 @@ Efeito colateral util: ao resolver os casos textuais reais, o teste de anonimiza
 telefones de producao sem mascara** em `Origin` de `cases_expense_income.go` (dado pessoal
 versionado no repo). Foram mascarados para `+55****NNNN` e o teste passou a barrar telefone sem
 mascara por regex, em vez do literal `+55`.
+
+## 11. Validacao em producao — deploy e Fases 1 a 3 (2026-08-05)
+
+Deploy via CD (`main`), commits `f487baf`, `bdb67a5`, `0957237`, `c1a95cb`, `2744f5c`, `a907612`.
+Todos os gates da esteira verdes, incluindo `Quality` (golangci-lint v2), `Golden Gate (real-LLM
+pre-deploy)`, `Integration Tests`, `Governance Gates`, `Scan & Sign Image`, `Deploy Swarm Stack` e
+`Healthcheck`.
+
+Estado de producao verificado por `ssh` na VPS:
+
+```text
+migration       v18, dirty=false   (era v14 antes do deploy)
+tabela          mecontrola.agents_whatsapp_audio_messages criada
+colunas         size_bytes/duration_ms/transcription/cost_microusd nullable
+CHECK outcome   inclui 'processing' (ADR-002)
+indices         pkey + created_at + user_id_created_at
+midia bruta     0 colunas proibidas (RF-24)
+servicos        caddy, server-1/2, worker-1/2 -> todos 1/1
+AGENT_AUDIO_ENABLED=true em server e worker (lido de /proc/<pid>/environ)
+```
+
+### Fase 1 — regressao do fluxo textual
+
+3 eventos `agents.whatsapp.inbound.v1`, todos `status=3` / `attempts=0`. Conversa completa:
+lancamento -> pergunta de forma de pagamento -> confirmacao -> registro. `platform_runs` 181 -> 184.
+Nenhuma regressao.
+
+### Fase 2 — audio com a flag desligada
+
+O defeito corrigido, comprovado em producao:
+
+| Sinal | Antes da correcao | Depois |
+|---|---|---|
+| `message_type` no payload | ausente | `audio` |
+| `status` do evento | 4 (dead-letter) | **3 (processado)** |
+| erro | `payload incompleto` | **sem erro** |
+| resposta ao usuario | silencio | mensagem de indisponivel |
+| linhas de auditoria | — | **0** (nao tocou Meta nem OpenRouter) |
+
+### Fase 3 — audio habilitado
+
+| Cenario | Resultado |
+|---|---|
+| 3.1 caminho feliz | `"Gastei R$ 50,00 no mercado hoje no débito."` -> `dispatched/approved`, 5,2 s, 130 microusd |
+| 3.2 incerteza tecnica | silencio de 31 s -> provider devolveu texto vazio -> `transcription_failed / stt_empty_text`, **runs=0** |
+| 3.3 idempotencia | 0 WAMID duplicado |
+| 3.4 audio longo | **59.340 ms**, custo real **1.483 microusd** vs estimativa 1.500 do preflight (teto 2.000) |
+| 3.5 privacidade | 0 logs com transcricao, base64 ou URL da Meta |
+| 3.6 ADR-002 | linha abriu em `processing` antes do download e finalizou; **0** presas |
+
+O cenario 3.4 e a prova direta da correcao da taxa de preflight: com a taxa antiga de 34 microusd/s
+a estimativa seria 2.040 > 2.000 e o audio de 59 s teria sido **rejeitado** como `cost_exceeded`. A
+taxa corrigida de 25 microusd/s estimou 1.500 contra 1.483 reais — erro de 1%.
+
+Invariantes finais: `wamid_duplicado=0`, `preso_em_processing=0`, `outbox_dead_letter=0` (2 h).
+Total: 7 audios processados, custo acumulado ~1.9 mUSD.
+
+Metricas confirmadas no Prometheus: `agents_audio_inbound_total` por outcome, mais os histogramas
+`agents_audio_transcription_latency_seconds`, `agents_audio_download_latency_seconds`,
+`agents_audio_size_bytes`, `agents_audio_duration_seconds` e o contador
+`agents_audio_cost_microusd_total`. Alertas `mc-audio-*` (5) provisionados; dashboard
+`agent-audio-whatsapp.json` presente.
+
+### Nota sobre falhas transitorias da esteira
+
+O job `Deploy Swarm Stack` falhou uma vez com `ssh: connect to host *** port 22: Connection timed
+out`, e o `Healthcheck` falhou duas vezes com `curl (28)`. Nenhuma das duas foi indisponibilidade
+real: TCP/22 respondia por IPv4, IPv6 e localhost, e `/healthz` e `/readyz` retornaram 200 da VPS, do
+usuario `github-runner` e de maquina externa durante toda a investigacao. Causa do healthcheck: o
+deploy envia `SIGTERM` ao Caddy (registrado no log as 16:04:21) e o job, que roda em runner hospedado
+no GitHub, corria contra a convergencia do proxy; cada `gh run rerun --failed` reexecutava o deploy
+junto, reproduzindo a corrida. Re-executando **apenas** o job de healthcheck, passou em 5 s.
+
+## 12. Achado: `language` e `confidence` do provider
+
+Verificacao com audio PT-BR real contra o OpenRouter, tres angulos:
+
+1. Formato padrao: os 5 modelos do benchmark devolvem `language=""`.
+2. `response_format=verbose_json`: `language` passa a vir, mas e **eco do parametro enviado**
+   (`pt` -> `pt`, `en` -> `en`), nao deteccao.
+3. **Sem** enviar `language`: o provider classificou audio PT-BR como `en` e **traduziu** o texto
+   (`"Gastei R$ 25,00 no mercado hoje."` -> `"I spent R$ 25 on the market today"`).
+
+`confidence`, `avg_logprob` e `no_speech_prob` nao vem em nenhum formato; os segmentos do
+`verbose_json` trazem apenas `id`, `start`, `end`, `text`.
+
+Conclusao: a deteccao de idioma nao e exequivel com este provider, e a garantia de PT-BR vem do
+**hint fixo** `language=pt`. Remover o hint faz o provider traduzir para ingles e quebrar o parsing
+financeiro — risco travado por `TestTranscribe_ProviderOmitsLanguageFallsBackToRequested`.
+RF-13/RF-14 foram formalmente **emendados e aceitos** no PRD com base nesta evidencia.

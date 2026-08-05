@@ -66,3 +66,11 @@ Evidências de codebase a respeitar:
 - `internal/agents/application/golden/`
 - `internal/agents/application/scorers/`
 - `internal/agents/application/tools/`
+
+## Evidencia de Execucao Real (2026-08-05)
+
+Os comandos de gate real registrados acima foram corrigidos no review de 2026-08-05: sem
+`-tags=integration` eles compilavam zero testes e reportavam sucesso, de modo que os checkboxes
+anteriores nao correspondiam a execucao. A evidencia valida — com execucao real contra OpenRouter e
+contra producao — esta em `.specs/prd-agente-audio-openrouter/review-evidence-2026-08-05.md`
+(secoes 2, 3, 7, 11 e 12).

@@ -89,23 +89,57 @@ campo obrigatório acima estiver vazio/zero — não é possível subir com conf
 
 ### 2.1 Limitação conhecida: detecção de idioma não é um controle ativo
 
-Verificação empírica de 2026-08-05 (review) com áudio PT-BR real contra os 5 modelos STT do
-benchmark — `openai/whisper-large-v3`, `openai/gpt-4o-transcribe`, `openai/gpt-4o-mini-transcribe`,
-`mistralai/voxtral-mini-transcribe`, `deepgram/nova-3` — mostrou que **nenhum** retorna o campo
-`language` na resposta (todos devolvem `language=""` com transcrição correta). Trocar de modelo não
-resolve.
+Verificação empírica de 2026-08-05 (review), com áudio PT-BR real contra o OpenRouter:
 
-Como consequência, `buildTranscriptionResponse` assume o idioma enviado no request (`pt`) quando o
-provider omite o campo. Isso mantém a feature operante, mas significa que:
+1. **Formato de resposta padrão** — os 5 modelos STT do benchmark (`openai/whisper-large-v3`,
+   `openai/gpt-4o-transcribe`, `openai/gpt-4o-mini-transcribe`, `mistralai/voxtral-mini-transcribe`,
+   `deepgram/nova-3`) devolvem `language=""`. O campo simplesmente não vem.
+2. **Com `response_format=verbose_json`** o campo `language` passa a vir — mas é **eco do que foi
+   pedido**, não detecção. Enviando `language=pt` volta `pt`; enviando `language=en` volta `en`.
+3. **Sem enviar `language`**, o provider classificou um áudio PT-BR como `en` e **traduziu** o
+   conteúdo: `"Gastei R$ 25,00 no mercado hoje."` virou `"I spent R$ 25 on the market today"`.
 
-- o motivo `language_unsupported` **não ocorre em produção** para áudio real;
-- áudio em outro idioma é transcrito à força como PT-BR pelo provider e a proteção efetiva passa a
-  ser os gates de **texto vazio**, **incoerência** e **truncamento** (esses sim ativos e testados);
-- RF-13/RF-14 estão formalmente emendados no PRD; não declarar detecção de idioma como atendida.
+Consequências operacionais:
 
-Se o alerta `mc-audio-transcription-uncertain-rate` disparar, **não** investigar idioma primeiro:
-os motivos plausíveis em produção são `empty_text`, `incoherent` e `truncated`.
-Regressão coberta por `TestRealSTT_Transcribe` e `TestGoldenAudioRealSTT` (ambos `-tags=integration`).
+- O motivo `language_unsupported` **não ocorre** em produção para áudio real. Se
+  `mc-audio-transcription-uncertain-rate` disparar, **não** investigue idioma.
+- `buildTranscriptionResponse` assume o idioma requisitado quando o provider omite. RF-13/RF-14
+  estão formalmente emendados no PRD: a garantia de PT-BR vem do **hint fixo**, não de detecção.
+
+> **Risco a proteger:** remover o `language: "pt"` do request para "habilitar autodetecção" faz o
+> provider **traduzir** o áudio para inglês, quebrando o parsing financeiro. O hint é obrigatório e
+> está travado por `TestTranscribe_ProviderOmitsLanguageFallsBackToRequested`, que assere
+> `sent.Language == "pt"`. Não remova.
+
+`avg_logprob`, `no_speech_prob` e `confidence` não vêm em nenhum formato — os segmentos do
+`verbose_json` trazem apenas `id`, `start`, `end` e `text`. Por isso `AGENT_AUDIO_MIN_CONFIDENCE`
+permanece um controle inativo.
+
+### 2.2 Comportamento do Whisper em silêncio depende da duração
+
+Comprovado em produção em 2026-08-05, com dois casos reais:
+
+| Entrada | Resposta do provider | Outcome | Runs |
+|---|---|---|---|
+| silêncio curto (~3,9 s) | alucina: `"E aí"` | `dispatched` (segue fluxo textual) | 1 |
+| silêncio longo (~31 s) | **texto vazio** | `transcription_failed / stt_empty_text` | **0** |
+
+Ou seja:
+
+- Em áudios **curtos** de silêncio ou ruído, o modelo **inventa** frases plausíveis em vez de
+  devolver vazio (outro caso real transcreveu ruído como `"Castanhas e Cacau é isso, é isso que eu
+  sou."`). Nesses casos o gate `empty_text` **não** dispara.
+- Em áudios **longos** de silêncio, o provider devolve texto vazio e o gate `empty_text` dispara
+  corretamente, produzindo outcome terminal sem nenhuma tool financeira.
+
+Consequência para triagem: `empty_text` é um sinal real e ativo, mas **não** cobre todo áudio
+ininteligível. Para o áudio curto alucinado, quem protege é o **gate de confirmação** do fluxo
+textual — a transcrição inventada vira entrada sem dado financeiro válido, o agente pede confirmação
+e o usuário cancela. Foi o que ocorreu na validação, com zero falso-sucesso.
+
+Ordem de investigação recomendada quando `mc-audio-transcription-uncertain-rate` estiver alto:
+`stt_error` (timeout / erro upstream / texto vazio) → `truncated` → incoerência. **Nunca** idioma
+(ver 2.1).
 
 ## 3. Triagem por sintoma
 

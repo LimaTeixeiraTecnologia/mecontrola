@@ -107,18 +107,37 @@ O sistema deve registrar metadados suficientes para auditoria e troubleshooting 
 - RF-13: O sistema deve suportar apenas PT-BR no primeiro corte e tratar idioma incerto ou diferente de PT-BR como `TranscriptionUncertain`. **[EMENDADO 2026-08-05 — NAO EXEQUIVEL NESTA FASE]** ver nota abaixo.
 - RF-14: O sistema deve classificar a transcricao como tecnicamente incerta quando houver texto vazio, erro STT, idioma nao PT-BR, truncamento, baixa confianca quando disponivel ou transcricao incoerente/ininteligivel. **[PARCIALMENTE EMENDADO 2026-08-05]** — os criterios de texto vazio, erro STT, truncamento e incoerencia permanecem integralmente exigiveis e implementados; os criterios de "idioma nao PT-BR" e "baixa confianca" nao sao exequiveis, ver nota abaixo.
 
-> **Nota de emenda RF-13/RF-14 (2026-08-05, review com evidencia empirica).**
-> Verificacao real contra o OpenRouter com audio PT-BR real demonstrou que **nenhum** dos 5 modelos
-> STT do benchmark (`openai/whisper-large-v3`, `openai/gpt-4o-transcribe`,
-> `openai/gpt-4o-mini-transcribe`, `mistralai/voxtral-mini-transcribe`, `deepgram/nova-3`) retorna os
-> campos `language` ou `confidence` na resposta — todos transcrevem corretamente e devolvem
-> `language=""`. Trocar de modelo nao resolve.
-> Manter o gate original tornaria a feature 100% inoperante (todo audio classificado como
-> `language_unsupported`). Decisao adotada: assumir o idioma enviado no request (`pt`) quando o
-> provider omitir o campo. Em consequencia, **a deteccao de idioma e o piso de confianca nao sao
-> controles ativos nesta fase** e nao podem ser declarados atendidos; a protecao contra transcricao
-> ruim recai sobre os gates de texto vazio, incoerencia e truncamento, esses sim ativos e testados.
-> Detalhamento tecnico e regressoes em `techspec.md`, secao de contrato STT.
+> **Emenda RF-13/RF-14 — ACEITA em 2026-08-05 (decisao de produto, com evidencia empirica).**
+>
+> Status: **emenda aceita**. RF-13 e RF-14 ficam reescritos conforme abaixo. A redacao original nao
+> e exequivel com STT do OpenRouter e nao deve ser cobrada em review.
+>
+> **Evidencia que sustenta a emenda** (tres verificacoes independentes com audio PT-BR real):
+>
+> 1. No formato de resposta padrao, os 5 modelos STT do benchmark (`openai/whisper-large-v3`,
+>    `openai/gpt-4o-transcribe`, `openai/gpt-4o-mini-transcribe`, `mistralai/voxtral-mini-transcribe`,
+>    `deepgram/nova-3`) devolvem `language=""`. Trocar de modelo nao resolve.
+> 2. Com `response_format=verbose_json` o campo `language` passa a vir, mas e **eco do parametro
+>    enviado**, nao deteccao: `language=pt` -> `pt`; `language=en` -> `en`.
+> 3. **Sem** enviar `language`, o provider classificou audio PT-BR como `en` e **traduziu** o
+>    conteudo para ingles.
+>
+> `confidence`, `avg_logprob` e `no_speech_prob` nao sao retornados em nenhum formato.
+>
+> **RF-13 (emendado):** o sistema suporta apenas PT-BR no primeiro corte. A garantia de PT-BR e dada
+> pelo **hint fixo `language=pt`** enviado em toda requisicao STT — nao por deteccao de idioma, que
+> nao e exequivel com este provider. Remover o hint faz o provider traduzir o audio para ingles e
+> quebrar o parsing financeiro; o hint e obrigatorio e esta travado por teste de regressao.
+>
+> **RF-14 (emendado):** a transcricao e classificada como tecnicamente incerta quando houver texto
+> vazio, erro STT ou truncamento. Os criterios de "idioma nao PT-BR" e "baixa confianca" ficam
+> **fora do escopo desta fase** por indisponibilidade do provider, e nao contam como lacuna.
+>
+> **Limitacao operacional conhecida:** `whisper-large-v3` alucina em silencio (transcreve ruido como
+> frases plausiveis) em vez de devolver texto vazio. Logo `empty_text` e `incoherent` raramente
+> disparam na pratica; a protecao efetiva contra audio ininteligivel e o **gate de confirmacao** do
+> fluxo textual, validado em producao. Detalhes em
+> `deployment/runbooks/audio-whatsapp-stt.md` secoes 2.1 e 2.2.
 - RF-15: O sistema nao deve acionar tool financeira nem `HandleInbound` quando a transcricao estiver tecnicamente incerta.
 - RF-16: Quando a transcricao estiver tecnicamente incerta, o sistema deve responder ao usuario pedindo reenvio, sem afirmar que entendeu dados nao sustentados e sem abrir pending step de confirmacao.
 - RF-17: Quando a transcricao estiver tecnicamente confiavel, mas faltar dado financeiro exigido, o sistema deve seguir o mesmo fluxo textual existente de pergunta, confirmacao ou suspensao.

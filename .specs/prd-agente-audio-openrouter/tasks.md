@@ -1,5 +1,5 @@
-<!-- spec-hash-prd: d4fe5c05b1372d20047b44c9f6d8f7f9db49ed831e3b5862c195e7131758201a -->
-<!-- spec-hash-techspec: fa1c38af8ba00dd09ac9ed4343def8e56511c5f2834e511ad48d07785160829e -->
+<!-- spec-hash-prd: 12d7983eb7a8a12d905102bfb3ee783d712510c5d442ff273e817bf1343ec1ed -->
+<!-- spec-hash-techspec: 314b6cd205aecd403a8a84da5412ac95e3f4545f5767729d7069972c781f3977 -->
 # Resumo das Tarefas de Implementação para Agente com Audio WhatsApp via OpenRouter
 
 ## Metadados
