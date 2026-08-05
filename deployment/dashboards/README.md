@@ -10,6 +10,7 @@ Dashboards para o stack OpenTelemetry consolidado no `grafana/otel-lgtm`
 | `mecontrola-api.json` | RED da API (rate, errors, duration) + DB client | Prometheus |
 | `mecontrola-ops.json` | Saúde operacional: pool/tx do DB, outbox, onboarding, throughput de negócio, logs | Prometheus + Loki |
 | `agent-runtime-overview.json` | AgentRuntime (`internal/platform/agent`): throughput/sucesso/erro de runs, latência p50/p95/p99 e tool invocations | Prometheus |
+| `agent-audio-whatsapp.json` | Agente de áudio WhatsApp/STT (`internal/agents/application/usecases/process_audio_inbound.go`): volume por outcome/reason, taxa de erro STT, taxa de incerteza, latência de transcrição e download p50/p95/p99, tamanho/duração por outcome, custo por modelo | Prometheus |
 
 ## Como importar
 
@@ -61,6 +62,15 @@ em segundos**, **client/DB em milissegundos**.
 - `agent_stream_total` — counter; label `agent_id` (execuções em modo stream).
 - Cardinalidade fechada: nenhum label carrega `user_id`.
 
+**Agente de áudio WhatsApp/STT (`agent-audio-whatsapp.json`) — `internal/agents/application/usecases/process_audio_inbound.go`:**
+- `agents_audio_inbound_total` — counter; labels `channel`, `outcome` (`approved`/`rejected`/`transcription_uncertain`/`transcription_failed`/`dispatched`), `reason`.
+- `agents_audio_transcription_latency_seconds_bucket|_sum|_count` — histograma (s); labels `provider`, `model`, `outcome`.
+- `agents_audio_download_latency_seconds_bucket|_sum|_count` — histograma (s); labels `provider`, `outcome`.
+- `agents_audio_size_bytes_bucket|_sum|_count` — histograma (bytes); labels `mime_family`, `outcome`.
+- `agents_audio_duration_seconds_bucket|_sum|_count` — histograma (s); label `outcome`.
+- `agents_audio_cost_microusd_total` — counter; labels `provider`, `model`.
+- Cardinalidade fechada: nenhum label carrega `user_id`, `wamid`, `media_id`, telefone ou transcrição (RF-27/RF-28). Feature flag `AGENT_AUDIO_ENABLED=false` por default — séries ficam ausentes/zeradas até habilitação (canário), ver `deployment/runbooks/audio-whatsapp-stt.md`.
+
 **Logs (Loki):** stream `{service_name=~"mecontrola-.+", detected_level=~"error|warn"}`.
 
 ## Provisionamento automático (ativo)
@@ -83,6 +93,11 @@ Regras provisionadas via arquivo (`provisioning/alerting/rules.yaml`):
 | tecnico | Espera por conexão no pool do Postgres | >1 wait/s por 5min |
 | negocio | Tokens pagos sem consumo no onboarding | `onboarding_tokens_paid_unconsumed_overdue` >= 3 por 15min |
 | plataforma | Falha na exportação de métricas do collector | `otelcol_exporter_send_failed_metric_points` > 0 por 5min |
+| audio | Taxa de erro STT alta | `stt_error_rate_15m` > 5% |
+| audio | Taxa de incerteza técnica alta | `transcription_uncertain_rate_15m` > 20% |
+| audio | Latência de transcrição alta | `transcription_p95_15m` > 8s |
+| audio | Custo de STT alto | `audio_cost_microusd_1h` > 120000 |
+| audio | Falso sucesso em áudio | `audio_false_success` > 0 (reusa família `agents_*_false_success_total`) |
 
 > Alertas de **queda de volume** (ex.: "webhooks pararam") foram omitidos de propósito —
 > num produto novo de baixo tráfego eles geram falso-positivo. Reavaliar quando houver baseline.

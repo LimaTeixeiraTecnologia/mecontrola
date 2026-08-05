@@ -1266,6 +1266,180 @@ groups:
                   query: { params: [C] }
                   evaluator: { type: gt, params: [3600] }
 
+  # Agente de audio WhatsApp/STT (RF-28/RF-29, prd-agente-audio-openrouter, tarefa 9.0).
+  #
+  # Metricas emitidas em internal/agents/application/usecases/process_audio_inbound.go, labels
+  # de baixa cardinalidade (provider/model/outcome/reason/mime_family/channel). Nenhum label
+  # carrega user_id, wamid, media_id, telefone ou transcricao (RF-27/RF-28).
+  #
+  # AudioEnabled=false por default (configs/config.go): antes da habilitacao em producao estes
+  # alertas ficam em noDataState: OK (silencio esperado, sem trafego de audio). Runbook completo:
+  # deployment/runbooks/audio-whatsapp-stt.md.
+  - orgId: 1
+    name: audio
+    folder: MeControla Alerts
+    interval: 1m
+    rules:
+      - uid: mc-audio-stt-error-rate
+        title: "stt_error_rate_15m acima de 5%"
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Taxa de falha de transcricao STT (outcome=transcription_failed) acima de 5% em 15 minutos."
+          description: "RF-29 (techspec prd-agente-audio-openrouter): threshold inicial stt_error_rate_15m > 5%. Fonte: agents_audio_inbound_total{outcome=\"transcription_failed\"} sobre o total de agents_audio_inbound_total na mesma janela. Nao expõe wamid/media_id/transcricao. Runbook: deployment/runbooks/audio-whatsapp-stt.md#falha-stt."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: '100 * sum(rate(agents_audio_inbound_total{outcome="transcription_failed"}[15m])) / clamp_min(sum(rate(agents_audio_inbound_total[15m])), 1)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [5] }
+
+      - uid: mc-audio-transcription-uncertain-rate
+        title: "transcription_uncertain_rate_15m acima de 20%"
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Taxa de incerteza tecnica de transcricao (outcome=transcription_uncertain) acima de 20% em 15 minutos."
+          description: "RF-29: threshold inicial transcription_uncertain_rate_15m > 20%. Fonte: agents_audio_inbound_total{outcome=\"transcription_uncertain\"} sobre o total de agents_audio_inbound_total na mesma janela. Incerteza alta e sintoma tecnico (idioma, confianca, truncamento), nao falha de infraestrutura; nao dispara tool call nem HandleInbound por design (decisor DecideAudioTranscription). Runbook: deployment/runbooks/audio-whatsapp-stt.md#incerteza-tecnica-alta."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: '100 * sum(rate(agents_audio_inbound_total{outcome="transcription_uncertain"}[15m])) / clamp_min(sum(rate(agents_audio_inbound_total[15m])), 1)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [20] }
+
+      - uid: mc-audio-transcription-latency-p95
+        title: "transcription_p95_15m acima de 8s"
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 de latencia de transcricao STT acima de 8 segundos em 15 minutos."
+          description: "RF-29: threshold inicial transcription_p95_15m > 8s (STTTimeout default AGENT_STT_TIMEOUT=20s). Fonte: histograma agents_audio_transcription_latency_seconds. Benchmark real (30 audios, benchmark-stt.md) mediu p95 775ms; alerta cobre degradacao sustentada de OpenRouter/rede acima do orcamento de latencia da techspec. Runbook: deployment/runbooks/audio-whatsapp-stt.md#latencia-alta."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'histogram_quantile(0.95, sum by (le) (rate(agents_audio_transcription_latency_seconds_bucket[15m])))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [8] }
+
+      - uid: mc-audio-cost-microusd-high
+        title: "audio_cost_microusd_1h acima de 120000"
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Custo acumulado de STT acima de 120000 microusd (0.12 USD) em 1 hora."
+          description: "RF-29: threshold inicial audio_cost_microusd_1h > 120000, equivalente a 60 audios no teto por-audio AGENT_AUDIO_MAX_COST_MICROUSD=2000 (techspec, secao Configuracao). Fonte: increase(agents_audio_cost_microusd_total[1h]). Qualquer aumento deste threshold exige decisao operacional versionada antes do deploy (techspec, Alertas iniciais). Runbook: deployment/runbooks/audio-whatsapp-stt.md#custo-alto."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(increase(agents_audio_cost_microusd_total[1h]))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [120000] }
+
+      - uid: mc-audio-false-success
+        title: "audio_false_success acima de 0"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Confirmacao positiva sem recurso duravel apos texto canonico originado de audio."
+          description: "RF-29: threshold audio_false_success > 0 (golden ou canary). Audio so gera texto canonico aprovado (AudioOutcomeApproved) e entra no MESMO pipeline textual existente (tools/workflows financeiros); nao ha metrica dedicada por origem audio/texto (adicionar label de origem em metrica de mutacao violaria o contrato de labels da techspec). Por isso este alerta reusa a familia generica ja provisionada agents_*_false_success_total (transaction-write, card-manage, budget-manage), a MESMA fonte do alerta FinancialWriteFalseSuccess (docs/alerts/mecontrola-agent-gate-posdeploy.yaml). Em golden set, o mesmo invariante e verificado offline e determinado com tolerancia 0 por TestInvariantNoFalseSuccessOnAudioOriginatedRun (tarefa 8.0). Runbook: deployment/runbooks/audio-whatsapp-stt.md#regressao-golden-e-falso-sucesso."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'sum(increase({__name__=~"agents_.+_false_success_total"}[5m]))'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0] }
+
   - orgId: 1
     name: disco
     folder: MeControla Alerts
