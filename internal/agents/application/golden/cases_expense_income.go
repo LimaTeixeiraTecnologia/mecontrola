@@ -103,7 +103,7 @@ func expenseIncomeCases() []Case {
 		{
 			Name:         "valor cru sem reais roteia para register_expense sem falso multiplo",
 			Category:     CategoryExpenseIncome,
-			Origin:       "producao (+5511930111763, 2026-07-17): \"Gastei 500 no mercado\" disparava falso aviso de múltiplos lançamentos e bloqueava o registro",
+			Origin:       "producao (+55****1763, 2026-07-17): \"Gastei 500 no mercado\" disparava falso aviso de múltiplos lançamentos e bloqueava o registro",
 			Input:        "Gastei 500 no mercado",
 			ToolSubset:   []string{"register_expense", "register_income"},
 			ExpectedTool: "register_expense",
@@ -119,7 +119,7 @@ func expenseIncomeCases() []Case {
 		{
 			Name:         "gastei 20 no cinema roteia sem falso multiplo",
 			Category:     CategoryExpenseIncome,
-			Origin:       "producao (+5511930111763, 2026-07-17): \"Gastei 20 no cinema\" recebia falso aviso de múltiplos lançamentos",
+			Origin:       "producao (+55****1763, 2026-07-17): \"Gastei 20 no cinema\" recebia falso aviso de múltiplos lançamentos",
 			Input:        "Gastei 20 no cinema",
 			ToolSubset:   []string{"register_expense", "register_income"},
 			ExpectedTool: "register_expense",
@@ -135,7 +135,7 @@ func expenseIncomeCases() []Case {
 		{
 			Name:         "despesa sem forma de pagamento delega pergunta ao workflow",
 			Category:     CategoryExpenseIncome,
-			Origin:       "producao (+5511930111763, 2026-07-17): clarificação de pagamento é determinística do workflow; LLM não inventa paymentMethod nem formula a pergunta",
+			Origin:       "producao (+55****1763, 2026-07-17): clarificação de pagamento é determinística do workflow; LLM não inventa paymentMethod nem formula a pergunta",
 			Input:        "gastei 50 no mercado hoje",
 			ToolSubset:   []string{"register_expense_payment_clarify"},
 			ExpectedTool: "register_expense",
@@ -163,7 +163,7 @@ func expenseIncomeCases() []Case {
 		{
 			Name:         "gastei 30 na padaria roteia sem falso multiplo",
 			Category:     CategoryExpenseIncome,
-			Origin:       "producao (+5511930111763, 2026-07-17): \"Gastei 30 na padaria\" recebia falso aviso de múltiplos lançamentos mesmo após o commit 825372d",
+			Origin:       "producao (+55****1763, 2026-07-17): \"Gastei 30 na padaria\" recebia falso aviso de múltiplos lançamentos mesmo após o commit 825372d",
 			Input:        "Gastei 30 na padaria",
 			ToolSubset:   []string{"register_expense", "register_income"},
 			ExpectedTool: "register_expense",
@@ -179,7 +179,7 @@ func expenseIncomeCases() []Case {
 		{
 			Name:         "aporte roteia para despesa nao receita",
 			Category:     CategoryExpenseIncome,
-			Origin:       "producao (+5511986896322, 2026-08-03): \"Fiz um aporte\" era roteado para register_income e caía em Investimentos > Rendimentos; aporte é dinheiro saindo da conta para uma corretora (alocação de orçamento em Liberdade Financeira), não entrada de dinheiro",
+			Origin:       "producao (+55****6322, 2026-08-03): \"Fiz um aporte\" era roteado para register_income e caía em Investimentos > Rendimentos; aporte é dinheiro saindo da conta para uma corretora (alocação de orçamento em Liberdade Financeira), não entrada de dinheiro",
 			Input:        "Fiz um aporte de R$ 2.774,88 no BTG",
 			ToolSubset:   []string{"register_expense", "register_income"},
 			ExpectedTool: "register_expense",

@@ -104,6 +104,8 @@ func (s *MigrationSuite) TestBaselineUpDownUp() {
 	s.assertTablePresent("mecontrola.onboarding_welcome_processed")
 	s.assertTableMissing("mecontrola.onboarding_sessions")
 	s.assertTablePresent("mecontrola.agents_write_ledger")
+	s.assertTablePresent("mecontrola.agents_whatsapp_audio_messages")
+	s.assertIndexPresent("mecontrola", "agents_whatsapp_audio_messages_created_at_idx")
 	s.assertIndexPresent("mecontrola", "onboarding_tokens_mobile_activable_idx")
 	s.assertIndexPresent("mecontrola", "outbox_events_user_pending_occurred_idx")
 	s.assertIndexPresent("mecontrola", "outbox_events_user_inflight_uidx")
@@ -133,6 +135,8 @@ func (s *MigrationSuite) TestBaselineUpDownUp() {
 	s.assertTableMissing("mecontrola.onboarding_welcome_processed")
 	s.assertTableMissing("mecontrola.consumer_processed_messages")
 	s.assertIndexMissing("mecontrola", "consumer_processed_messages_processed_at_idx")
+	s.assertTableMissing("mecontrola.agents_whatsapp_audio_messages")
+	s.assertIndexMissing("mecontrola", "agents_whatsapp_audio_messages_created_at_idx")
 	s.assertIndexMissing("mecontrola", "onboarding_tokens_mobile_activable_idx")
 	s.assertIndexMissing("mecontrola", "outbox_events_user_pending_occurred_idx")
 	s.assertIndexMissing("mecontrola", "outbox_events_user_inflight_uidx")
@@ -223,7 +227,7 @@ func (s *MigrationSuite) TestReconcilePlatformThreadColumnsFromLegacy() {
 
 	version, dirty, err := migrator.Version()
 	s.Require().NoError(err)
-	s.Equal(uint(14), version)
+	s.Equal(uint(18), version)
 	s.False(dirty)
 }
 
@@ -239,7 +243,7 @@ func (s *MigrationSuite) TestReconcileIsNoopOnFreshBaseline() {
 
 	version, dirty, err := migrator.Version()
 	s.Require().NoError(err)
-	s.Equal(uint(14), version)
+	s.Equal(uint(18), version)
 	s.False(dirty)
 }
 
@@ -776,6 +780,67 @@ func (s *MigrationSuite) TestBudgetsConstraints() {
 	s.assertBudgetsExpensesPartialIndex()
 	s.assertBudgetsThresholdStatesConstraints()
 	s.assertBudgetsPendingEventIdempotency()
+}
+
+func (s *MigrationSuite) TestAgentsWhatsAppAudioMessagesConstraints() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "wamid")
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "user_id")
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "peer")
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "media_id")
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "media_sha256")
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "mime_type")
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "size_bytes")
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "duration_ms")
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "stt_model")
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "outcome")
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "reason")
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "transcription")
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "transcription_sha256")
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "cost_microusd")
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "error_code")
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "created_at")
+	s.assertColumnPresent("mecontrola.agents_whatsapp_audio_messages", "completed_at")
+
+	s.assertConstraintPresent("agents_whatsapp_audio_messages", "agents_whatsapp_audio_messages_pkey")
+	s.assertConstraintPresent("agents_whatsapp_audio_messages", "agents_whatsapp_audio_messages_outcome_chk")
+	s.assertConstraintPresent("agents_whatsapp_audio_messages", "agents_whatsapp_audio_messages_reason_chk")
+	s.assertConstraintPresent("agents_whatsapp_audio_messages", "agents_whatsapp_audio_messages_size_bytes_chk")
+	s.assertConstraintPresent("agents_whatsapp_audio_messages", "agents_whatsapp_audio_messages_duration_ms_chk")
+	s.assertConstraintPresent("agents_whatsapp_audio_messages", "agents_whatsapp_audio_messages_cost_microusd_chk")
+
+	baseInsert := func(wamid, outcome, reason string) error {
+		return execSQL(s.db, s.ctx, `
+			INSERT INTO mecontrola.agents_whatsapp_audio_messages
+				(wamid, user_id, peer, media_id, media_sha256, mime_type, size_bytes, outcome, reason)
+			VALUES ($1, gen_random_uuid(), '5511999998888', 'media-1', 'sha-1', 'audio/ogg', 1024, $2, $3)
+		`, wamid, outcome, reason)
+	}
+
+	okErr := baseInsert("wamid-audio-1", "approved", "approved")
+	s.Require().NoError(okErr)
+
+	dupErr := baseInsert("wamid-audio-1", "rejected", "empty_text")
+	s.Require().Error(dupErr)
+	s.Contains(dupErr.Error(), "agents_whatsapp_audio_messages_pkey")
+
+	invalidOutcomeErr := baseInsert("wamid-audio-2", "invalid_outcome", "approved")
+	s.Require().Error(invalidOutcomeErr)
+	s.Contains(invalidOutcomeErr.Error(), "agents_whatsapp_audio_messages_outcome_chk")
+
+	invalidReasonErr := baseInsert("wamid-audio-3", "rejected", "invalid_reason")
+	s.Require().Error(invalidReasonErr)
+	s.Contains(invalidReasonErr.Error(), "agents_whatsapp_audio_messages_reason_chk")
+
+	negativeSizeErr := execSQL(s.db, s.ctx, `
+		INSERT INTO mecontrola.agents_whatsapp_audio_messages
+			(wamid, user_id, peer, media_id, media_sha256, mime_type, size_bytes, outcome, reason)
+		VALUES ('wamid-audio-4', gen_random_uuid(), '5511999998888', 'media-1', 'sha-1', 'audio/ogg', -1, 'rejected', 'empty_text')
+	`)
+	s.Require().Error(negativeSizeErr)
+	s.Contains(negativeSizeErr.Error(), "agents_whatsapp_audio_messages_size_bytes_chk")
 }
 
 func (s *MigrationSuite) assertSeededPlans() {

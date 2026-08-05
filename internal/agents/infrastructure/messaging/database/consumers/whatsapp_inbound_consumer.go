@@ -26,6 +26,11 @@ type handleInboundUseCase interface {
 	Execute(ctx context.Context, in input.InboundInput) (agent.Outcome, error)
 }
 
+type audioInboundProcessor interface {
+	Execute(ctx context.Context, in usecases.AudioInboundInput) (usecases.AudioInboundResult, error)
+	MarkDispatched(ctx context.Context, wamid string) error
+}
+
 type onboardingResolver interface {
 	Execute(ctx context.Context, userID, peer, message string) (usecases.OnboardingResult, error)
 }
@@ -48,11 +53,36 @@ const whatsAppInboundConsumerName = "whatsapp_inbound"
 var errSendReply = errors.New("send reply")
 
 type whatsAppInboundPayload struct {
-	UserID    string `json:"user_id"`
-	Peer      string `json:"peer"`
-	Text      string `json:"text"`
-	MessageID string `json:"message_id"`
+	UserID        string `json:"user_id"`
+	Peer          string `json:"peer"`
+	Text          string `json:"text"`
+	MessageID     string `json:"message_id"`
+	MessageType   string `json:"message_type,omitempty"`
+	AudioMediaID  string `json:"audio_media_id,omitempty"`
+	AudioMimeType string `json:"audio_mime_type,omitempty"`
+	AudioSHA256   string `json:"audio_sha256,omitempty"`
+	AudioVoice    bool   `json:"audio_voice,omitempty"`
 }
+
+type inboundMessageKind string
+
+const (
+	inboundMessageKindText  inboundMessageKind = "text"
+	inboundMessageKindAudio inboundMessageKind = "audio"
+)
+
+func (k inboundMessageKind) IsAudio() bool {
+	return k == inboundMessageKindAudio
+}
+
+func parseInboundMessageKind(raw string) inboundMessageKind {
+	if raw == string(inboundMessageKindAudio) {
+		return inboundMessageKindAudio
+	}
+	return inboundMessageKindText
+}
+
+const defaultAudioDisabledReply = "entrada por áudio ainda não está disponível por aqui, pode digitar sua mensagem?"
 
 type ConsumerOption func(*WhatsAppInboundConsumer)
 
@@ -82,6 +112,12 @@ func WithMessageDedup(store MessageDedupStore) ConsumerOption {
 	}
 }
 
+func WithAudioProcessor(p audioInboundProcessor) ConsumerOption {
+	return func(c *WhatsAppInboundConsumer) {
+		c.audioProcessor = p
+	}
+}
+
 type WhatsAppInboundConsumer struct {
 	handleInbound     handleInboundUseCase
 	gateway           whatsAppTextSender
@@ -89,6 +125,7 @@ type WhatsAppInboundConsumer struct {
 	resolveOnboarding onboardingResolver
 	resumeDispatcher  resumeDispatcherResolver
 	dedup             MessageDedupStore
+	audioProcessor    audioInboundProcessor
 	inboundTimeout    time.Duration
 	inboundTotal      observability.Counter
 	decodeFails       observability.Counter
@@ -151,9 +188,11 @@ func (c *WhatsAppInboundConsumer) Handle(ctx context.Context, event events.Event
 		return fmt.Errorf("agents.consumer.whatsapp_inbound: deserializar payload: %w", err)
 	}
 
-	if p.UserID == "" || p.Peer == "" || p.Text == "" {
+	kind := parseInboundMessageKind(p.MessageType)
+
+	if err := validateInboundPayload(p, kind); err != nil {
 		c.decodeFails.Add(ctx, 1, observability.String("channel", "whatsapp"))
-		return fmt.Errorf("agents.consumer.whatsapp_inbound: payload incompleto: user_id=%q peer=%q text=%q", p.UserID, p.Peer, p.Text)
+		return err
 	}
 
 	if c.dedup != nil && p.MessageID != "" {
@@ -180,11 +219,89 @@ func (c *WhatsAppInboundConsumer) Handle(ctx context.Context, event events.Event
 		defer cancel()
 	}
 
+	if kind.IsAudio() {
+		return c.handleAudioInbound(ctx, span, p)
+	}
+
 	if handled, err := c.tryResume(ctx, span, p); handled || err != nil {
 		return c.compensateDedup(ctx, p.MessageID, err)
 	}
 
 	return c.compensateDedup(ctx, p.MessageID, c.handleAgentInbound(ctx, span, p))
+}
+
+func validateInboundPayload(p whatsAppInboundPayload, kind inboundMessageKind) error {
+	if p.UserID == "" || p.Peer == "" {
+		return fmt.Errorf("agents.consumer.whatsapp_inbound: payload incompleto: user_id=%q peer=%q text=%q", p.UserID, p.Peer, p.Text)
+	}
+	if kind.IsAudio() {
+		if p.AudioMediaID == "" || p.AudioMimeType == "" || p.AudioSHA256 == "" {
+			return fmt.Errorf("agents.consumer.whatsapp_inbound: payload de audio incompleto: media_id=%q mime_type=%q sha256=%q",
+				p.AudioMediaID, p.AudioMimeType, p.AudioSHA256)
+		}
+		return nil
+	}
+	if p.Text == "" {
+		return fmt.Errorf("agents.consumer.whatsapp_inbound: payload incompleto: user_id=%q peer=%q text=%q", p.UserID, p.Peer, p.Text)
+	}
+	return nil
+}
+
+func (c *WhatsAppInboundConsumer) handleAudioInbound(ctx context.Context, span observability.Span, p whatsAppInboundPayload) error {
+	if c.audioProcessor == nil {
+		return c.sendReply(ctx, p.Peer, defaultAudioDisabledReply, "audio_disabled")
+	}
+
+	result, err := c.audioProcessor.Execute(ctx, usecases.AudioInboundInput{
+		WAMID:    p.MessageID,
+		UserID:   p.UserID,
+		Peer:     p.Peer,
+		MediaID:  p.AudioMediaID,
+		MimeType: p.AudioMimeType,
+		SHA256:   p.AudioSHA256,
+		Voice:    p.AudioVoice,
+	})
+	if err != nil {
+		c.recordInboundTimeout(ctx, err)
+		c.inboundTotal.Add(ctx, 1,
+			observability.String("channel", "whatsapp"),
+			observability.String("outcome", "audio_error"),
+		)
+		span.RecordError(err)
+		return fmt.Errorf("agents.consumer.whatsapp_inbound: process audio: %w", err)
+	}
+
+	if !result.Outcome.AllowsHandleInbound() {
+		return c.sendReply(ctx, p.Peer, result.ReplyText, "audio_"+result.Outcome.String())
+	}
+
+	textPayload := p
+	textPayload.Text = result.CanonicalText
+
+	dispatchErr := func() error {
+		if handled, herr := c.tryResume(ctx, span, textPayload); handled || herr != nil {
+			return herr
+		}
+		return c.handleAgentInbound(ctx, span, textPayload)
+	}()
+
+	dispatchErr = c.compensateDedup(ctx, p.MessageID, dispatchErr)
+	if dispatchErr == nil {
+		c.markAudioDispatched(ctx, p.MessageID)
+	}
+	return dispatchErr
+}
+
+func (c *WhatsAppInboundConsumer) markAudioDispatched(ctx context.Context, wamid string) {
+	if c.audioProcessor == nil || wamid == "" {
+		return
+	}
+	if err := c.audioProcessor.MarkDispatched(ctx, wamid); err != nil {
+		c.o11y.Logger().Warn(ctx, "agents.consumer.whatsapp_inbound: marcar audio dispatched falhou",
+			observability.String("outcome", "mark_dispatched_failed"),
+			observability.Error(err),
+		)
+	}
 }
 
 func (c *WhatsAppInboundConsumer) compensateDedup(ctx context.Context, messageID string, processErr error) error {

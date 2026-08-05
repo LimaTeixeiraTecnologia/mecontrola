@@ -119,7 +119,108 @@ func (s *ParserSuite) TestExtractFirstMessage_NilTextBody() {
 	s.True(ok)
 	s.Equal("+5511999999999", msg.From)
 	s.Equal("wamid-002", msg.WAMID)
+	s.Equal(payload.MessageTypeText, msg.Type)
 	s.Empty(msg.Text)
+	s.Nil(msg.Audio)
+}
+
+func (s *ParserSuite) TestExtractFirstMessage_TextMessage_TypedAsText() {
+	raw := s.buildPayloadJSON("5511999999999", "wamid-001", "ATIVAR abc123")
+
+	msg, ok, err := payload.ExtractFirstMessage(raw)
+
+	s.Require().NoError(err)
+	s.True(ok)
+	s.Equal(payload.MessageTypeText, msg.Type)
+	s.Equal("text", msg.Type.String())
+	s.True(msg.Type.IsValid())
+	s.Nil(msg.Audio)
+}
+
+func (s *ParserSuite) buildAudioPayloadJSON(from, wamid, mediaID, mimeType, sha256 string, voice bool) []byte {
+	audio := map[string]any{
+		"mime_type": mimeType,
+		"sha256":    sha256,
+		"voice":     voice,
+	}
+	if mediaID != "" {
+		audio["id"] = mediaID
+	}
+	rawMsgs := []map[string]any{
+		{
+			"from":      from,
+			"id":        wamid,
+			"timestamp": "1754331555",
+			"type":      "audio",
+			"audio":     audio,
+		},
+	}
+	return s.buildMultiMessagePayload(rawMsgs)
+}
+
+func (s *ParserSuite) TestExtractFirstMessage_RealSanitizedAudio_TypedAsAudio() {
+	const (
+		mediaID  = "1081986107489646"
+		mimeType = "audio/ogg; codecs=opus"
+		sha256   = "a3a064090479e03e4e84a372ecc07c500312530b0a051a57186725a5a69d165c"
+	)
+	raw := s.buildAudioPayloadJSON("5511999999999", "wamid-audio-001", mediaID, mimeType, sha256, true)
+
+	msg, ok, err := payload.ExtractFirstMessage(raw)
+
+	s.Require().NoError(err)
+	s.True(ok)
+	s.Equal("+5511999999999", msg.From)
+	s.Equal("wamid-audio-001", msg.WAMID)
+	s.Equal("1754331555", msg.Timestamp)
+	s.Equal(payload.MessageTypeAudio, msg.Type)
+	s.Equal("audio", msg.Type.String())
+	s.True(msg.Type.IsValid())
+	s.Empty(msg.Text)
+	s.Require().NotNil(msg.Audio)
+	s.Equal(mediaID, msg.Audio.MediaID)
+	s.Equal(mimeType, msg.Audio.MimeType)
+	s.Equal(sha256, msg.Audio.SHA256)
+	s.True(msg.Audio.Voice)
+}
+
+func (s *ParserSuite) TestExtractMessages_AudioWithoutMediaID_Rejected() {
+	raw := s.buildAudioPayloadJSON("5511999999999", "wamid-audio-002", "", "audio/ogg; codecs=opus", "a3a064090479e03e4e84a372ecc07c500312530b0a051a57186725a5a69d165c", true)
+
+	msgs, err := payload.ExtractMessages(raw)
+
+	s.Require().NoError(err)
+	s.Empty(msgs)
+}
+
+func (s *ParserSuite) TestExtractMessages_AudioWithoutMimeType_Rejected() {
+	raw := s.buildAudioPayloadJSON("5511999999999", "wamid-audio-003", "1081986107489646", "", "a3a064090479e03e4e84a372ecc07c500312530b0a051a57186725a5a69d165c", true)
+
+	msgs, err := payload.ExtractMessages(raw)
+
+	s.Require().NoError(err)
+	s.Empty(msgs)
+}
+
+func (s *ParserSuite) TestExtractMessages_AudioWithoutSHA256_Rejected() {
+	raw := s.buildAudioPayloadJSON("5511999999999", "wamid-audio-004", "1081986107489646", "audio/ogg; codecs=opus", "", true)
+
+	msgs, err := payload.ExtractMessages(raw)
+
+	s.Require().NoError(err)
+	s.Empty(msgs)
+}
+
+func (s *ParserSuite) TestExtractFirstMessage_UnknownMessageType_TreatedAsTextFallback() {
+	raw := []byte(`{"object":"whatsapp_business_account","entry":[{"id":"e1","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","messages":[{"from":"5511999999999","id":"wamid-005","timestamp":"1686000000","type":"sticker"}]}}]}]}`)
+
+	msg, ok, err := payload.ExtractFirstMessage(raw)
+
+	s.Require().NoError(err)
+	s.True(ok)
+	s.Equal(payload.MessageTypeText, msg.Type)
+	s.Empty(msg.Text)
+	s.Nil(msg.Audio)
 }
 
 func (s *ParserSuite) TestExtractMessages_MultipleMessages_ReturnsAll() {

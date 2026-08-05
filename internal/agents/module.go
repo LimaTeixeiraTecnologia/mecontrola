@@ -38,6 +38,7 @@ import (
 	scorerpostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/scorer/infrastructure/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/tool"
 	wadispatcher "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dispatcher"
+	wamedia "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/media"
 	wapayload "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/payload"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/workflow"
@@ -82,11 +83,25 @@ type LLMConfig struct {
 	Temperature float64
 }
 
+type AudioConfig struct {
+	Enabled         bool
+	MetaAccessToken string
+	STTModel        string
+	STTTimeout      time.Duration
+	MaxDuration     time.Duration
+	MaxBytes        int64
+	MaxCostMicrousd int64
+	MinConfidence   float64
+	UncertainReply  string
+	RejectedReply   string
+}
+
 type Deps struct {
 	DB                 database.DBTX
 	O11y               observability.Observability
 	OutboxPublisher    outbox.Publisher
 	LLM                LLMConfig
+	Audio              AudioConfig
 	CategoriesModule   *categories.CategoriesModule
 	CardModule         card.CardModule
 	BudgetsModule      *budgets.BudgetsModule
@@ -99,10 +114,15 @@ type Deps struct {
 }
 
 type whatsAppInboundPayload struct {
-	UserID    string `json:"user_id"`
-	Peer      string `json:"peer"`
-	Text      string `json:"text"`
-	MessageID string `json:"message_id"`
+	UserID        string `json:"user_id"`
+	Peer          string `json:"peer"`
+	Text          string `json:"text"`
+	MessageID     string `json:"message_id"`
+	MessageType   string `json:"message_type,omitempty"`
+	AudioMediaID  string `json:"audio_media_id,omitempty"`
+	AudioMimeType string `json:"audio_mime_type,omitempty"`
+	AudioSHA256   string `json:"audio_sha256,omitempty"`
+	AudioVoice    bool   `json:"audio_voice,omitempty"`
 }
 
 func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root do módulo de agentes; construção sequencial bindings→tools→workflows→runtime é crítica para R-AGENT-WF-001
@@ -365,6 +385,33 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 	onboardingReaper := workflows.BuildOnboardingReaper(workflowStore, deps.O11y)
 	onboardingReaperJob := jobhandlers.NewConfirmReaperJob("agents-onboarding-reaper", onboardingReaper, "")
 
+	var audioProcessor *usecases.ProcessAudioInbound
+	if deps.Audio.Enabled {
+		mediaClient, mediaErr := wamedia.NewClient(deps.O11y, wamedia.Config{
+			AccessToken: deps.Audio.MetaAccessToken,
+		})
+		if mediaErr != nil {
+			return Module{}, fmt.Errorf("agents.module: audio media client: %w", mediaErr)
+		}
+		transcriber := llm.NewOpenRouterTranscriber(httpClient, llm.Config{
+			Model:                          deps.Audio.STTModel,
+			APIKey:                         deps.LLM.APIKey,
+			BaseURL:                        deps.LLM.BaseURL,
+			STTTimeout:                     deps.Audio.STTTimeout,
+			STTPreflightRateMicrousdPerSec: 0,
+		}, deps.O11y)
+		audioAuditRepo := persistence.NewAudioAuditRepository(deps.DB, deps.O11y)
+		audioProcessor = usecases.NewProcessAudioInbound(mediaClient, transcriber, audioAuditRepo, usecases.ProcessAudioInboundConfig{
+			STTModel:        deps.Audio.STTModel,
+			MaxDuration:     deps.Audio.MaxDuration,
+			MaxBytes:        deps.Audio.MaxBytes,
+			MaxCostMicrousd: deps.Audio.MaxCostMicrousd,
+			MinConfidence:   deps.Audio.MinConfidence,
+			UncertainReply:  deps.Audio.UncertainReply,
+			RejectedReply:   deps.Audio.RejectedReply,
+		}, deps.O11y)
+	}
+
 	var whatsAppRoute func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome
 	if deps.OutboxPublisher != nil && deps.WhatsAppGateway != nil {
 		consumerOpts := []consumers.ConsumerOption{
@@ -376,6 +423,9 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		}
 		if deps.InboundTimeout > 0 {
 			consumerOpts = append(consumerOpts, consumers.WithInboundTimeout(deps.InboundTimeout))
+		}
+		if audioProcessor != nil {
+			consumerOpts = append(consumerOpts, consumers.WithAudioProcessor(audioProcessor))
 		}
 		inboundConsumer := consumers.NewWhatsAppInboundConsumer(
 			handleInbound,
@@ -507,6 +557,13 @@ func buildWhatsAppAgentRoute(publisher outbox.Publisher, o11y observability.Obse
 			Peer:      msg.From,
 			Text:      msg.Text,
 			MessageID: msg.WAMID,
+		}
+		if msg.Type == wapayload.MessageTypeAudio && msg.Audio != nil {
+			p.MessageType = wapayload.MessageTypeAudio.String()
+			p.AudioMediaID = msg.Audio.MediaID
+			p.AudioMimeType = msg.Audio.MimeType
+			p.AudioSHA256 = msg.Audio.SHA256
+			p.AudioVoice = msg.Audio.Voice
 		}
 
 		raw, err := json.Marshal(p)

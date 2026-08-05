@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -248,6 +249,81 @@ func (s *WhatsAppAgentRouteSuite) TestBuildWhatsAppAgentRoute_InvalidTimestamp_U
 	s.Equal("agent", string(outcome))
 	s.True(!capturedEvent.OccurredAt.Before(before), "OccurredAt fallback deve ser >= before")
 	s.True(!capturedEvent.OccurredAt.After(after), "OccurredAt fallback deve ser <= after")
+}
+
+func (s *WhatsAppAgentRouteSuite) TestBuildWhatsAppAgentRoute_AudioEnabled_MapsAudioMetadataToPayload() {
+	o11y := fake.NewProvider()
+	publisherMock := outboxmocks.NewPublisher(s.T())
+
+	var capturedEvent outbox.Event
+	publisherMock.On("Publish", mock.Anything, mock.MatchedBy(func(evt outbox.Event) bool {
+		capturedEvent = evt
+		return true
+	})).Return(nil).Once()
+
+	route := buildWhatsAppAgentRoute(publisherMock, o11y)
+	ctx := s.ctxWithPrincipal()
+
+	msg := wapayload.Message{
+		From:      "+5511999999999",
+		WAMID:     "wamid-audio-msg",
+		Timestamp: "1686000000",
+		Type:      wapayload.MessageTypeAudio,
+		Audio: &wapayload.Audio{
+			MediaID:  "media-id-123",
+			MimeType: "audio/ogg; codecs=opus",
+			SHA256:   "sha256-fake-hash",
+			Voice:    true,
+		},
+	}
+
+	outcome := route(ctx, msg)
+
+	s.Equal("agent", string(outcome))
+
+	var payload whatsAppInboundPayload
+	err := json.Unmarshal(capturedEvent.Payload, &payload)
+	s.Require().NoError(err)
+	s.Equal(wapayload.MessageTypeAudio.String(), payload.MessageType)
+	s.Equal("media-id-123", payload.AudioMediaID)
+	s.Equal("audio/ogg; codecs=opus", payload.AudioMimeType)
+	s.Equal("sha256-fake-hash", payload.AudioSHA256)
+	s.True(payload.AudioVoice)
+}
+
+func (s *WhatsAppAgentRouteSuite) TestBuildWhatsAppAgentRoute_AudioAlwaysTypedSoConsumerCanReplyWhenDisabled() {
+	o11y := fake.NewProvider()
+	publisherMock := outboxmocks.NewPublisher(s.T())
+
+	var capturedEvent outbox.Event
+	publisherMock.On("Publish", mock.Anything, mock.MatchedBy(func(evt outbox.Event) bool {
+		capturedEvent = evt
+		return true
+	})).Return(nil).Once()
+
+	route := buildWhatsAppAgentRoute(publisherMock, o11y)
+	ctx := s.ctxWithPrincipal()
+
+	msg := wapayload.Message{
+		From:      "+5511999999999",
+		WAMID:     "wamid-audio-flag-off",
+		Timestamp: "1686000000",
+		Type:      wapayload.MessageTypeAudio,
+		Audio: &wapayload.Audio{
+			MediaID:  "media-id-456",
+			MimeType: "audio/ogg; codecs=opus",
+			SHA256:   "sha256-fake-hash-2",
+		},
+	}
+
+	outcome := route(ctx, msg)
+	s.Equal("agent", string(outcome))
+
+	var payload whatsAppInboundPayload
+	s.Require().NoError(json.Unmarshal(capturedEvent.Payload, &payload))
+	s.Equal(wapayload.MessageTypeAudio.String(), payload.MessageType,
+		"audio deve ser sempre tipado no payload; sem isso o consumer trata como texto vazio e falha sem responder ao usuario")
+	s.Empty(payload.Text)
 }
 
 func (s *WhatsAppAgentRouteSuite) TestBuildWhatsAppAgentRoute_NoPrincipal_ReturnsInvalid() {

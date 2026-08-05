@@ -918,6 +918,154 @@ func (s *ConfigSuite) TestValidate() {
 				s.assertConfigError(err, "ONBOARDING_CARD_CLOSING_OFFSET_DAYS inválido")
 			},
 		},
+		{
+			name: "deve aceitar audio desabilitado por default sem exigir modelo/bytes/custo",
+			args: args{
+				build: func() *configs.Config {
+					return s.newBaseConfig()
+				},
+			},
+			setup: func() {},
+			expect: func(cfg *configs.Config, err error) {
+				s.NoError(err)
+				s.False(cfg.AgentConfig.AudioEnabled)
+			},
+		},
+		{
+			name: "deve rejeitar AGENT_STT_TIMEOUT fora do intervalo 1s..20s",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.AgentConfig.STTTimeout = 25 * time.Second
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "AGENT_STT_TIMEOUT inválido")
+			},
+		},
+		{
+			name: "deve rejeitar AGENT_AUDIO_MAX_DURATION fora do intervalo 1s..60s",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.AgentConfig.AudioMaxDuration = 90 * time.Second
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "AGENT_AUDIO_MAX_DURATION inválido")
+			},
+		},
+		{
+			name: "deve rejeitar AGENT_AUDIO_MIN_CONFIDENCE fora do intervalo 0.50..1.00",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.AgentConfig.AudioMinConfidence = 0.10
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "AGENT_AUDIO_MIN_CONFIDENCE inválido")
+			},
+		},
+		{
+			name: "deve rejeitar mensagem de audio incerto vazia",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.AgentConfig.AudioUncertainReply = ""
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "WA_MSG_AUDIO_UNCERTAIN_RETRY obrigatorio")
+			},
+		},
+		{
+			name: "deve rejeitar mensagem de audio rejeitado vazia",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newBaseConfig()
+					cfg.AgentConfig.AudioRejectedReply = ""
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "WA_MSG_AUDIO_REJECTED_RETRY obrigatorio")
+			},
+		},
+		{
+			name: "deve aceitar production com audio habilitado e todos os limites obrigatorios definidos",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.AgentConfig.AudioEnabled = true
+					cfg.AgentConfig.STTModel = "openai/whisper-large-v3"
+					cfg.AgentConfig.AudioMaxBytes = 2000000
+					cfg.AgentConfig.AudioMaxCostMicrousd = 2000
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.NoError(err)
+			},
+		},
+		{
+			name: "deve rejeitar production com audio habilitado sem AGENT_STT_MODEL",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.AgentConfig.AudioEnabled = true
+					cfg.AgentConfig.AudioMaxBytes = 2000000
+					cfg.AgentConfig.AudioMaxCostMicrousd = 2000
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "AGENT_STT_MODEL obrigatorio em production quando AGENT_AUDIO_ENABLED=true")
+			},
+		},
+		{
+			name: "deve rejeitar production com audio habilitado sem AGENT_AUDIO_MAX_BYTES",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.AgentConfig.AudioEnabled = true
+					cfg.AgentConfig.STTModel = "openai/whisper-large-v3"
+					cfg.AgentConfig.AudioMaxCostMicrousd = 2000
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "AGENT_AUDIO_MAX_BYTES obrigatorio")
+			},
+		},
+		{
+			name: "deve rejeitar production com audio habilitado sem AGENT_AUDIO_MAX_COST_MICROUSD",
+			args: args{
+				build: func() *configs.Config {
+					cfg := s.newProductionConfig()
+					cfg.AgentConfig.AudioEnabled = true
+					cfg.AgentConfig.STTModel = "openai/whisper-large-v3"
+					cfg.AgentConfig.AudioMaxBytes = 2000000
+					return cfg
+				},
+			},
+			setup: func() {},
+			expect: func(_ *configs.Config, err error) {
+				s.assertConfigError(err, "AGENT_AUDIO_MAX_COST_MICROUSD obrigatorio")
+			},
+		},
 	}
 
 	for _, scenario := range scenarios {
@@ -1707,6 +1855,13 @@ func (s *ConfigSuite) newBaseConfig() *configs.Config {
 		WhatsAppConfig: configs.WhatsAppConfig{
 			WebhookRateLimitPerMin: 600,
 			WebhookRateLimitBurst:  120,
+		},
+		AgentConfig: configs.AgentConfig{
+			STTTimeout:          20 * time.Second,
+			AudioMaxDuration:    60 * time.Second,
+			AudioMinConfidence:  0.80,
+			AudioUncertainReply: "não consegui entender esse áudio direito, pode tentar de novo?",
+			AudioRejectedReply:  "não consegui processar esse áudio, pode reenviar?",
 		},
 		WorkflowKernelConfig: s.newValidWorkflowKernelConfig(),
 		OnboardingConfig: configs.OnboardingConfig{

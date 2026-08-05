@@ -31,29 +31,43 @@ const (
 )
 
 type Config struct {
-	Model          string
-	EmbedModel     string
-	BaseURL        string
-	APIKey         string
-	HTTPReferer    string
-	XTitle         string
-	MaxTokens      int
-	Temperature    float64
-	RequestTimeout time.Duration
+	Model                          string
+	EmbedModel                     string
+	BaseURL                        string
+	APIKey                         string
+	HTTPReferer                    string
+	XTitle                         string
+	MaxTokens                      int
+	Temperature                    float64
+	RequestTimeout                 time.Duration
+	STTTimeout                     time.Duration
+	STTPreflightRateMicrousdPerSec int64
 }
 
 type openrouterProvider struct {
-	cfg        Config
-	client     *httpclient.Client
-	streamHTTP *http.Client
-	o11y       observability.Observability
-	callTotal  observability.Counter
-	callError  observability.Counter
-	tokens     observability.Counter
-	latency    observability.Histogram
+	cfg             Config
+	client          *httpclient.Client
+	streamHTTP      *http.Client
+	o11y            observability.Observability
+	callTotal       observability.Counter
+	callError       observability.Counter
+	tokens          observability.Counter
+	latency         observability.Histogram
+	sttCallTotal    observability.Counter
+	sttCallError    observability.Counter
+	sttLatency      observability.Histogram
+	sttCostMicrousd observability.Counter
 }
 
 func NewOpenRouterProvider(client *httpclient.Client, cfg Config, o11y observability.Observability) Provider {
+	return newOpenrouterProvider(client, cfg, o11y)
+}
+
+func NewOpenRouterTranscriber(client *httpclient.Client, cfg Config, o11y observability.Observability) Transcriber {
+	return newOpenrouterProvider(client, cfg, o11y)
+}
+
+func newOpenrouterProvider(client *httpclient.Client, cfg Config, o11y observability.Observability) *openrouterProvider {
 	callTotal := o11y.Metrics().Counter(
 		"agent_llm_provider_call_total",
 		"Total de chamadas a providers LLM por modelo e status",
@@ -75,16 +89,41 @@ func NewOpenRouterProvider(client *httpclient.Client, cfg Config, o11y observabi
 		"s",
 		[]float64{0.1, 0.25, 0.5, 1, 2, 5, 10},
 	)
+	sttCallTotal := o11y.Metrics().Counter(
+		"agent_stt_call_total",
+		"Total de chamadas de transcricao STT por modelo e status",
+		"1",
+	)
+	sttCallError := o11y.Metrics().Counter(
+		"agent_stt_errors_total",
+		"Total de erros de transcricao STT por modelo e reason",
+		"1",
+	)
+	sttLatency := o11y.Metrics().HistogramWithBuckets(
+		"agent_stt_latency_seconds",
+		"Latencia de chamadas de transcricao STT",
+		"s",
+		[]float64{0.1, 0.25, 0.5, 1, 2, 5, 10, 20},
+	)
+	sttCostMicrousd := o11y.Metrics().Counter(
+		"agent_stt_cost_microusd_total",
+		"Custo acumulado de transcricao STT em microusd por modelo",
+		"1",
+	)
 	streamHTTP := &http.Client{}
 	return &openrouterProvider{
-		cfg:        cfg,
-		client:     client,
-		streamHTTP: streamHTTP,
-		o11y:       o11y,
-		callTotal:  callTotal,
-		callError:  callError,
-		tokens:     tokens,
-		latency:    latency,
+		cfg:             cfg,
+		client:          client,
+		streamHTTP:      streamHTTP,
+		o11y:            o11y,
+		callTotal:       callTotal,
+		callError:       callError,
+		tokens:          tokens,
+		latency:         latency,
+		sttCallTotal:    sttCallTotal,
+		sttCallError:    sttCallError,
+		sttLatency:      sttLatency,
+		sttCostMicrousd: sttCostMicrousd,
 	}
 }
 

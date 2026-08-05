@@ -80,6 +80,20 @@ func (m *mockMessageDedup) Delete(ctx context.Context, consumer, messageID strin
 	return args.Error(0)
 }
 
+type mockAudioProcessor struct {
+	mock.Mock
+}
+
+func (m *mockAudioProcessor) Execute(ctx context.Context, in usecases.AudioInboundInput) (usecases.AudioInboundResult, error) {
+	args := m.Called(ctx, in)
+	return args.Get(0).(usecases.AudioInboundResult), args.Error(1)
+}
+
+func (m *mockAudioProcessor) MarkDispatched(ctx context.Context, wamid string) error {
+	args := m.Called(ctx, wamid)
+	return args.Error(0)
+}
+
 type mockEvent struct {
 	eventType string
 	payload   any
@@ -971,4 +985,229 @@ func (s *WhatsAppInboundConsumerSuite) TestResumeDispatcherPrecedesOnboarding() 
 	dispatcherMock.AssertExpectations(s.T())
 	onboardingMock.AssertNotCalled(s.T(), "Execute", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	inboundMock.AssertNotCalled(s.T(), "Execute", mock.Anything, mock.Anything)
+}
+
+func buildAudioEnvelope(p whatsAppInboundPayload) outbox.Envelope {
+	p.MessageType = "audio"
+	return buildEnvelope(p)
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestHandleAudio_TextRegressionUnaffectedByAudioWiring() {
+	inboundMock := &mockHandleInbound{}
+	inboundMock.On("Execute", mock.Anything, input.InboundInput{
+		ResourceID: "user-text-regression",
+		ThreadID:   "+5511900000001",
+		AgentID:    mecontrolaAgentID,
+		Message:    "gastei 20 no cafe",
+		MessageID:  "wamid-text-regression",
+	}).Return(agent.Outcome{Content: "✅ Registrado.", Status: agent.RunStatusSucceeded}, nil).Once()
+
+	senderMock := &mockWhatsAppSender{}
+	senderMock.On("SendTextMessage", mock.Anything, "+5511900000001", "✅ Registrado.").Return(nil).Once()
+
+	audioMock := &mockAudioProcessor{}
+
+	consumer := NewWhatsAppInboundConsumer(inboundMock, senderMock, s.obs, WithAudioProcessor(audioMock))
+
+	event := &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload: buildEnvelope(whatsAppInboundPayload{
+			UserID:    "user-text-regression",
+			Peer:      "+5511900000001",
+			Text:      "gastei 20 no cafe",
+			MessageID: "wamid-text-regression",
+		}),
+	}
+
+	err := consumer.Handle(s.ctx, event)
+	s.NoError(err)
+	inboundMock.AssertExpectations(s.T())
+	senderMock.AssertExpectations(s.T())
+	audioMock.AssertNotCalled(s.T(), "Execute", mock.Anything, mock.Anything)
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestHandleAudio_ApprovedDispatchesToSameHandleInboundWithCanonicalText() {
+	inboundMock := &mockHandleInbound{}
+	inboundMock.On("Execute", mock.Anything, input.InboundInput{
+		ResourceID: "user-audio-approved",
+		ThreadID:   "+5511900000002",
+		AgentID:    mecontrolaAgentID,
+		Message:    "gastei 50 reais no mercado",
+		MessageID:  "wamid-audio-approved",
+	}).Return(agent.Outcome{Content: "✅ Registrei sua despesa.", Status: agent.RunStatusSucceeded}, nil).Once()
+
+	senderMock := &mockWhatsAppSender{}
+	senderMock.On("SendTextMessage", mock.Anything, "+5511900000002", "✅ Registrei sua despesa.").Return(nil).Once()
+
+	audioMock := &mockAudioProcessor{}
+	audioMock.On("Execute", mock.Anything, usecases.AudioInboundInput{
+		WAMID: "wamid-audio-approved", UserID: "user-audio-approved", Peer: "+5511900000002",
+		MediaID: "media-1", MimeType: "audio/ogg", SHA256: "sha-1", Voice: true,
+	}).Return(usecases.AudioInboundResult{
+		Outcome:       usecases.AudioOutcomeApproved,
+		CanonicalText: "gastei 50 reais no mercado",
+	}, nil).Once()
+	audioMock.On("MarkDispatched", mock.Anything, "wamid-audio-approved").Return(nil).Once()
+
+	consumer := NewWhatsAppInboundConsumer(inboundMock, senderMock, s.obs, WithAudioProcessor(audioMock))
+
+	event := &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload: buildAudioEnvelope(whatsAppInboundPayload{
+			UserID: "user-audio-approved", Peer: "+5511900000002", MessageID: "wamid-audio-approved",
+			AudioMediaID: "media-1", AudioMimeType: "audio/ogg", AudioSHA256: "sha-1", AudioVoice: true,
+		}),
+	}
+
+	err := consumer.Handle(s.ctx, event)
+	s.NoError(err)
+	inboundMock.AssertExpectations(s.T())
+	senderMock.AssertExpectations(s.T())
+	audioMock.AssertExpectations(s.T())
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestHandleAudio_UncertainNeverCallsHandleInboundOrTools() {
+	inboundMock := &mockHandleInbound{}
+	senderMock := &mockWhatsAppSender{}
+	senderMock.On("SendTextMessage", mock.Anything, "+5511900000003", "pode reenviar o audio?").Return(nil).Once()
+
+	audioMock := &mockAudioProcessor{}
+	audioMock.On("Execute", mock.Anything, mock.Anything).Return(usecases.AudioInboundResult{
+		Outcome:   usecases.AudioOutcomeTranscriptionUncertain,
+		ReplyText: "pode reenviar o audio?",
+	}, nil).Once()
+
+	consumer := NewWhatsAppInboundConsumer(inboundMock, senderMock, s.obs, WithAudioProcessor(audioMock))
+
+	event := &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload: buildAudioEnvelope(whatsAppInboundPayload{
+			UserID: "user-audio-uncertain", Peer: "+5511900000003", MessageID: "wamid-audio-uncertain",
+			AudioMediaID: "media-2", AudioMimeType: "audio/ogg", AudioSHA256: "sha-2",
+		}),
+	}
+
+	err := consumer.Handle(s.ctx, event)
+	s.NoError(err)
+	senderMock.AssertExpectations(s.T())
+	audioMock.AssertExpectations(s.T())
+	audioMock.AssertNotCalled(s.T(), "MarkDispatched", mock.Anything, mock.Anything)
+	inboundMock.AssertNotCalled(s.T(), "Execute", mock.Anything, mock.Anything)
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestHandleAudio_STTFailureNeverCallsHandleInbound() {
+	inboundMock := &mockHandleInbound{}
+	senderMock := &mockWhatsAppSender{}
+	senderMock.On("SendTextMessage", mock.Anything, "+5511900000004", "não consegui transcrever, tenta de novo?").Return(nil).Once()
+
+	audioMock := &mockAudioProcessor{}
+	audioMock.On("Execute", mock.Anything, mock.Anything).Return(usecases.AudioInboundResult{
+		Outcome:   usecases.AudioOutcomeTranscriptionFailed,
+		ReplyText: "não consegui transcrever, tenta de novo?",
+	}, nil).Once()
+
+	consumer := NewWhatsAppInboundConsumer(inboundMock, senderMock, s.obs, WithAudioProcessor(audioMock))
+
+	event := &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload: buildAudioEnvelope(whatsAppInboundPayload{
+			UserID: "user-audio-sttfail", Peer: "+5511900000004", MessageID: "wamid-audio-sttfail",
+			AudioMediaID: "media-3", AudioMimeType: "audio/ogg", AudioSHA256: "sha-3",
+		}),
+	}
+
+	err := consumer.Handle(s.ctx, event)
+	s.NoError(err)
+	senderMock.AssertExpectations(s.T())
+	audioMock.AssertExpectations(s.T())
+	inboundMock.AssertNotCalled(s.T(), "Execute", mock.Anything, mock.Anything)
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestHandleAudio_RejectedDownloadFailureNeverCallsHandleInbound() {
+	inboundMock := &mockHandleInbound{}
+	senderMock := &mockWhatsAppSender{}
+	senderMock.On("SendTextMessage", mock.Anything, "+5511900000005", "não consegui baixar esse audio, pode reenviar?").Return(nil).Once()
+
+	audioMock := &mockAudioProcessor{}
+	audioMock.On("Execute", mock.Anything, mock.Anything).Return(usecases.AudioInboundResult{
+		Outcome:   usecases.AudioOutcomeRejected,
+		ReplyText: "não consegui baixar esse audio, pode reenviar?",
+	}, nil).Once()
+
+	consumer := NewWhatsAppInboundConsumer(inboundMock, senderMock, s.obs, WithAudioProcessor(audioMock))
+
+	event := &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload: buildAudioEnvelope(whatsAppInboundPayload{
+			UserID: "user-audio-dlfail", Peer: "+5511900000005", MessageID: "wamid-audio-dlfail",
+			AudioMediaID: "media-4", AudioMimeType: "audio/ogg", AudioSHA256: "sha-4",
+		}),
+	}
+
+	err := consumer.Handle(s.ctx, event)
+	s.NoError(err)
+	senderMock.AssertExpectations(s.T())
+	audioMock.AssertExpectations(s.T())
+	inboundMock.AssertNotCalled(s.T(), "Execute", mock.Anything, mock.Anything)
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestHandleAudio_FeatureFlagOffSendsSafeReplyWithoutProcessor() {
+	inboundMock := &mockHandleInbound{}
+	senderMock := &mockWhatsAppSender{}
+	senderMock.On("SendTextMessage", mock.Anything, "+5511900000006", defaultAudioDisabledReply).Return(nil).Once()
+
+	consumer := NewWhatsAppInboundConsumer(inboundMock, senderMock, s.obs)
+
+	event := &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload: buildAudioEnvelope(whatsAppInboundPayload{
+			UserID: "user-audio-disabled", Peer: "+5511900000006", MessageID: "wamid-audio-disabled",
+			AudioMediaID: "media-5", AudioMimeType: "audio/ogg", AudioSHA256: "sha-5",
+		}),
+	}
+
+	err := consumer.Handle(s.ctx, event)
+	s.NoError(err)
+	senderMock.AssertExpectations(s.T())
+	inboundMock.AssertNotCalled(s.T(), "Execute", mock.Anything, mock.Anything)
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestHandleAudio_ProcessorInfraErrorPropagatesWithoutSendingReply() {
+	inboundMock := &mockHandleInbound{}
+	senderMock := &mockWhatsAppSender{}
+
+	audioMock := &mockAudioProcessor{}
+	audioMock.On("Execute", mock.Anything, mock.Anything).
+		Return(usecases.AudioInboundResult{}, errors.New("audit repository indisponivel")).Once()
+
+	consumer := NewWhatsAppInboundConsumer(inboundMock, senderMock, s.obs, WithAudioProcessor(audioMock))
+
+	event := &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload: buildAudioEnvelope(whatsAppInboundPayload{
+			UserID: "user-audio-infra", Peer: "+5511900000007", MessageID: "wamid-audio-infra",
+			AudioMediaID: "media-6", AudioMimeType: "audio/ogg", AudioSHA256: "sha-6",
+		}),
+	}
+
+	err := consumer.Handle(s.ctx, event)
+	s.Error(err)
+	s.Contains(err.Error(), "process audio")
+	senderMock.AssertNotCalled(s.T(), "SendTextMessage", mock.Anything, mock.Anything, mock.Anything)
+	inboundMock.AssertNotCalled(s.T(), "Execute", mock.Anything, mock.Anything)
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestHandleAudio_PayloadIncompletoQuandoCamposAudioAusentes() {
+	consumer := NewWhatsAppInboundConsumer(&mockHandleInbound{}, &mockWhatsAppSender{}, s.obs)
+
+	event := &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload: buildAudioEnvelope(whatsAppInboundPayload{
+			UserID: "user-audio-incompleto", Peer: "+5511900000008", MessageID: "wamid-audio-incompleto",
+		}),
+	}
+
+	err := consumer.Handle(s.ctx, event)
+	s.Error(err)
+	s.Contains(err.Error(), "payload de audio incompleto")
 }

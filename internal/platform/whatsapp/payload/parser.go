@@ -16,20 +16,54 @@ func ExtractMessages(raw []byte) ([]Message, error) {
 	for _, e := range p.Entry {
 		for _, c := range e.Changes {
 			for _, msg := range c.Value.Messages {
-				text := ""
-				if msg.Text != nil {
-					text = msg.Text.Body
+				parsed, ok := parseMessage(msg)
+				if !ok {
+					continue
 				}
-				msgs = append(msgs, Message{
-					From:      "+" + msg.From,
-					WAMID:     msg.ID,
-					Timestamp: msg.Timestamp,
-					Text:      text,
-				})
+				msgs = append(msgs, parsed)
 			}
 		}
 	}
 	return msgs, nil
+}
+
+func parseMessage(msg message) (Message, bool) {
+	if msg.Type == "audio" {
+		return parseAudioMessage(msg)
+	}
+
+	text := ""
+	if msg.Text != nil {
+		text = msg.Text.Body
+	}
+	return Message{
+		From:      "+" + msg.From,
+		WAMID:     msg.ID,
+		Timestamp: msg.Timestamp,
+		Type:      MessageTypeText,
+		Text:      text,
+	}, true
+}
+
+func parseAudioMessage(msg message) (Message, bool) {
+	if msg.Audio == nil {
+		return Message{}, false
+	}
+	if msg.Audio.ID == "" || msg.Audio.MimeType == "" || msg.Audio.SHA256 == "" {
+		return Message{}, false
+	}
+	return Message{
+		From:      "+" + msg.From,
+		WAMID:     msg.ID,
+		Timestamp: msg.Timestamp,
+		Type:      MessageTypeAudio,
+		Audio: &Audio{
+			MediaID:  msg.Audio.ID,
+			MimeType: msg.Audio.MimeType,
+			SHA256:   msg.Audio.SHA256,
+			Voice:    msg.Audio.Voice,
+		},
+	}, true
 }
 
 func ExtractFirstMessage(raw []byte) (Message, bool, error) {

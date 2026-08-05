@@ -186,6 +186,16 @@ type AgentConfig struct {
 	Temperature         float64       `mapstructure:"AGENT_LLM_TEMPERATURE"`
 	InboundTimeout      time.Duration `mapstructure:"AGENT_INBOUND_TIMEOUT"`
 	MecontrolaMaxTokens int           `mapstructure:"AGENT_MECONTROLA_MAX_TOKENS"`
+
+	STTModel             string        `mapstructure:"AGENT_STT_MODEL"`
+	STTTimeout           time.Duration `mapstructure:"AGENT_STT_TIMEOUT"`
+	AudioEnabled         bool          `mapstructure:"AGENT_AUDIO_ENABLED"`
+	AudioMaxDuration     time.Duration `mapstructure:"AGENT_AUDIO_MAX_DURATION"`
+	AudioMaxBytes        int64         `mapstructure:"AGENT_AUDIO_MAX_BYTES"`
+	AudioMaxCostMicrousd int64         `mapstructure:"AGENT_AUDIO_MAX_COST_MICROUSD"`
+	AudioMinConfidence   float64       `mapstructure:"AGENT_AUDIO_MIN_CONFIDENCE"`
+	AudioUncertainReply  string        `mapstructure:"WA_MSG_AUDIO_UNCERTAIN_RETRY"`
+	AudioRejectedReply   string        `mapstructure:"WA_MSG_AUDIO_REJECTED_RETRY"`
 }
 
 type KiwifyConfig struct {
@@ -546,6 +556,15 @@ func (l *configLoader) envKeys() []string {
 		"AGENT_LLM_TEMPERATURE",
 		"AGENT_INBOUND_TIMEOUT",
 		"AGENT_MECONTROLA_MAX_TOKENS",
+		"AGENT_STT_MODEL",
+		"AGENT_STT_TIMEOUT",
+		"AGENT_AUDIO_ENABLED",
+		"AGENT_AUDIO_MAX_DURATION",
+		"AGENT_AUDIO_MAX_BYTES",
+		"AGENT_AUDIO_MAX_COST_MICROUSD",
+		"AGENT_AUDIO_MIN_CONFIDENCE",
+		"WA_MSG_AUDIO_UNCERTAIN_RETRY",
+		"WA_MSG_AUDIO_REJECTED_RETRY",
 		"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_SCHEDULE",
 		"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_BATCH",
 		"IDENTITY_AUTH_EVENTS_RETENTION_DAYS",
@@ -802,6 +821,7 @@ func (c *Config) Validate() error {
 	errs = append(errs, c.validateRateLimits()...)
 	errs = append(errs, c.KiwifyConfig.validateProductIDs()...)
 	errs = append(errs, c.validateWorkflowKernel()...)
+	errs = append(errs, c.validateAgentAudio()...)
 
 	if c.AppConfig.Environment == "production" {
 		errs = append(errs, c.validateProduction()...)
@@ -1029,6 +1049,41 @@ func (c *Config) validateProductionWhatsApp() []string {
 	return errs
 }
 
+func (c *Config) validateAgentAudio() []string {
+	var errs []string
+
+	if c.AgentConfig.STTTimeout < time.Second || c.AgentConfig.STTTimeout > 20*time.Second {
+		errs = append(errs, fmt.Sprintf(
+			"AGENT_STT_TIMEOUT inválido %s: deve estar no intervalo [1s..20s]",
+			c.AgentConfig.STTTimeout,
+		))
+	}
+
+	if c.AgentConfig.AudioMaxDuration < time.Second || c.AgentConfig.AudioMaxDuration > 60*time.Second {
+		errs = append(errs, fmt.Sprintf(
+			"AGENT_AUDIO_MAX_DURATION inválido %s: deve estar no intervalo [1s..60s]",
+			c.AgentConfig.AudioMaxDuration,
+		))
+	}
+
+	if c.AgentConfig.AudioMinConfidence < 0.50 || c.AgentConfig.AudioMinConfidence > 1.00 {
+		errs = append(errs, fmt.Sprintf(
+			"AGENT_AUDIO_MIN_CONFIDENCE inválido %.2f: deve estar no intervalo [0.50..1.00]",
+			c.AgentConfig.AudioMinConfidence,
+		))
+	}
+
+	if strings.TrimSpace(c.AgentConfig.AudioUncertainReply) == "" {
+		errs = append(errs, "WA_MSG_AUDIO_UNCERTAIN_RETRY obrigatorio: nao pode ser vazio")
+	}
+
+	if strings.TrimSpace(c.AgentConfig.AudioRejectedReply) == "" {
+		errs = append(errs, "WA_MSG_AUDIO_REJECTED_RETRY obrigatorio: nao pode ser vazio")
+	}
+
+	return errs
+}
+
 func (c *Config) validateProductionAgent() []string {
 	var errs []string
 	if strings.TrimSpace(c.AgentConfig.OpenRouterAPIKey) == "" {
@@ -1051,6 +1106,37 @@ func (c *Config) validateProductionAgent() []string {
 	}
 	if c.AgentConfig.MecontrolaMaxTokens <= 0 || c.AgentConfig.MecontrolaMaxTokens > 8192 {
 		errs = append(errs, "AGENT_MECONTROLA_MAX_TOKENS deve estar no intervalo (0..8192] em production")
+	}
+	errs = append(errs, c.validateProductionAudio()...)
+	return errs
+}
+
+func (c *Config) validateProductionAudio() []string {
+	var errs []string
+	if !c.AgentConfig.AudioEnabled {
+		return errs
+	}
+
+	if strings.TrimSpace(c.AgentConfig.STTModel) == "" {
+		errs = append(errs, "AGENT_STT_MODEL obrigatorio em production quando AGENT_AUDIO_ENABLED=true")
+	}
+	if c.AgentConfig.AudioMaxBytes <= 0 {
+		errs = append(errs, "AGENT_AUDIO_MAX_BYTES obrigatorio (>0) em production quando AGENT_AUDIO_ENABLED=true")
+	}
+	if c.AgentConfig.AudioMaxCostMicrousd <= 0 {
+		errs = append(errs, "AGENT_AUDIO_MAX_COST_MICROUSD obrigatorio (>0) em production quando AGENT_AUDIO_ENABLED=true")
+	}
+	if c.AgentConfig.STTTimeout <= 0 {
+		errs = append(errs, "AGENT_STT_TIMEOUT obrigatorio (>0) em production quando AGENT_AUDIO_ENABLED=true")
+	}
+	if c.AgentConfig.AudioMaxDuration <= 0 {
+		errs = append(errs, "AGENT_AUDIO_MAX_DURATION obrigatorio (>0) em production quando AGENT_AUDIO_ENABLED=true")
+	}
+	if strings.TrimSpace(c.AgentConfig.AudioUncertainReply) == "" {
+		errs = append(errs, "WA_MSG_AUDIO_UNCERTAIN_RETRY obrigatorio em production quando AGENT_AUDIO_ENABLED=true")
+	}
+	if strings.TrimSpace(c.AgentConfig.AudioRejectedReply) == "" {
+		errs = append(errs, "WA_MSG_AUDIO_REJECTED_RETRY obrigatorio em production quando AGENT_AUDIO_ENABLED=true")
 	}
 	return errs
 }
@@ -1350,6 +1436,12 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("AGENT_LLM_TEMPERATURE", 0)
 	l.v.SetDefault("AGENT_INBOUND_TIMEOUT", 90*time.Second)
 	l.v.SetDefault("AGENT_MECONTROLA_MAX_TOKENS", 3072)
+	l.v.SetDefault("AGENT_STT_TIMEOUT", 20*time.Second)
+	l.v.SetDefault("AGENT_AUDIO_ENABLED", false)
+	l.v.SetDefault("AGENT_AUDIO_MAX_DURATION", 60*time.Second)
+	l.v.SetDefault("AGENT_AUDIO_MIN_CONFIDENCE", 0.80)
+	l.v.SetDefault("WA_MSG_AUDIO_UNCERTAIN_RETRY", "não consegui entender esse áudio direito, pode tentar de novo? 🎙️")
+	l.v.SetDefault("WA_MSG_AUDIO_REJECTED_RETRY", "não consegui processar esse áudio, pode reenviar?")
 }
 
 func (c *Config) validateWorkflowKernel() []string {
