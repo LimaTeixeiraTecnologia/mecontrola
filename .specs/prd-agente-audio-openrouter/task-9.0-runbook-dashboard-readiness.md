@@ -16,12 +16,12 @@ Materializar operação production-ready para áudio: runbook de triagem, dashbo
 
 ## Subtarefas
 
-- [ ] 9.1 Criar ou atualizar runbook em `deployment/runbooks` para áudio WhatsApp/STT.
-- [ ] 9.2 Criar dashboards ou painéis Grafana para volume, erro, incerteza, p95, tamanho, duração e custo.
-- [ ] 9.3 Criar alertas com `stt_error_rate_15m > 5%`, `transcription_uncertain_rate_15m > 20%`, `transcription_p95_15m > 8s`, `audio_cost_microusd_1h > 120000` e `audio_false_success > 0`.
-- [ ] 9.4 Documentar canary com `AudioEnabled=false` por default e critérios para habilitação.
-- [ ] 9.5 Documentar rollback e evidências mínimas pós-deploy.
-- [ ] 9.6 Validar cardinalidade de queries/labels.
+- [x] 9.1 Criar ou atualizar runbook em `deployment/runbooks` para áudio WhatsApp/STT.
+- [x] 9.2 Criar dashboards ou painéis Grafana para volume, erro, incerteza, p95, tamanho, duração e custo.
+- [x] 9.3 Criar alertas com `stt_error_rate_15m > 5%`, `transcription_uncertain_rate_15m > 20%`, `transcription_p95_15m > 8s`, `audio_cost_microusd_1h > 120000` e `audio_false_success > 0`.
+- [x] 9.4 Documentar canary com `AudioEnabled=false` por default e critérios para habilitação.
+- [x] 9.5 Documentar rollback e evidências mínimas pós-deploy.
+- [x] 9.6 Validar cardinalidade de queries/labels.
 
 ## Detalhes de Implementação
 
@@ -56,10 +56,10 @@ Evidências de produção já levantadas:
 
 ## Testes da Tarefa
 
-- [ ] Validação sintática de YAML/JSON de dashboards/alertas quando aplicável.
-- [ ] Grep de labels proibidos em dashboards/alerts.
-- [ ] Revisão do runbook contra RF-46.
-- [ ] Se houver Go alterado, rodar gates proporcionais do pacote afetado.
+- [x] Validação sintática de YAML/JSON de dashboards/alertas quando aplicável.
+- [x] Grep de labels proibidos em dashboards/alerts.
+- [x] Revisão do runbook contra RF-46.
+- [x] Se houver Go alterado, rodar gates proporcionais do pacote afetado. (N/A: nenhum arquivo `.go` alterado nesta tarefa, confirmado por `git status --short`)
 
 <critical>SEMPRE CRIAR E EXECUTAR TESTES DA TAREFA ANTES DE CONSIDERAR A TAREFA COMO `done`</critical>
 

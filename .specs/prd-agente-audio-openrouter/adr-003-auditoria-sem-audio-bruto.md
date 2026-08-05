@@ -66,6 +66,31 @@ para audio bruto/base64/URL de download.
 
 Atualizar runbook de troubleshooting para consultar outcome/reason por WAMID.
 
+## Adendo 2026-08-04 — Ampliacao do CHECK de reason (migration 000016)
+
+A migration `000015_agents_whatsapp_audio_messages` (task 5.0, ver "Plano de Implementacao" acima)
+cravou o `CHECK` de `reason` apenas com as 7 razoes pos-STT conhecidas naquele momento da decisao
+(`approved`, `stt_error`, `truncated`, `empty_text`, `incoherent`, `language_unsupported`,
+`low_confidence`).
+
+Ao integrar o consumer real na task 6.0, o decisor de dominio (`AudioReason` em
+`internal/agents/application/usecases/decide_audio_transcription.go`) precisou de 6 razoes
+adicionais para rejeicoes que ocorrem **antes** do STT ser chamado: `invalid_payload`,
+`media_unavailable`, `size_exceeded`, `duration_unavailable`, `duration_exceeded`,
+`cost_exceeded`. Essas razoes nao existiam na 000015 porque a decisao original desta ADR cobria
+apenas o fluxo pos-transcricao; reusar `stt_error` para rejeicoes pre-STT seria semanticamente
+incorreto.
+
+A migration `000016_agents_whatsapp_audio_messages_widen_reason` amplia o `CHECK` da coluna `reason`
+para as 13 razoes finais, alinhadas 1:1 com `AudioReason.IsValid()`. A cobertura foi confirmada por
+teste de integracao real contra Postgres 16 (`TestInsertTerminalAcceptsPreSTTRejectionReasons` em
+`internal/agents/infrastructure/persistence/audio_audit_repository_integration_test.go`). Detalhe
+completo da origem em `.specs/prd-agente-audio-openrouter/6.0_execution_report.md` (secao
+"Arquivos Alterados" e "Suposicoes").
+
+A tabela e os campos definidos por esta ADR permanecem inalterados; apenas o conjunto de valores
+validos de `reason` foi estendido de forma aditiva (sem remocao de valores existentes).
+
 ## Revisao Futura
 
 Revisar politica de retencao depois do beta, com dados reais de volume e custo.

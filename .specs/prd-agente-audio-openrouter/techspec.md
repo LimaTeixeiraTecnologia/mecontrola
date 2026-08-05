@@ -1,4 +1,4 @@
-<!-- spec-hash-prd: fcb9286b6b71310a28ab180a856e778dc3243d91dca5ac2118fd524e4d62572d -->
+<!-- spec-hash-prd: d4fe5c05b1372d20047b44c9f6d8f7f9db49ed831e3b5862c195e7131758201a -->
 
 # Especificacao Tecnica: agente com audio WhatsApp via OpenRouter
 
@@ -255,8 +255,33 @@ Regras:
 - `temperature` deve ser `0` para reduzir variabilidade.
 - Timeout STT default: `20s`, configuravel.
 - Modelo STT nao pode ser hardcoded em codigo; vem de config `AGENT_STT_MODEL`.
-- `Language` deve vir do retorno do provider quando disponivel; se indisponivel, a implementacao deve
-  aplicar classificador deterministico leve de idioma ou tratar como `TranscriptionUncertain`.
+- `Language` deve vir do retorno do provider quando disponivel; quando ausente, a implementacao
+  assume o idioma enviado no request (`language=pt`).
+
+  **Emenda 2026-08-05 (review, evidencia empirica).** Nenhum modelo STT do OpenRouter retorna o
+  campo `language` na resposta. Verificado com audio PT-BR real contra os 5 modelos do benchmark
+  (`openai/whisper-large-v3`, `openai/gpt-4o-transcribe`, `openai/gpt-4o-mini-transcribe`,
+  `mistralai/voxtral-mini-transcribe`, `deepgram/nova-3`): todos devolvem `language=""` com
+  transcricao correta. Trocar de modelo nao resolve.
+
+  Consequencia: a alternativa "tratar como `TranscriptionUncertain`" torna a feature 100% inoperante
+  (todo audio vira `language_unsupported`), e a alternativa "classificador deterministico leve" foi
+  rejeitada por risco de falso negativo em enunciados financeiros curtos e legitimos (ex.: "50 no
+  pix"). Decisao adotada: **fallback para o idioma requisitado**, em
+  `buildTranscriptionResponse` (`internal/platform/llm/openrouter_stt.go`).
+
+  Limitacao assumida e explicita: com isso o gate de idioma de RF-13/RF-14 **nao e efetivamente
+  exercido** — audio em outro idioma e transcrito a forca como PT-BR pelo provider e fica a cargo
+  dos gates de texto vazio, incoerencia e truncamento. RF-13/RF-14 devem ser lidos como "nao
+  verificaveis com STT OpenRouter nesta fase", nao como atendidos. Regressao coberta por
+  `TestTranscribe_ProviderOmitsLanguageFallsBackToRequested` e pelo gate real
+  `TestRealSTT_Transcribe`.
+
+- `Confidence` nunca e retornado por nenhum modelo STT do OpenRouter (mesma verificacao acima).
+  `AGENT_AUDIO_MIN_CONFIDENCE` e, portanto, um controle **inativo** na pratica: o codigo so avalia
+  confianca quando o provider a fornece (`in.Confidence != nil`). A config e o estado
+  `AudioReasonLowConfidence` sao mantidos para o caso de um provider passar a retornar o campo, mas
+  nao devem ser apresentados como protecao ativa em runbook ou readiness.
 - `DurationMs` deve ser determinado antes do STT. A implementacao deve extrair duracao por payload
   WhatsApp quando a Meta passar a enviar esse campo ou por componente local deterministico para os
   formatos aceitos no primeiro corte (`audio/ogg`/Opus e M4A/AAC). Como o codebase atual nao possui
@@ -387,8 +412,14 @@ campos obrigatorios nao podem estar vazios ou zero.
 
 Validacao adicional de producao:
 
-- `AGENT_AUDIO_MAX_COST_MICROUSD=2000` e `AGENT_AUDIO_MAX_DURATION=60s` definem o teto inicial de
-  aproximadamente `34` microusd por segundo para preflight conservador.
+- `AGENT_AUDIO_MAX_COST_MICROUSD=2000` e `AGENT_AUDIO_MAX_DURATION=60s` definem o teto inicial.
+  A taxa de preflight e `25` microusd por segundo, derivada da medicao real do benchmark
+  (`0.000117834375 USD` para `4.713375s` = exatamente `25` microusd/s). Com essa taxa, um audio no
+  limite de `60s` estima `1500` microusd e cabe no teto de `2000`.
+  Correcao 2026-08-05 (review): a taxa anterior de `34` microusd/s estimava `2040` para `60s` e
+  rejeitava como `cost_exceeded` todo audio de 59-60s, violando RF-07 e o objetivo de "ate 60
+  segundos". Teto efetivo era `58s`. Regressao coberta por
+  `TestDecideSTTPreflightCost/approves_max_duration_audio_under_techspec_budget`.
 - Se a estimativa pre-STT para a duracao extraida exceder o teto configurado, o audio deve ser
   rejeitado antes de envio ao OpenRouter.
 - Se a duracao nao for extraida, o audio deve ser rejeitado antes de envio ao OpenRouter.
@@ -583,7 +614,7 @@ gofmt -w <arquivos-go-alterados>
 go build ./internal/platform/... ./internal/agents/... ./configs/... ./cmd/server/... ./cmd/worker/...
 go vet ./internal/platform/... ./internal/agents/... ./configs/... ./cmd/server/... ./cmd/worker/...
 go test -race -count=1 ./internal/platform/... ./internal/agents/... ./configs/...
-RUN_REAL_LLM=1 RUN_REAL_STT=1 go test -count=1 ./internal/agents/application/golden/...
+RUN_REAL_LLM=1 RUN_REAL_STT=1 STT_REAL_AUDIO_FIXTURE=<audio-ptbr-real> go test -tags=integration -count=1 ./internal/agents/application/golden/...
 golangci-lint run ./internal/platform/... ./internal/agents/... ./configs/... ./cmd/server/... ./cmd/worker/...
 ```
 

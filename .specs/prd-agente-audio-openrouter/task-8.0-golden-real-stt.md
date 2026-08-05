@@ -17,12 +17,12 @@ Criar validação de regressão zero com golden set pareado texto/áudio, negati
 
 ## Subtarefas
 
-- [ ] 8.1 Ler harness golden real existente e padrões de scorer/evals.
-- [ ] 8.2 Adicionar modo de transcrição simulada para testar fluxo sem OpenRouter real.
-- [ ] 8.3 Criar golden pareado texto/audio por categoria de capacidade textual.
-- [ ] 8.4 Criar negativos obrigatórios de áudio.
-- [ ] 8.5 Criar suite real STT por `RUN_REAL_STT=1` e credencial OpenRouter.
-- [ ] 8.6 Criar assert explícito de falso-sucesso `0`, tool call `0` e `HandleInbound` `0` em incerteza.
+- [x] 8.1 Ler harness golden real existente e padrões de scorer/evals.
+- [x] 8.2 Adicionar modo de transcrição simulada para testar fluxo sem OpenRouter real.
+- [x] 8.3 Criar golden pareado texto/audio por categoria de capacidade textual.
+- [x] 8.4 Criar negativos obrigatórios de áudio.
+- [x] 8.5 Criar suite real STT por `RUN_REAL_STT=1` e credencial OpenRouter.
+- [x] 8.6 Criar assert explícito de falso-sucesso `0`, tool call `0` e `HandleInbound` `0` em incerteza.
 
 ## Detalhes de Implementação
 
@@ -55,10 +55,10 @@ Evidências de codebase a respeitar:
 
 ## Testes da Tarefa
 
-- [ ] `go test -race -count=1 ./internal/agents/application/golden/...`
-- [ ] `RUN_REAL_LLM=1 RUN_REAL_STT=1 go test -count=1 ./internal/agents/application/golden/...`
-- [ ] Teste de modo simulado sem chamada real ao OpenRouter.
-- [ ] Teste de falso-sucesso mutacional `0`.
+- [x] `go test -race -count=1 ./internal/agents/application/golden/...`
+- [x] `RUN_REAL_LLM=1 RUN_REAL_STT=1 STT_REAL_AUDIO_FIXTURE=<audio-ptbr-real> go test -tags=integration -count=1 ./internal/agents/application/golden/...`
+- [x] Teste de modo simulado sem chamada real ao OpenRouter.
+- [x] Teste de falso-sucesso mutacional `0`.
 
 <critical>SEMPRE CRIAR E EXECUTAR TESTES DA TAREFA ANTES DE CONSIDERAR A TAREFA COMO `done`</critical>
 

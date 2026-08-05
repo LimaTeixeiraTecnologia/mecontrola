@@ -16,12 +16,12 @@ Implementar tipos fechados e decisor puro para aprovar, rejeitar ou marcar trans
 
 ## Subtarefas
 
-- [ ] 4.1 Criar tipos fechados de outcome e reason de áudio no pacote de aplicação adequado.
-- [ ] 4.2 Implementar command/input com `Validate()` e zero value inválido.
-- [ ] 4.3 Implementar `DecideAudioTranscription` puro, sem `context.Context`, IO, LLM ou repository.
-- [ ] 4.4 Definir resposta segura de reenvio para `TranscriptionUncertain` e rejeições técnicas.
-- [ ] 4.5 Criar testes de tabela para todos os outcomes e razões.
-- [ ] 4.6 Garantir que decisão aprovada não corrige valor, categoria, data, meio de pagamento ou semântica financeira.
+- [x] 4.1 Criar tipos fechados de outcome e reason de áudio no pacote de aplicação adequado.
+- [x] 4.2 Implementar command/input com `Validate()` e zero value inválido.
+- [x] 4.3 Implementar `DecideAudioTranscription` puro, sem `context.Context`, IO, LLM ou repository.
+- [x] 4.4 Definir resposta segura de reenvio para `TranscriptionUncertain` e rejeições técnicas.
+- [x] 4.5 Criar testes de tabela para todos os outcomes e razões.
+- [x] 4.6 Garantir que decisão aprovada não corrige valor, categoria, data, meio de pagamento ou semântica financeira.
 
 ## Detalhes de Implementação
 
@@ -54,10 +54,10 @@ Evidências de codebase a respeitar:
 
 ## Testes da Tarefa
 
-- [ ] `go test -race -count=1 ./internal/agents/application/...`
-- [ ] Teste de todos os reasons de incerteza e rejeição.
-- [ ] Teste de normalização técnica sem enriquecimento semântico.
-- [ ] Teste de zero value inválido e `Validate()`.
+- [x] `go test -race -count=1 ./internal/agents/application/...`
+- [x] Teste de todos os reasons de incerteza e rejeição.
+- [x] Teste de normalização técnica sem enriquecimento semântico.
+- [x] Teste de zero value inválido e `Validate()`.
 
 <critical>SEMPRE CRIAR E EXECUTAR TESTES DA TAREFA ANTES DE CONSIDERAR A TAREFA COMO `done`</critical>
 

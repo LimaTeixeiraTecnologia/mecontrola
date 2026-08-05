@@ -1,5 +1,5 @@
-<!-- spec-hash-prd: fcb9286b6b71310a28ab180a856e778dc3243d91dca5ac2118fd524e4d62572d -->
-<!-- spec-hash-techspec: 94684ab5916c41311bc90fd917d4a333af21235d52cf6dea41ea724a32726bc1 -->
+<!-- spec-hash-prd: d4fe5c05b1372d20047b44c9f6d8f7f9db49ed831e3b5862c195e7131758201a -->
+<!-- spec-hash-techspec: fa1c38af8ba00dd09ac9ed4343def8e56511c5f2834e511ad48d07785160829e -->
 # Resumo das Tarefas de Implementação para Agente com Audio WhatsApp via OpenRouter
 
 ## Metadados
@@ -23,16 +23,16 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Payload WhatsApp tipado e regressão textual | pending | — | — | mastra, domain-modeling-production, design-patterns-mandatory |
-| 2.0 | Cliente Meta Media API e duração determinística | pending | 1.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory |
-| 3.0 | Porta STT OpenRouter com custo pre e pos-STT | pending | 1.0 | Com 2.0 | mastra, domain-modeling-production, design-patterns-mandatory |
-| 4.0 | Decisor técnico fechado de áudio | pending | 3.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory |
-| 5.0 | Auditoria Postgres e WAMID terminal | pending | 4.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory, postgresql-production-standards |
-| 6.0 | Integração consumer, outbox e wiring Mastra | pending | 2.0, 3.0, 4.0, 5.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory |
-| 7.0 | Configuração, métricas e logs de áudio | pending | 3.0, 5.0, 6.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory, golden-signals-otel-standards |
-| 8.0 | Golden set áudio/texto e suites reais por flag | pending | 6.0, 7.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory |
-| 9.0 | Runbook, dashboards e readiness operacional | pending | 7.0, 8.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory, otel-grafana-dashboards, golden-signals-otel-standards |
-| 10.0 | Gate final production-ready RF-01..RF-46 | pending | 8.0, 9.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory |
+| 1.0 | Payload WhatsApp tipado e regressão textual | done | — | — | mastra, domain-modeling-production, design-patterns-mandatory |
+| 2.0 | Cliente Meta Media API e duração determinística | done | 1.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory |
+| 3.0 | Porta STT OpenRouter com custo pre e pos-STT | done | 1.0 | Com 2.0 | mastra, domain-modeling-production, design-patterns-mandatory |
+| 4.0 | Decisor técnico fechado de áudio | done | 3.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory |
+| 5.0 | Auditoria Postgres e WAMID terminal | done | 4.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory, postgresql-production-standards |
+| 6.0 | Integração consumer, outbox e wiring Mastra | done | 2.0, 3.0, 4.0, 5.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory |
+| 7.0 | Configuração, métricas e logs de áudio | done | 3.0, 5.0, 6.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory, golden-signals-otel-standards |
+| 8.0 | Golden set áudio/texto e suites reais por flag | done | 6.0, 7.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory |
+| 9.0 | Runbook, dashboards e readiness operacional | done | 7.0, 8.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory, otel-grafana-dashboards, golden-signals-otel-standards |
+| 10.0 | Gate final production-ready RF-01..RF-46 | done | 8.0, 9.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory |
 
 ## Dependências Críticas
 - 1.0 desbloqueia toda a cadeia porque áudio precisa chegar tipado ao outbox/consumer sem quebrar texto.

@@ -17,12 +17,12 @@ Criar migration e repository de auditoria de áudio com outcome terminal único 
 
 ## Subtarefas
 
-- [ ] 5.1 Carregar `postgresql-production-standards` antes de editar migration ou schema.
-- [ ] 5.2 Criar migration up/down `000015` conforme PostgreSQL 16 confirmado.
-- [ ] 5.3 Implementar repository Postgres de auditoria com insert terminal por WAMID e update transacional curto.
-- [ ] 5.4 Modelar erros de duplicidade terminal e falha de persistência com `errors.Is`/`errors.As` quando necessário.
-- [ ] 5.5 Criar testes de integração de migration up/down, PK, checks e fluxo terminal.
-- [ ] 5.6 Adicionar grep/teste para impedir colunas ou arquivos de áudio bruto.
+- [x] 5.1 Carregar `postgresql-production-standards` antes de editar migration ou schema.
+- [x] 5.2 Criar migration up/down `000015` conforme PostgreSQL 16 confirmado.
+- [x] 5.3 Implementar repository Postgres de auditoria com insert terminal por WAMID e update transacional curto.
+- [x] 5.4 Modelar erros de duplicidade terminal e falha de persistência com `errors.Is`/`errors.As` quando necessário.
+- [x] 5.5 Criar testes de integração de migration up/down, PK, checks e fluxo terminal.
+- [x] 5.6 Adicionar grep/teste para impedir colunas ou arquivos de áudio bruto.
 
 ## Detalhes de Implementação
 
@@ -56,11 +56,11 @@ Evidências de codebase a respeitar:
 
 ## Testes da Tarefa
 
-- [ ] Teste de migration up/down.
-- [ ] Teste de PK por WAMID.
-- [ ] Teste de `CHECK outcome` e `CHECK reason`.
-- [ ] `go test -race -count=1 ./internal/agents/...`
-- [ ] `go test -race -count=1 ./internal/platform/...`
+- [x] Teste de migration up/down.
+- [x] Teste de PK por WAMID.
+- [x] Teste de `CHECK outcome` e `CHECK reason`.
+- [x] `go test -race -count=1 ./internal/agents/...`
+- [x] `go test -race -count=1 ./internal/platform/...`
 
 <critical>SEMPRE CRIAR E EXECUTAR TESTES DA TAREFA ANTES DE CONSIDERAR A TAREFA COMO `done`</critical>
 

@@ -16,12 +16,12 @@ Adicionar porta de transcrição STT em `internal/platform/llm` usando OpenRoute
 
 ## Subtarefas
 
-- [ ] 3.1 Ler `internal/platform/llm/provider.go` e `openrouter.go` reais antes de alterar contratos.
-- [ ] 3.2 Adicionar porta STT pequena e separada de `Complete`, `Stream` e `Embed`.
-- [ ] 3.3 Implementar OpenRouter `/api/v1/audio/transcriptions` com JSON base64, `language=pt`, `temperature=0` e timeout 20s.
-- [ ] 3.4 Implementar preflight de custo usando duração extraída, `AGENT_AUDIO_MAX_COST_MICROUSD` e modelo escolhido.
-- [ ] 3.5 Implementar gate pós-STT por `usage.cost`, resposta vazia, erro HTTP, timeout, formato inválido e modelo indisponível.
-- [ ] 3.6 Criar testes unitários com server fake e teste real skipado por flag.
+- [x] 3.1 Ler `internal/platform/llm/provider.go` e `openrouter.go` reais antes de alterar contratos.
+- [x] 3.2 Adicionar porta STT pequena e separada de `Complete`, `Stream` e `Embed`.
+- [x] 3.3 Implementar OpenRouter `/api/v1/audio/transcriptions` com JSON base64, `language=pt`, `temperature=0` e timeout 20s.
+- [x] 3.4 Implementar preflight de custo usando duração extraída, `AGENT_AUDIO_MAX_COST_MICROUSD` e modelo escolhido.
+- [x] 3.5 Implementar gate pós-STT por `usage.cost`, resposta vazia, erro HTTP, timeout, formato inválido e modelo indisponível.
+- [x] 3.6 Criar testes unitários com server fake e teste real skipado por flag.
 
 ## Detalhes de Implementação
 
@@ -55,10 +55,10 @@ Evidências de codebase a respeitar:
 
 ## Testes da Tarefa
 
-- [ ] `go test -race -count=1 ./internal/platform/llm`
-- [ ] Teste fake para HTTP 200, 400, 401/403, 402, 429, 5xx, timeout, JSON inválido e texto vazio.
-- [ ] Teste de preflight de custo acima do teto antes da chamada.
-- [ ] `RUN_REAL_STT=1 go test -count=1 ./internal/platform/llm -run Real`
+- [x] `go test -race -count=1 ./internal/platform/llm`
+- [x] Teste fake para HTTP 200, 400, 401/403, 402, 429, 5xx, timeout, JSON inválido e texto vazio.
+- [x] Teste de preflight de custo acima do teto antes da chamada.
+- [x] `RUN_REAL_STT=1 STT_REAL_AUDIO_FIXTURE=<audio-ptbr-real> go test -tags=integration -count=1 ./internal/platform/llm -run Real`
 
 <critical>SEMPRE CRIAR E EXECUTAR TESTES DA TAREFA ANTES DE CONSIDERAR A TAREFA COMO `done`</critical>
 

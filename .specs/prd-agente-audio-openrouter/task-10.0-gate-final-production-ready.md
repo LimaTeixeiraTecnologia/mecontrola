@@ -16,12 +16,12 @@ Executar revisão final de readiness confrontando cada RF com evidência real de
 
 ## Subtarefas
 
-- [ ] 10.1 Gerar matriz RF-01..RF-46 com evidência `path:line`, teste executado ou artefato operacional para cada RF.
-- [ ] 10.2 Rodar build, vet, race tests e lint nos escopos definidos pela techspec.
-- [ ] 10.3 Rodar golden set texto/audio e suite real por flag quando credenciais existirem.
-- [ ] 10.4 Rodar gates heurísticos: sem `init()`, sem `_prefixado`, sem comentários Go proibidos, sem labels proibidos.
-- [ ] 10.5 Revisar diff final com foco em regressão, segurança, custo, idempotência, privacidade e Mastra.
-- [ ] 10.6 Registrar estado final como `merge-ready` ou `production-ready`; se qualquer evidência faltar, marcar `blocked` ou `needs_input`.
+- [x] 10.1 Gerar matriz RF-01..RF-46 com evidência `path:line`, teste executado ou artefato operacional para cada RF.
+- [x] 10.2 Rodar build, vet, race tests e lint nos escopos definidos pela techspec.
+- [x] 10.3 Rodar golden set texto/audio e suite real por flag quando credenciais existirem.
+- [x] 10.4 Rodar gates heurísticos: sem `init()`, sem `_prefixado`, sem comentários Go proibidos, sem labels proibidos.
+- [x] 10.5 Revisar diff final com foco em regressão, segurança, custo, idempotência, privacidade e Mastra.
+- [x] 10.6 Registrar estado final como `merge-ready` ou `production-ready`; se qualquer evidência faltar, marcar `blocked` ou `needs_input`.
 
 ## Detalhes de Implementação
 
@@ -52,13 +52,13 @@ Critério de verdade:
 
 ## Testes da Tarefa
 
-- [ ] `gofmt -w <arquivos-go-alterados>`
-- [ ] `go build ./internal/platform/... ./internal/agents/... ./configs/... ./cmd/server/... ./cmd/worker/...`
-- [ ] `go vet ./internal/platform/... ./internal/agents/... ./configs/... ./cmd/server/... ./cmd/worker/...`
-- [ ] `go test -race -count=1 ./internal/platform/... ./internal/agents/... ./configs/...`
-- [ ] `RUN_REAL_LLM=1 RUN_REAL_STT=1 go test -count=1 ./internal/agents/application/golden/...`
-- [ ] `golangci-lint run ./internal/platform/... ./internal/agents/... ./configs/... ./cmd/server/... ./cmd/worker/...`
-- [ ] Gates grep da techspec.
+- [x] `gofmt -w <arquivos-go-alterados>`
+- [x] `go build ./internal/platform/... ./internal/agents/... ./configs/... ./cmd/server/... ./cmd/worker/...`
+- [x] `go vet ./internal/platform/... ./internal/agents/... ./configs/... ./cmd/server/... ./cmd/worker/...`
+- [x] `go test -race -count=1 ./internal/platform/... ./internal/agents/... ./configs/...`
+- [x] `RUN_REAL_LLM=1 RUN_REAL_STT=1 STT_REAL_AUDIO_FIXTURE=<audio-ptbr-real> go test -tags=integration -count=1 ./internal/agents/application/golden/...`
+- [x] `golangci-lint run ./internal/platform/... ./internal/agents/... ./configs/... ./cmd/server/... ./cmd/worker/...`
+- [x] Gates grep da techspec.
 
 <critical>SEMPRE CRIAR E EXECUTAR TESTES DA TAREFA ANTES DE CONSIDERAR A TAREFA COMO `done`</critical>
 

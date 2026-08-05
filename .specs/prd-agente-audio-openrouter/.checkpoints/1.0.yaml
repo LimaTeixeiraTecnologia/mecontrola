@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-agente-audio-openrouter/1.0_execution_report.md
+summary: "Payload WhatsApp tipado (MessageTypeText/MessageTypeAudio) preservando texto e rejeitando audio invalido antes do roteamento."
+timestamp: "2026-08-04T21:00:35Z"

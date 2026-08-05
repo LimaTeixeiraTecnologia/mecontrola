@@ -17,12 +17,12 @@ Adicionar configuração production-safe, métricas e logs sanitizados para áud
 
 ## Subtarefas
 
-- [ ] 7.1 Adicionar campos de config e parsing de env em `configs/config.go`.
-- [ ] 7.2 Validar production quando `AudioEnabled=true`: modelo, bytes, duração, custo, timeout e replies.
-- [ ] 7.3 Integrar config no wiring de server/worker sem alterar default textual.
-- [ ] 7.4 Instrumentar métricas de áudio com labels de baixa cardinalidade.
-- [ ] 7.5 Instrumentar logs sanitizados por outcome/reason sem transcrição completa.
-- [ ] 7.6 Adicionar testes de config, labels e grep de vazamento.
+- [x] 7.1 Adicionar campos de config e parsing de env em `configs/config.go`.
+- [x] 7.2 Validar production quando `AudioEnabled=true`: modelo, bytes, duração, custo, timeout e replies.
+- [x] 7.3 Integrar config no wiring de server/worker sem alterar default textual.
+- [x] 7.4 Instrumentar métricas de áudio com labels de baixa cardinalidade.
+- [x] 7.5 Instrumentar logs sanitizados por outcome/reason sem transcrição completa.
+- [x] 7.6 Adicionar testes de config, labels e grep de vazamento.
 
 ## Detalhes de Implementação
 
@@ -57,10 +57,10 @@ Evidências de codebase a respeitar:
 
 ## Testes da Tarefa
 
-- [ ] `go test -race -count=1 ./configs/...`
-- [ ] `go test -race -count=1 ./internal/agents/... ./internal/platform/...`
-- [ ] Grep de labels proibidos em métricas.
-- [ ] Teste de config production com áudio habilitado/desabilitado.
+- [x] `go test -race -count=1 ./configs/...`
+- [x] `go test -race -count=1 ./internal/agents/... ./internal/platform/...`
+- [x] Grep de labels proibidos em métricas.
+- [x] Teste de config production com áudio habilitado/desabilitado.
 
 <critical>SEMPRE CRIAR E EXECUTAR TESTES DA TAREFA ANTES DE CONSIDERAR A TAREFA COMO `done`</critical>
 

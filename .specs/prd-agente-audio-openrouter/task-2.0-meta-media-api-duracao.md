@@ -17,12 +17,12 @@ Criar fronteira fina para resolver URL de mídia e baixar áudio pela Meta Media
 
 ## Subtarefas
 
-- [ ] 2.1 Criar pacote `internal/platform/whatsapp/media` como adapter fino para Meta Media API.
-- [ ] 2.2 Implementar `Resolve(ctx, mediaID)` para `GET /{media-id}` com bearer token e timeout.
-- [ ] 2.3 Implementar `Download(ctx, url, maxBytes)` com limite `maxBytes + 1`, SHA-256 e descarte controlado.
-- [ ] 2.4 Implementar extração determinística de duração para `audio/ogg`/Opus e M4A/AAC, com menor dependência auditável possível quando necessário.
-- [ ] 2.5 Retornar erros tipados para media id inválido, URL ausente, download acima do limite, SHA mismatch, MIME não suportado e duração indeterminável.
-- [ ] 2.6 Criar testes unitários com servidor HTTP fake e fixtures pequenas.
+- [x] 2.1 Criar pacote `internal/platform/whatsapp/media` como adapter fino para Meta Media API.
+- [x] 2.2 Implementar `Resolve(ctx, mediaID)` para `GET /{media-id}` com bearer token e timeout.
+- [x] 2.3 Implementar `Download(ctx, url, maxBytes)` com limite `maxBytes + 1`, SHA-256 e descarte controlado.
+- [x] 2.4 Implementar extração determinística de duração para `audio/ogg`/Opus e M4A/AAC, com menor dependência auditável possível quando necessário.
+- [x] 2.5 Retornar erros tipados para media id inválido, URL ausente, download acima do limite, SHA mismatch, MIME não suportado e duração indeterminável.
+- [x] 2.6 Criar testes unitários com servidor HTTP fake e fixtures pequenas.
 
 ## Detalhes de Implementação
 
@@ -56,10 +56,10 @@ Evidências de codebase a respeitar:
 
 ## Testes da Tarefa
 
-- [ ] `go test -race -count=1 ./internal/platform/whatsapp/media`
-- [ ] Teste de URL ausente, auth, timeout, maxBytes, MIME inválido e SHA mismatch.
-- [ ] Teste de duração para fixture `audio/ogg`/Opus.
-- [ ] Teste de duração para fixture M4A/AAC quando fixture existir.
+- [x] `go test -race -count=1 ./internal/platform/whatsapp/media`
+- [x] Teste de URL ausente, auth, timeout, maxBytes, MIME inválido e SHA mismatch.
+- [x] Teste de duração para fixture `audio/ogg`/Opus.
+- [x] Teste de duração para fixture M4A/AAC quando fixture existir.
 
 <critical>SEMPRE CRIAR E EXECUTAR TESTES DA TAREFA ANTES DE CONSIDERAR A TAREFA COMO `done`</critical>
 

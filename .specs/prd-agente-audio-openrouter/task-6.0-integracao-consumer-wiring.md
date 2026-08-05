@@ -16,12 +16,12 @@ Integrar áudio no fluxo real do consumidor `internal/agents` antes de `HandleIn
 
 ## Subtarefas
 
-- [ ] 6.1 Atualizar rota WhatsApp do módulo de agentes para publicar inbound tipado com modalidade e metadados de áudio.
-- [ ] 6.2 Atualizar consumer para branch textual preservar comportamento atual e branch de áudio seguir `validate -> audit -> download -> duration/cost preflight -> STT -> decide -> persist -> dispatch`.
-- [ ] 6.3 Garantir retorno antes de `tryResume`, onboarding e `HandleInbound` para qualquer outcome não aprovado.
-- [ ] 6.4 Integrar Media API client, transcriber, audit repository e replies via DI manual no `module.go`.
-- [ ] 6.5 Garantir que áudio aprovado chama o mesmo `HandleInbound` textual com texto canônico sem enriquecimento semântico.
-- [ ] 6.6 Criar testes de consumer para texto, áudio aprovado, áudio incerto, falha STT, falha download, duplicado e feature flag off.
+- [x] 6.1 Atualizar rota WhatsApp do módulo de agentes para publicar inbound tipado com modalidade e metadados de áudio.
+- [x] 6.2 Atualizar consumer para branch textual preservar comportamento atual e branch de áudio seguir `validate -> audit -> download -> duration/cost preflight -> STT -> decide -> persist -> dispatch`.
+- [x] 6.3 Garantir retorno antes de `tryResume`, onboarding e `HandleInbound` para qualquer outcome não aprovado.
+- [x] 6.4 Integrar Media API client, transcriber, audit repository e replies via DI manual no `module.go`.
+- [x] 6.5 Garantir que áudio aprovado chama o mesmo `HandleInbound` textual com texto canônico sem enriquecimento semântico.
+- [x] 6.6 Criar testes de consumer para texto, áudio aprovado, áudio incerto, falha STT, falha download, duplicado e feature flag off.
 
 ## Detalhes de Implementação
 
@@ -57,11 +57,11 @@ Evidências de codebase a respeitar:
 
 ## Testes da Tarefa
 
-- [ ] `go test -race -count=1 ./internal/agents/infrastructure/messaging/database/consumers/...`
-- [ ] `go test -race -count=1 ./internal/agents/...`
-- [ ] Teste de 0 `HandleInbound` em `TranscriptionUncertain`.
-- [ ] Teste de 0 tool call em áudio não aprovado.
-- [ ] Teste de compatibilidade textual.
+- [x] `go test -race -count=1 ./internal/agents/infrastructure/messaging/database/consumers/...`
+- [x] `go test -race -count=1 ./internal/agents/...`
+- [x] Teste de 0 `HandleInbound` em `TranscriptionUncertain`.
+- [x] Teste de 0 tool call em áudio não aprovado.
+- [x] Teste de compatibilidade textual.
 
 <critical>SEMPRE CRIAR E EXECUTAR TESTES DA TAREFA ANTES DE CONSIDERAR A TAREFA COMO `done`</critical>
 

@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-agente-audio-openrouter/3.0_execution_report.md
+summary: Porta STT OpenRouter com preflight/postflight de custo implementada e testada sem regressao
+timestamp: 2026-08-04T00:00:00Z

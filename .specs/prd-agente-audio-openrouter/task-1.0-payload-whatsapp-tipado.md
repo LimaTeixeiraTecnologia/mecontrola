@@ -16,12 +16,12 @@ Estender o parser e o contrato de payload WhatsApp para representar texto e áud
 
 ## Subtarefas
 
-- [ ] 1.1 Ler `internal/platform/whatsapp/payload/types.go`, `parser.go`, dispatcher e handler WhatsApp reais.
-- [ ] 1.2 Modelar `MessageTypeText` e `MessageTypeAudio` como tipos fechados, com zero value inválido quando aplicável.
-- [ ] 1.3 Adicionar `Audio` ao contrato público `payload.Message` com `MediaID`, `MimeType`, `SHA256` e `Voice`.
-- [ ] 1.4 Ajustar parser para texto continuar idêntico e áudio sair tipado sem preencher texto vazio como mensagem textual.
-- [ ] 1.5 Criar testes de parser para texto atual, áudio real sanitizado, áudio sem media id, payload desconhecido e regressão de timestamp/WAMID.
-- [ ] 1.6 Rodar gates direcionados do pacote e grep de vazamento de áudio bruto/base64 em fixtures.
+- [x] 1.1 Ler `internal/platform/whatsapp/payload/types.go`, `parser.go`, dispatcher e handler WhatsApp reais.
+- [x] 1.2 Modelar `MessageTypeText` e `MessageTypeAudio` como tipos fechados, com zero value inválido quando aplicável.
+- [x] 1.3 Adicionar `Audio` ao contrato público `payload.Message` com `MediaID`, `MimeType`, `SHA256` e `Voice`.
+- [x] 1.4 Ajustar parser para texto continuar idêntico e áudio sair tipado sem preencher texto vazio como mensagem textual.
+- [x] 1.5 Criar testes de parser para texto atual, áudio real sanitizado, áudio sem media id, payload desconhecido e regressão de timestamp/WAMID.
+- [x] 1.6 Rodar gates direcionados do pacote e grep de vazamento de áudio bruto/base64 em fixtures.
 
 ## Detalhes de Implementação
 
@@ -57,11 +57,11 @@ Evidências de codebase a respeitar:
 
 ## Testes da Tarefa
 
-- [ ] `go test -race -count=1 ./internal/platform/whatsapp/payload`
-- [ ] `go test -race -count=1 ./internal/platform/whatsapp/...`
-- [ ] Teste com fixture real sanitizada de áudio.
-- [ ] Teste de regressão textual existente.
-- [ ] Grep para impedir áudio bruto/base64 em fixture versionada.
+- [x] `go test -race -count=1 ./internal/platform/whatsapp/payload`
+- [x] `go test -race -count=1 ./internal/platform/whatsapp/...`
+- [x] Teste com fixture real sanitizada de áudio.
+- [x] Teste de regressão textual existente.
+- [x] Grep para impedir áudio bruto/base64 em fixture versionada.
 
 <critical>SEMPRE CRIAR E EXECUTAR TESTES DA TAREFA ANTES DE CONSIDERAR A TAREFA COMO `done`</critical>
 

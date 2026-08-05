@@ -1,0 +1,4 @@
+status: done
+report_path: .specs/prd-agente-audio-openrouter/5.0_execution_report.md
+summary: "Migration 000015 (PK wamid, CHECK outcome/reason fechados) e repository de auditoria de audio validados com testes reais up/down/PK/CHECK contra Postgres via Docker."
+timestamp: "2026-08-04T21:35:30Z"
