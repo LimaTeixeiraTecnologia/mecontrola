@@ -8,6 +8,8 @@ Load complete when: tarefa envolve estrutura de projeto, injeção de dependênc
 
 Principios gerais de arquitetura, DI e sinais de excesso estao em `shared-architecture.md` (agent-governance). Este arquivo cobre apenas especificidades Go.
 
+Para modelagem de dominio (value objects, smart constructors, discriminated unions, state-as-type, workflow como pipeline), ver `references/domain-modeling.md`. Carregar somente quando o diff envolver `**/domain/**` ou refatoracao de `Execute` monolitico — nao duplicar aqui.
+
 ## DI em Go
 - DI manual via construtores. Wire/fx apenas quando arvore de dependencias justificar.
 

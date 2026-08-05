@@ -36,18 +36,6 @@ type orderRepository interface {
 }
 ```
 
-### Abstração de infraestrutura (clock, ID)
-```go
-// application/order/service.go
-type clock interface {
-    Now() time.Time
-}
-
-type idGenerator interface {
-    New() string
-}
-```
-
 ### Composição de interfaces
 ```go
 type Reader interface {
@@ -94,6 +82,56 @@ Declarar a interface no pacote que a **consome**, não no que a implementa (acce
 structs). Exceção: interface compartilhada por múltiplos consumidores pode residir em `pkg/`
 dedicado — nunca em `internal/` do produtor.
 
+### R6.6 — Command Object obrigatório em use cases de escrita `[HARD]`
+
+Use cases de escrita (create, update, delete, soft delete, link) DEVEM receber um **Command
+Object** — uma struct nomeada com campos no vocabulário do domínio (linguagem ubíqua) — em vez
+de lista de parâmetros primitivos. `IssuedAt time.Time` é o nome correto, não `now`.
+
+O Command é construído na camada de interface (handler/adapter), que chama
+`clock.SystemClock{}.Now()` sem injeção. Use cases nunca injetam `clock.Clock`.
+
+```go
+// PROIBIDO — parâmetros primitivos, vocabulário técnico
+func (u *DeleteUserUseCase) Execute(ctx context.Context, rawID string, now time.Time) error
+
+// CORRETO — Command Object com linguagem ubíqua
+type DeleteUserCommand struct {
+    UserID   string
+    IssuedAt time.Time
+}
+
+func (u *DeleteUserUseCase) Execute(ctx context.Context, cmd DeleteUserCommand) error
+
+// Interface adapter (handler) — único lugar que chama clock
+cmd := DeleteUserCommand{UserID: rawID, IssuedAt: clock.SystemClock{}.Now()}
+err := uc.Execute(ctx, cmd)
+```
+
+Regras derivadas:
+- Campos do Command usam nomes do domínio: `IssuedAt`, `OccurredAt`, `RequestedAt` — nunca `now`, `ts`, `t`.
+- Command é uma struct concreta exportada, sem interface.
+- Use case de leitura (`Find*`) pode continuar com parâmetros primitivos — Command é obrigatório apenas para operações que geram efeitos colaterais persistentes.
+
+### R6.7 — `clock.Clock` PROIBIDO em use cases `[HARD]`
+
+Use cases não devem injetar nem instanciar `clock.Clock`. O instante de tempo chega via
+Command Object (`IssuedAt time.Time`). `clock.SystemClock{}.Now()` é chamado exclusivamente
+na camada de interface (handler/adapter) antes de construir o Command.
+
+```go
+// PROIBIDO — clock injetado no use case
+type DeleteUserUseCase struct {
+    repo  interfaces.UserRepository
+    clock clock.Clock  // ← PROIBIDO
+}
+
+// CORRETO — sem dependência de infraestrutura de tempo
+type DeleteUserUseCase struct {
+    repo interfaces.UserRepository
+}
+```
+
 ### R6.5 — Erros sentinel vs tipo customizado — decisão explícita
 A escolha deve ser explícita e baseada nas necessidades do caller (complementa R5.10). Erros
 exportados passam a fazer **parte da API pública** — documentá-los.
@@ -114,3 +152,6 @@ exportados passam a fazer **parte da API pública** — documentá-los.
 - Interface sem consumidor real.
 - Interface que replica a struct pública método a método sem abstrair.
 - `interface{}` / `any` como substituto de modelagem de domínio.
+- `var _ Interface = (*Type)(nil)` — asserção de interface em tempo de compilação. O compilador detecta não-conformidade no ponto de uso; a asserção explícita é redundante e polui o pacote. **[HARD]**
+- `clock.Clock` injetado em repositórios ou use cases — repositórios recebem `now time.Time` do use case; use cases recebem `IssuedAt time.Time` via Command Object do handler. **[HARD]** (ver R6.6, R6.7)
+- Use case de escrita com parâmetros primitivos (`rawID string, now time.Time`) — obrigatório Command Object com vocabulário do domínio. **[HARD]** (ver R6.6)
