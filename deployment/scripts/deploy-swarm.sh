@@ -59,9 +59,58 @@ fi
 SSH_OPTS=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10)
 [[ -n "$VPS_SSH_KEY" ]] && SSH_OPTS+=(-i "$VPS_SSH_KEY")
 
+# Retry de transporte SSH. A rota entre o runner e a VPS apresenta perda de
+# pacote intermitente: o deploy ja falhou com "connect to host: Connection timed
+# out" logo na primeira chamada, sem nada ter sido executado remotamente.
+SSH_MAX_ATTEMPTS="${SSH_MAX_ATTEMPTS:-5}"
+SSH_RETRY_BASE_DELAY="${SSH_RETRY_BASE_DELAY:-5}"
+SSH_PREFLIGHT_ATTEMPTS="${SSH_PREFLIGHT_ATTEMPTS:-6}"
+
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
-ssh_exec() { ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" "$@"; }
-ssh_script() { ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" bash -s -- "$@"; }
+# Logs de retry vao para stderr: varias chamadas sao consumidas por command
+# substitution e nao podem ter a saida poluida.
+log_err() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" >&2; }
+
+# Repete apenas quando o ssh falha no transporte (exit 255): timeout de conexao,
+# rede indisponivel, host inalcancavel. Erro do comando remoto propaga sem
+# retry, para nunca reexecutar efeito colateral por falha de negocio.
+ssh_with_retry() {
+  local attempt=1 rc=0 delay="$SSH_RETRY_BASE_DELAY"
+  while :; do
+    # O rc precisa ser capturado no ramo else: apos um `if` sem else, o `$?`
+    # passa a ser o status do proprio `if` (0), mascarando a falha.
+    if "$@"; then
+      return 0
+    else
+      rc=$?
+    fi
+    if [[ "$rc" -ne 255 ]] || [[ "$attempt" -ge "$SSH_MAX_ATTEMPTS" ]]; then
+      return "$rc"
+    fi
+    log_err "SSH indisponivel (exit 255) — tentativa ${attempt}/${SSH_MAX_ATTEMPTS}; repetindo em ${delay}s"
+    sleep "$delay"
+    attempt=$((attempt + 1))
+    delay=$((delay * 2))
+  done
+}
+
+ssh_raw() { ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" "$@"; }
+ssh_exec() { ssh_with_retry ssh_raw "$@"; }
+
+# O corpo do script remoto vem por stdin (heredoc). Precisa ser bufferizado
+# antes do retry, senao a segunda tentativa enviaria stdin vazio.
+ssh_script_once() {
+  local payload="$1"
+  shift
+  printf '%s' "$payload" | ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" bash -s -- "$@"
+}
+ssh_script() {
+  local payload
+  payload="$(cat)"
+  ssh_with_retry ssh_script_once "$payload" "$@"
+}
+
+scp_raw() { scp "${SSH_OPTS[@]}" "$1" "${VPS_USER}@${VPS_HOST}:$2"; }
 
 upload_file() {
   local src="$1" dst="$2"
@@ -69,9 +118,30 @@ upload_file() {
     cp "$src" "$dst"
     chmod 600 "$dst"
   else
-    scp "${SSH_OPTS[@]}" "$src" "${VPS_USER}@${VPS_HOST}:${dst}"
-    ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" "chmod 600 '${dst}'"
+    ssh_with_retry scp_raw "$src" "$dst"
+    ssh_exec "chmod 600 '${dst}'"
   fi
+}
+
+# Preflight: nao adianta iniciar o deploy se a VPS esta inalcancavel. Falha aqui
+# e barata e nao deixa estado remoto pela metade.
+wait_for_ssh() {
+  [[ "${LOCAL_DEPLOY:-false}" == "true" ]] && return 0
+  local attempt=1 delay="$SSH_RETRY_BASE_DELAY"
+  while :; do
+    if ssh_raw true >/dev/null 2>&1; then
+      [[ "$attempt" -gt 1 ]] && log "SSH disponivel apos ${attempt} tentativas"
+      return 0
+    fi
+    if [[ "$attempt" -ge "$SSH_PREFLIGHT_ATTEMPTS" ]]; then
+      log "ERRO: VPS inalcancavel por SSH apos ${SSH_PREFLIGHT_ATTEMPTS} tentativas"
+      return 1
+    fi
+    log "VPS ainda inalcancavel por SSH — tentativa ${attempt}/${SSH_PREFLIGHT_ATTEMPTS}; repetindo em ${delay}s"
+    sleep "$delay"
+    attempt=$((attempt + 1))
+    delay=$((delay * 2))
+  done
 }
 
 log "Iniciando deploy Swarm — tag: ${IMAGE_TAG}${IMAGE_DIGEST:+, digest: ${IMAGE_DIGEST}}"
@@ -91,6 +161,9 @@ fi
 
 [[ -f "$SECRETS_ENV_FILE" ]] || { log "ERRO: arquivo de secrets nao encontrado: $SECRETS_ENV_FILE"; exit 1; }
 [[ -f "$PROD_ENV_FILE" ]] || { log "ERRO: arquivo de config nao encontrado: $PROD_ENV_FILE"; exit 1; }
+
+log "Verificando conectividade SSH com a VPS"
+wait_for_ssh || exit 1
 
 log "Verificando estado do Swarm na VPS"
 SWARM_STATE=$(ssh_exec "docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo unknown")
