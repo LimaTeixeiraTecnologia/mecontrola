@@ -64,7 +64,11 @@ SSH_OPTS=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10)
 # out" logo na primeira chamada, sem nada ter sido executado remotamente.
 SSH_MAX_ATTEMPTS="${SSH_MAX_ATTEMPTS:-5}"
 SSH_RETRY_BASE_DELAY="${SSH_RETRY_BASE_DELAY:-5}"
-SSH_PREFLIGHT_ATTEMPTS="${SSH_PREFLIGHT_ATTEMPTS:-6}"
+SSH_RETRY_MAX_DELAY="${SSH_RETRY_MAX_DELAY:-30}"
+# Preflight e orcamentado por tempo, nao por numero de tentativas: as quedas
+# observadas duraram mais de 3 minutos, e backoff exponencial puro gasta o
+# orcamento dormindo. Com teto de delay, o intervalo entre sondagens estabiliza.
+SSH_PREFLIGHT_TIMEOUT="${SSH_PREFLIGHT_TIMEOUT:-600}"
 
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
 # Logs de retry vao para stderr: varias chamadas sao consumidas por command
@@ -91,6 +95,7 @@ ssh_with_retry() {
     sleep "$delay"
     attempt=$((attempt + 1))
     delay=$((delay * 2))
+    if [[ "$delay" -gt "$SSH_RETRY_MAX_DELAY" ]]; then delay="$SSH_RETRY_MAX_DELAY"; fi
   done
 }
 
@@ -127,20 +132,24 @@ upload_file() {
 # e barata e nao deixa estado remoto pela metade.
 wait_for_ssh() {
   [[ "${LOCAL_DEPLOY:-false}" == "true" ]] && return 0
-  local attempt=1 delay="$SSH_RETRY_BASE_DELAY"
+  local attempt=1 delay="$SSH_RETRY_BASE_DELAY" started elapsed
+  started=$(date +%s)
   while :; do
     if ssh_raw true >/dev/null 2>&1; then
-      [[ "$attempt" -gt 1 ]] && log "SSH disponivel apos ${attempt} tentativas"
+      [[ "$attempt" -gt 1 ]] && log "SSH disponivel apos ${attempt} tentativas ($(( $(date +%s) - started ))s)"
       return 0
     fi
-    if [[ "$attempt" -ge "$SSH_PREFLIGHT_ATTEMPTS" ]]; then
-      log "ERRO: VPS inalcancavel por SSH apos ${SSH_PREFLIGHT_ATTEMPTS} tentativas"
+    elapsed=$(( $(date +%s) - started ))
+    if [[ "$elapsed" -ge "$SSH_PREFLIGHT_TIMEOUT" ]]; then
+      log "ERRO: VPS inalcancavel por SSH apos ${elapsed}s (${attempt} tentativas)"
+      log "ERRO: os pacotes nao chegam a VPS; ver deployment/runbooks/deploy.md secao de conectividade"
       return 1
     fi
-    log "VPS ainda inalcancavel por SSH — tentativa ${attempt}/${SSH_PREFLIGHT_ATTEMPTS}; repetindo em ${delay}s"
+    log "VPS ainda inalcancavel por SSH — tentativa ${attempt} (${elapsed}s/${SSH_PREFLIGHT_TIMEOUT}s); repetindo em ${delay}s"
     sleep "$delay"
     attempt=$((attempt + 1))
     delay=$((delay * 2))
+    if [[ "$delay" -gt "$SSH_RETRY_MAX_DELAY" ]]; then delay="$SSH_RETRY_MAX_DELAY"; fi
   done
 }
 
