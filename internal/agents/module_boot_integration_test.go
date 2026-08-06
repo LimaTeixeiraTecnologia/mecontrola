@@ -62,7 +62,7 @@ func (s *ModuleBootSuite) buildDeps() agents.Deps {
 	cardModule, err := card.NewCardModule(s.ctx, s.cfg, o11y, s.db, passthrough, nil, nil)
 	s.Require().NoError(err, "card module")
 
-	budgetsModule, err := budgets.NewBudgetsModule(s.cfg, o11y, s.db, categoriesModule, passthrough, nil, nil)
+	budgetsModule, err := budgets.NewBudgetsModule(s.cfg, o11y, s.db, categoriesModule, passthrough, nil, nil, nil)
 	s.Require().NoError(err, "budgets module")
 
 	txModule, err := transactions.NewTransactionsModule(s.cfg, o11y, s.db, cardModule, categoriesModule, passthrough)

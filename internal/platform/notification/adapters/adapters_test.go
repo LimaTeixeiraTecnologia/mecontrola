@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification/adapters"
 )
 
@@ -27,11 +28,13 @@ func (f *fakeWhatsApp) SendTextMessage(_ context.Context, to, text string) error
 	return f.err
 }
 
-func (f *fakeWhatsApp) SendActivationTemplate(_ context.Context, to, templateName, token string) (string, error) {
+func (f *fakeWhatsApp) SendTemplateMessage(_ context.Context, to string, message notification.TemplateMessage) (string, error) {
 	f.tmplCalled = true
 	f.to = to
-	f.tmpl = templateName
-	f.tok = token
+	f.tmpl = message.TemplateName
+	if len(message.Components) > 0 && len(message.Components[0].Parameters) > 0 {
+		f.tok = message.Components[0].Parameters[0].Text
+	}
 	if f.err != nil {
 		return "", f.err
 	}
@@ -59,7 +62,20 @@ func (s *AdaptersSuite) TestWhatsAppSenderSendText() {
 func (s *AdaptersSuite) TestWhatsAppSenderSendTemplate() {
 	fake := &fakeWhatsApp{}
 	sender := adapters.NewWhatsAppSender(fake)
-	id, err := sender.SendTemplate(context.Background(), "+5511999990000", "activation_reminder", "tok-x")
+	id, err := sender.SendTemplate(context.Background(), notification.TemplateMessage{
+		Channel:      notification.ChannelWhatsApp,
+		ExternalID:   "+5511999990000",
+		TemplateName: "activation_reminder",
+		LanguageCode: "pt_BR",
+		Components: []notification.TemplateComponent{
+			{
+				Type: notification.TemplateComponentBody,
+				Parameters: []notification.TemplateParameter{
+					{Type: notification.TemplateParameterText, Text: "tok-x"},
+				},
+			},
+		},
+	})
 	s.Require().NoError(err)
 	s.Equal("wamid.test", id)
 	s.True(fake.tmplCalled)
@@ -72,7 +88,20 @@ func (s *AdaptersSuite) TestWhatsAppSenderPropagatesError() {
 	sender := adapters.NewWhatsAppSender(fake)
 	err := sender.SendText(context.Background(), "+5511", "x")
 	s.Require().Error(err)
-	_, err = sender.SendTemplate(context.Background(), "+5511", "t", "tok")
+	_, err = sender.SendTemplate(context.Background(), notification.TemplateMessage{
+		Channel:      notification.ChannelWhatsApp,
+		ExternalID:   "+5511",
+		TemplateName: "t",
+		LanguageCode: "pt_BR",
+		Components: []notification.TemplateComponent{
+			{
+				Type: notification.TemplateComponentBody,
+				Parameters: []notification.TemplateParameter{
+					{Type: notification.TemplateParameterText, Text: "tok"},
+				},
+			},
+		},
+	})
 	s.Require().Error(err)
 }
 

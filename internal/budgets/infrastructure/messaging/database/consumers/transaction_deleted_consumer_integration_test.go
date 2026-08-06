@@ -37,7 +37,7 @@ func (s *TransactionDeletedConsumerIntegrationSuite) newModule(db *sqlx.DB) *bud
 	s.Require().NoError(err)
 	authMW := func(h http.Handler) http.Handler { return h }
 	catModule := categories.NewCategoriesModule(db, o11y, authMW)
-	mod, err := budgets.NewBudgetsModule(cfg, o11y, db, catModule, authMW, nil, nil)
+	mod, err := budgets.NewBudgetsModule(cfg, o11y, db, catModule, authMW, nil, nil, nil)
 	s.Require().NoError(err)
 	return mod
 }
