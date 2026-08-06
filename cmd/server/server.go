@@ -21,6 +21,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents"
+	agentalerts "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/alerts"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/bootstrap"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
@@ -32,6 +33,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/http/server/health"
 	openapidocs "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/http/server/openapi"
+	memorypostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/memory/infrastructure/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/observability/runtimemetrics"
 	deduppostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
@@ -207,7 +209,14 @@ func Run() error {
 		return fmt.Errorf("run: build channel gateway: %w", err)
 	}
 	channelResolver := bootstrap.BuildBudgetsChannelResolver(identityModule)
-	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, db, categoriesModule, identityModule.GatewayAuthMiddleware, channelGateway, channelResolver)
+	alertContextRecorder := agentalerts.NewAlertContextRecorder(
+		memorypostgres.NewThreadRepository(db, o11y),
+		memorypostgres.NewMessageRepository(db, o11y),
+		memorypostgres.NewWorkingMemoryRepository(db, o11y),
+		cfg.BudgetsConfig.ThresholdAlertContextTTL,
+		o11y,
+	)
+	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, db, categoriesModule, identityModule.GatewayAuthMiddleware, channelGateway, channelResolver, alertContextRecorder)
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo budgets: %w", err)
 	}
@@ -265,6 +274,7 @@ func Run() error {
 		InboundDedup:       deduppostgres.NewConsumerDedupRepository(db),
 		InboundTimeout:     cfg.AgentConfig.InboundTimeout,
 		AgentMaxTokens:     cfg.AgentConfig.MecontrolaMaxTokens,
+		AlertContextTTL:    cfg.BudgetsConfig.ThresholdAlertContextTTL,
 	})
 	if err != nil {
 		return fmt.Errorf("run: inicializar modulo agents: %w", err)

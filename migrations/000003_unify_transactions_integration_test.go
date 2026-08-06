@@ -26,7 +26,7 @@ type Unify000003Suite struct {
 
 const (
 	beforeUnifyMigrationVersion  = uint(2)
-	stepsFromLatestToBeforeUnify = -16
+	stepsFromLatestToBeforeUnify = -17
 )
 
 func TestUnify000003Suite(t *testing.T) {

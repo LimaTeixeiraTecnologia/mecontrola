@@ -107,6 +107,10 @@ func (n *noopChannelGateway) SendActivationTemplate(_ context.Context, _, _, _, 
 	return "", nil
 }
 
+func (n *noopChannelGateway) SendTemplate(_ context.Context, _ notification.TemplateMessage) (string, error) {
+	return "", nil
+}
+
 type noopChannelResolver struct{}
 
 func newNoopChannelResolver() appinterfaces.UserChannelResolver {

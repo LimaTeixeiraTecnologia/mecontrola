@@ -50,7 +50,6 @@ func (s *ThresholdWorkflowSuite) TestDecideAlerts_Category() {
 				{
 					UserID:       userID,
 					BudgetID:     budgetID,
-					Kind:         services.ThresholdAlertCategory,
 					RootSlug:     valueobjects.RootSlugCustoFixo,
 					PlannedCents: tc.planned,
 					SpentCents:   tc.spent,
@@ -59,7 +58,7 @@ func (s *ThresholdWorkflowSuite) TestDecideAlerts_Category() {
 			alerts := services.ThresholdWorkflow{}.DecideAlerts(snaps, cfg, nil, refDay)
 			if tc.want {
 				s.Len(alerts, 1)
-				s.Equal(services.ThresholdAlertCategory, alerts[0].Kind)
+				s.True(alerts[0].Kind == services.ThresholdAlertCategory80 || alerts[0].Kind == services.ThresholdAlertCategory100)
 				s.Equal(refDay, alerts[0].RefDay)
 				s.Equal(tc.planned-tc.spent, alerts[0].AmountRemainingCents)
 			} else {
@@ -69,7 +68,7 @@ func (s *ThresholdWorkflowSuite) TestDecideAlerts_Category() {
 	}
 }
 
-func (s *ThresholdWorkflowSuite) TestDecideAlerts_Goal() {
+func (s *ThresholdWorkflowSuite) TestDecideAlerts_MetasRootNeverEmitsInReleaseOne() {
 	userID := uuid.New()
 	budgetID := uuid.New()
 	refDay := time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC)
@@ -82,8 +81,8 @@ func (s *ThresholdWorkflowSuite) TestDecideAlerts_Goal() {
 		want    bool
 	}{
 		{"49% — sem alerta", 49, 100, false},
-		{"50% — alerta", 50, 100, true},
-		{"51% — alerta", 51, 100, true},
+		{"50% — sem alerta no Release 1", 50, 100, false},
+		{"100% — sem alerta no Release 1", 100, 100, false},
 	}
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
@@ -91,19 +90,14 @@ func (s *ThresholdWorkflowSuite) TestDecideAlerts_Goal() {
 				{
 					UserID:       userID,
 					BudgetID:     budgetID,
-					Kind:         services.ThresholdAlertGoal,
 					RootSlug:     valueobjects.RootSlugMetas,
 					PlannedCents: tc.planned,
 					SpentCents:   tc.spent,
 				},
 			}
 			alerts := services.ThresholdWorkflow{}.DecideAlerts(snaps, cfg, nil, refDay)
-			if tc.want {
-				s.Len(alerts, 1)
-				s.Equal(services.ThresholdAlertGoal, alerts[0].Kind)
-			} else {
-				s.Empty(alerts)
-			}
+			s.False(tc.want)
+			s.Empty(alerts)
 		})
 	}
 }
@@ -119,7 +113,7 @@ func (s *ThresholdWorkflowSuite) TestDecideAlerts_DedupSkipsAlreadySent() {
 		{
 			UserID:   userID,
 			BudgetID: budgetID,
-			Kind:     services.ThresholdAlertCategory,
+			Kind:     services.ThresholdAlertCategory80,
 			RefDay:   expectedDay,
 		}: {},
 	}
@@ -128,7 +122,6 @@ func (s *ThresholdWorkflowSuite) TestDecideAlerts_DedupSkipsAlreadySent() {
 		{
 			UserID:       userID,
 			BudgetID:     budgetID,
-			Kind:         services.ThresholdAlertCategory,
 			RootSlug:     valueobjects.RootSlugCustoFixo,
 			PlannedCents: 1000,
 			SpentCents:   900,
@@ -150,7 +143,6 @@ func (s *ThresholdWorkflowSuite) TestDecideAlerts_TruncatesRefDayToUTCDay() {
 		{
 			UserID:       userID,
 			BudgetID:     budgetID,
-			Kind:         services.ThresholdAlertCategory,
 			RootSlug:     valueobjects.RootSlugCustoFixo,
 			PlannedCents: 1000,
 			SpentCents:   900,
@@ -169,11 +161,12 @@ func (s *ThresholdWorkflowSuite) TestDecideAlerts_MultipleSnapshots() {
 	cfg := s.defaultConfig()
 
 	snaps := []services.ActiveBudgetSnapshot{
-		{UserID: userID, BudgetID: uuid.New(), Kind: services.ThresholdAlertCategory, RootSlug: valueobjects.RootSlugCustoFixo, PlannedCents: 1000, SpentCents: 900},
-		{UserID: userID, BudgetID: uuid.New(), Kind: services.ThresholdAlertCategory, RootSlug: valueobjects.RootSlugPrazeres, PlannedCents: 1000, SpentCents: 100},
-		{UserID: userID, BudgetID: uuid.New(), Kind: services.ThresholdAlertGoal, RootSlug: valueobjects.RootSlugMetas, PlannedCents: 1000, SpentCents: 600},
+		{UserID: userID, BudgetID: uuid.New(), RootSlug: valueobjects.RootSlugCustoFixo, PlannedCents: 1000, SpentCents: 900},
+		{UserID: userID, BudgetID: uuid.New(), RootSlug: valueobjects.RootSlugPrazeres, PlannedCents: 1000, SpentCents: 100},
+		{UserID: userID, BudgetID: uuid.New(), RootSlug: valueobjects.RootSlugMetas, PlannedCents: 1000, SpentCents: 600},
 	}
 
 	alerts := services.ThresholdWorkflow{}.DecideAlerts(snaps, cfg, nil, refDay)
-	s.Len(alerts, 2)
+	s.Len(alerts, 1)
+	s.Equal(services.ThresholdAlertCategory80, alerts[0].Kind)
 }

@@ -444,70 +444,6 @@ func (_c *BudgetPlanner_EditCategoryPercentage_Call) RunAndReturn(run func(ctx c
 	return _c
 }
 
-func (_mock *BudgetPlanner) ListFutureBudgets(ctx context.Context, userID uuid.UUID, competence string) ([]interfaces.FutureBudget, error) {
-	ret := _mock.Called(ctx, userID, competence)
-
-	if len(ret) == 0 {
-		panic("no return value specified for ListFutureBudgets")
-	}
-
-	var r0 []interfaces.FutureBudget
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string) ([]interfaces.FutureBudget, error)); ok {
-		return returnFunc(ctx, userID, competence)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string) []interfaces.FutureBudget); ok {
-		r0 = returnFunc(ctx, userID, competence)
-	} else if ret.Get(0) != nil {
-		r0 = ret.Get(0).([]interfaces.FutureBudget)
-	}
-	if len(ret) > 1 {
-		if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, string) error); ok {
-			r1 = returnFunc(ctx, userID, competence)
-		} else {
-			r1 = ret.Error(1)
-		}
-	}
-	return r0, r1
-}
-
-type BudgetPlanner_ListFutureBudgets_Call struct {
-	*mock.Call
-}
-
-func (_e *BudgetPlanner_Expecter) ListFutureBudgets(ctx any, userID any, competence any) *BudgetPlanner_ListFutureBudgets_Call {
-	return &BudgetPlanner_ListFutureBudgets_Call{Call: _e.mock.On("ListFutureBudgets", ctx, userID, competence)}
-}
-
-func (_c *BudgetPlanner_ListFutureBudgets_Call) Run(run func(ctx context.Context, userID uuid.UUID, competence string)) *BudgetPlanner_ListFutureBudgets_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 uuid.UUID
-		if args[1] != nil {
-			arg1 = args[1].(uuid.UUID)
-		}
-		var arg2 string
-		if args[2] != nil {
-			arg2 = args[2].(string)
-		}
-		run(arg0, arg1, arg2)
-	})
-	return _c
-}
-
-func (_c *BudgetPlanner_ListFutureBudgets_Call) Return(b []interfaces.FutureBudget, err error) *BudgetPlanner_ListFutureBudgets_Call {
-	_c.Call.Return(b, err)
-	return _c
-}
-
-func (_c *BudgetPlanner_ListFutureBudgets_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, competence string) ([]interfaces.FutureBudget, error)) *BudgetPlanner_ListFutureBudgets_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // GetMonthlySummary provides a mock function for the type BudgetPlanner
 func (_mock *BudgetPlanner) GetMonthlySummary(ctx context.Context, userID uuid.UUID, competence string) (interfaces.BudgetSummary, error) {
 	ret := _mock.Called(ctx, userID, competence)
@@ -648,6 +584,80 @@ func (_c *BudgetPlanner_ListAlerts_Call) RunAndReturn(run func(ctx context.Conte
 	return _c
 }
 
+// ListFutureBudgets provides a mock function for the type BudgetPlanner
+func (_mock *BudgetPlanner) ListFutureBudgets(ctx context.Context, userID uuid.UUID, competence string) ([]interfaces.FutureBudget, error) {
+	ret := _mock.Called(ctx, userID, competence)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListFutureBudgets")
+	}
+
+	var r0 []interfaces.FutureBudget
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string) ([]interfaces.FutureBudget, error)); ok {
+		return returnFunc(ctx, userID, competence)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, string) []interfaces.FutureBudget); ok {
+		r0 = returnFunc(ctx, userID, competence)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]interfaces.FutureBudget)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, string) error); ok {
+		r1 = returnFunc(ctx, userID, competence)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// BudgetPlanner_ListFutureBudgets_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListFutureBudgets'
+type BudgetPlanner_ListFutureBudgets_Call struct {
+	*mock.Call
+}
+
+// ListFutureBudgets is a helper method to define mock.On call
+//   - ctx context.Context
+//   - userID uuid.UUID
+//   - competence string
+func (_e *BudgetPlanner_Expecter) ListFutureBudgets(ctx any, userID any, competence any) *BudgetPlanner_ListFutureBudgets_Call {
+	return &BudgetPlanner_ListFutureBudgets_Call{Call: _e.mock.On("ListFutureBudgets", ctx, userID, competence)}
+}
+
+func (_c *BudgetPlanner_ListFutureBudgets_Call) Run(run func(ctx context.Context, userID uuid.UUID, competence string)) *BudgetPlanner_ListFutureBudgets_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *BudgetPlanner_ListFutureBudgets_Call) Return(futureBudgets []interfaces.FutureBudget, err error) *BudgetPlanner_ListFutureBudgets_Call {
+	_c.Call.Return(futureBudgets, err)
+	return _c
+}
+
+func (_c *BudgetPlanner_ListFutureBudgets_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, competence string) ([]interfaces.FutureBudget, error)) *BudgetPlanner_ListFutureBudgets_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // SuggestAllocation provides a mock function for the type BudgetPlanner
 func (_mock *BudgetPlanner) SuggestAllocation(ctx context.Context, totalCents int64, allocations []interfaces.AllocationBP) ([]interfaces.AllocationCents, error) {
 	ret := _mock.Called(ctx, totalCents, allocations)
@@ -722,6 +732,7 @@ func (_c *BudgetPlanner_SuggestAllocation_Call) RunAndReturn(run func(ctx contex
 	return _c
 }
 
+// SyncFutureBudgets provides a mock function for the type BudgetPlanner
 func (_mock *BudgetPlanner) SyncFutureBudgets(ctx context.Context, userID uuid.UUID, sourceCompetence string) (interfaces.FutureBudgetSyncResult, error) {
 	ret := _mock.Called(ctx, userID, sourceCompetence)
 
@@ -739,20 +750,23 @@ func (_mock *BudgetPlanner) SyncFutureBudgets(ctx context.Context, userID uuid.U
 	} else {
 		r0 = ret.Get(0).(interfaces.FutureBudgetSyncResult)
 	}
-	if len(ret) > 1 {
-		if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, string) error); ok {
-			r1 = returnFunc(ctx, userID, sourceCompetence)
-		} else {
-			r1 = ret.Error(1)
-		}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, string) error); ok {
+		r1 = returnFunc(ctx, userID, sourceCompetence)
+	} else {
+		r1 = ret.Error(1)
 	}
 	return r0, r1
 }
 
+// BudgetPlanner_SyncFutureBudgets_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SyncFutureBudgets'
 type BudgetPlanner_SyncFutureBudgets_Call struct {
 	*mock.Call
 }
 
+// SyncFutureBudgets is a helper method to define mock.On call
+//   - ctx context.Context
+//   - userID uuid.UUID
+//   - sourceCompetence string
 func (_e *BudgetPlanner_Expecter) SyncFutureBudgets(ctx any, userID any, sourceCompetence any) *BudgetPlanner_SyncFutureBudgets_Call {
 	return &BudgetPlanner_SyncFutureBudgets_Call{Call: _e.mock.On("SyncFutureBudgets", ctx, userID, sourceCompetence)}
 }
@@ -771,13 +785,17 @@ func (_c *BudgetPlanner_SyncFutureBudgets_Call) Run(run func(ctx context.Context
 		if args[2] != nil {
 			arg2 = args[2].(string)
 		}
-		run(arg0, arg1, arg2)
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
 	})
 	return _c
 }
 
-func (_c *BudgetPlanner_SyncFutureBudgets_Call) Return(r interfaces.FutureBudgetSyncResult, err error) *BudgetPlanner_SyncFutureBudgets_Call {
-	_c.Call.Return(r, err)
+func (_c *BudgetPlanner_SyncFutureBudgets_Call) Return(futureBudgetSyncResult interfaces.FutureBudgetSyncResult, err error) *BudgetPlanner_SyncFutureBudgets_Call {
+	_c.Call.Return(futureBudgetSyncResult, err)
 	return _c
 }
 
