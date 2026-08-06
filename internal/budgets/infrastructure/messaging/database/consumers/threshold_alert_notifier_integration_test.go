@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
-
 	"github.com/JailtonJunior94/devkit-go/pkg/observability/noop"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
@@ -40,10 +38,6 @@ func (g *noopChannelGateway) SendActivationTemplate(_ context.Context, _, _, _, 
 	return "", nil
 }
 
-func (g *noopChannelGateway) SendTemplate(_ context.Context, _ notification.TemplateMessage) (string, error) {
-	return "", nil
-}
-
 type ThresholdAlertNotifierIntegrationSuite struct {
 	suite.Suite
 }
@@ -52,36 +46,11 @@ func TestThresholdAlertNotifierIntegration(t *testing.T) {
 	suite.Run(t, new(ThresholdAlertNotifierIntegrationSuite))
 }
 
-type approvedCatalog struct{}
-
-func (approvedCatalog) Lookup(_ services.ThresholdAlertKind) (appinterfaces.AlertTemplate, bool) {
-	return appinterfaces.AlertTemplate{
-		Name:         "mecontrola_category_threshold_80",
-		LanguageCode: "pt_BR",
-		Category:     services.TemplateCategoryUtility,
-		Status:       services.TemplateStatusApproved,
-	}, true
-}
-
-type utcTimezoneResolver struct{}
-
-func (utcTimezoneResolver) Resolve(_ context.Context, _ uuid.UUID) (*time.Location, error) {
-	return time.UTC, nil
-}
-
-type grantedConsent struct{}
-
-func (grantedConsent) HasConsent(_ context.Context, _ uuid.UUID) (bool, error) { return true, nil }
-
 func (s *ThresholdAlertNotifierIntegrationSuite) buildNotifier(sentRepo appinterfaces.ThresholdAlertSentRepository) *consumers.ThresholdAlertNotifier {
 	o11y := noop.NewProvider()
 	resolver := &noopChannelResolver{}
 	gateway := &noopChannelGateway{}
-	uc := usecases.NewNotifyThresholdAlert(
-		sentRepo, resolver, gateway,
-		approvedCatalog{}, utcTimezoneResolver{}, grantedConsent{}, nil,
-		0, 0, o11y,
-	)
+	uc := usecases.NewNotifyThresholdAlert(sentRepo, resolver, gateway, o11y)
 	return consumers.NewThresholdAlertNotifier(uc, o11y)
 }
 
@@ -89,7 +58,7 @@ func (s *ThresholdAlertNotifierIntegrationSuite) buildEnvelope(userID, budgetID 
 	raw, _ := json.Marshal(map[string]any{
 		"user_id":                userID.String(),
 		"budget_id":              budgetID.String(),
-		"kind":                   "category_threshold_80",
+		"kind":                   "category_threshold",
 		"root_slug":              "expense.prazeres",
 		"percent_used_bps":       int32(8500),
 		"amount_remaining_cents": int64(15000),
@@ -112,7 +81,7 @@ func (s *ThresholdAlertNotifierIntegrationSuite) TestMarksBudgetAlertSentAfterHa
 	s.Require().NoError(sentRepo.InsertSent(ctx, appinterfaces.ThresholdAlertSentRecord{
 		UserID:   userID,
 		BudgetID: budgetID,
-		Kind:     services.ThresholdAlertCategory80,
+		Kind:     services.ThresholdAlertCategory,
 		RefDay:   refDay,
 		SentAt:   time.Now().UTC(),
 	}))
@@ -145,7 +114,7 @@ func (s *ThresholdAlertNotifierIntegrationSuite) TestIdempotency() {
 	s.Require().NoError(sentRepo.InsertSent(ctx, appinterfaces.ThresholdAlertSentRecord{
 		UserID:   userID,
 		BudgetID: budgetID,
-		Kind:     services.ThresholdAlertCategory80,
+		Kind:     services.ThresholdAlertCategory,
 		RefDay:   refDay,
 		SentAt:   time.Now().UTC(),
 	}))

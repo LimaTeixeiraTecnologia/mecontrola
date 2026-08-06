@@ -217,7 +217,6 @@ func (_c *BudgetRepository_DeleteDraft_Call) RunAndReturn(run func(ctx context.C
 	return _c
 }
 
-// GetActiveByUserCompetence provides a mock function for the type BudgetRepository
 func (_mock *BudgetRepository) GetActiveByUserCompetence(ctx context.Context, userID uuid.UUID, c valueobjects.Competence) (entities.Budget, error) {
 	ret := _mock.Called(ctx, userID, c)
 
@@ -235,23 +234,20 @@ func (_mock *BudgetRepository) GetActiveByUserCompetence(ctx context.Context, us
 	} else {
 		r0 = ret.Get(0).(entities.Budget)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, valueobjects.Competence) error); ok {
-		r1 = returnFunc(ctx, userID, c)
-	} else {
-		r1 = ret.Error(1)
+	if len(ret) > 1 {
+		if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, valueobjects.Competence) error); ok {
+			r1 = returnFunc(ctx, userID, c)
+		} else {
+			r1 = ret.Error(1)
+		}
 	}
 	return r0, r1
 }
 
-// BudgetRepository_GetActiveByUserCompetence_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetActiveByUserCompetence'
 type BudgetRepository_GetActiveByUserCompetence_Call struct {
 	*mock.Call
 }
 
-// GetActiveByUserCompetence is a helper method to define mock.On call
-//   - ctx context.Context
-//   - userID uuid.UUID
-//   - c valueobjects.Competence
 func (_e *BudgetRepository_Expecter) GetActiveByUserCompetence(ctx any, userID any, c any) *BudgetRepository_GetActiveByUserCompetence_Call {
 	return &BudgetRepository_GetActiveByUserCompetence_Call{Call: _e.mock.On("GetActiveByUserCompetence", ctx, userID, c)}
 }
@@ -270,17 +266,13 @@ func (_c *BudgetRepository_GetActiveByUserCompetence_Call) Run(run func(ctx cont
 		if args[2] != nil {
 			arg2 = args[2].(valueobjects.Competence)
 		}
-		run(
-			arg0,
-			arg1,
-			arg2,
-		)
+		run(arg0, arg1, arg2)
 	})
 	return _c
 }
 
-func (_c *BudgetRepository_GetActiveByUserCompetence_Call) Return(budget entities.Budget, err error) *BudgetRepository_GetActiveByUserCompetence_Call {
-	_c.Call.Return(budget, err)
+func (_c *BudgetRepository_GetActiveByUserCompetence_Call) Return(b entities.Budget, err error) *BudgetRepository_GetActiveByUserCompetence_Call {
+	_c.Call.Return(b, err)
 	return _c
 }
 
@@ -501,80 +493,6 @@ func (_c *BudgetRepository_ListAbandonedDrafts_Call) RunAndReturn(run func(ctx c
 	return _c
 }
 
-// ListFutureByUserCompetence provides a mock function for the type BudgetRepository
-func (_mock *BudgetRepository) ListFutureByUserCompetence(ctx context.Context, userID uuid.UUID, from valueobjects.Competence) ([]entities.Budget, error) {
-	ret := _mock.Called(ctx, userID, from)
-
-	if len(ret) == 0 {
-		panic("no return value specified for ListFutureByUserCompetence")
-	}
-
-	var r0 []entities.Budget
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, valueobjects.Competence) ([]entities.Budget, error)); ok {
-		return returnFunc(ctx, userID, from)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, valueobjects.Competence) []entities.Budget); ok {
-		r0 = returnFunc(ctx, userID, from)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]entities.Budget)
-		}
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, valueobjects.Competence) error); ok {
-		r1 = returnFunc(ctx, userID, from)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// BudgetRepository_ListFutureByUserCompetence_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListFutureByUserCompetence'
-type BudgetRepository_ListFutureByUserCompetence_Call struct {
-	*mock.Call
-}
-
-// ListFutureByUserCompetence is a helper method to define mock.On call
-//   - ctx context.Context
-//   - userID uuid.UUID
-//   - from valueobjects.Competence
-func (_e *BudgetRepository_Expecter) ListFutureByUserCompetence(ctx any, userID any, from any) *BudgetRepository_ListFutureByUserCompetence_Call {
-	return &BudgetRepository_ListFutureByUserCompetence_Call{Call: _e.mock.On("ListFutureByUserCompetence", ctx, userID, from)}
-}
-
-func (_c *BudgetRepository_ListFutureByUserCompetence_Call) Run(run func(ctx context.Context, userID uuid.UUID, from valueobjects.Competence)) *BudgetRepository_ListFutureByUserCompetence_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 uuid.UUID
-		if args[1] != nil {
-			arg1 = args[1].(uuid.UUID)
-		}
-		var arg2 valueobjects.Competence
-		if args[2] != nil {
-			arg2 = args[2].(valueobjects.Competence)
-		}
-		run(
-			arg0,
-			arg1,
-			arg2,
-		)
-	})
-	return _c
-}
-
-func (_c *BudgetRepository_ListFutureByUserCompetence_Call) Return(budgets []entities.Budget, err error) *BudgetRepository_ListFutureByUserCompetence_Call {
-	_c.Call.Return(budgets, err)
-	return _c
-}
-
-func (_c *BudgetRepository_ListFutureByUserCompetence_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, from valueobjects.Competence) ([]entities.Budget, error)) *BudgetRepository_ListFutureByUserCompetence_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // ListFutureNotActivated provides a mock function for the type BudgetRepository
 func (_mock *BudgetRepository) ListFutureNotActivated(ctx context.Context, userID uuid.UUID, from valueobjects.Competence, max int) ([]entities.Budget, error) {
 	ret := _mock.Called(ctx, userID, from, max)
@@ -651,6 +569,70 @@ func (_c *BudgetRepository_ListFutureNotActivated_Call) Return(budgets []entitie
 }
 
 func (_c *BudgetRepository_ListFutureNotActivated_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, from valueobjects.Competence, max int) ([]entities.Budget, error)) *BudgetRepository_ListFutureNotActivated_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+func (_mock *BudgetRepository) ListFutureByUserCompetence(ctx context.Context, userID uuid.UUID, from valueobjects.Competence) ([]entities.Budget, error) {
+	ret := _mock.Called(ctx, userID, from)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListFutureByUserCompetence")
+	}
+
+	var r0 []entities.Budget
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, valueobjects.Competence) ([]entities.Budget, error)); ok {
+		return returnFunc(ctx, userID, from)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, valueobjects.Competence) []entities.Budget); ok {
+		r0 = returnFunc(ctx, userID, from)
+	} else if ret.Get(0) != nil {
+		r0 = ret.Get(0).([]entities.Budget)
+	}
+	if len(ret) > 1 {
+		if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, valueobjects.Competence) error); ok {
+			r1 = returnFunc(ctx, userID, from)
+		} else {
+			r1 = ret.Error(1)
+		}
+	}
+	return r0, r1
+}
+
+type BudgetRepository_ListFutureByUserCompetence_Call struct {
+	*mock.Call
+}
+
+func (_e *BudgetRepository_Expecter) ListFutureByUserCompetence(ctx any, userID any, from any) *BudgetRepository_ListFutureByUserCompetence_Call {
+	return &BudgetRepository_ListFutureByUserCompetence_Call{Call: _e.mock.On("ListFutureByUserCompetence", ctx, userID, from)}
+}
+
+func (_c *BudgetRepository_ListFutureByUserCompetence_Call) Run(run func(ctx context.Context, userID uuid.UUID, from valueobjects.Competence)) *BudgetRepository_ListFutureByUserCompetence_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 valueobjects.Competence
+		if args[2] != nil {
+			arg2 = args[2].(valueobjects.Competence)
+		}
+		run(arg0, arg1, arg2)
+	})
+	return _c
+}
+
+func (_c *BudgetRepository_ListFutureByUserCompetence_Call) Return(b []entities.Budget, err error) *BudgetRepository_ListFutureByUserCompetence_Call {
+	_c.Call.Return(b, err)
+	return _c
+}
+
+func (_c *BudgetRepository_ListFutureByUserCompetence_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, from valueobjects.Competence) ([]entities.Budget, error)) *BudgetRepository_ListFutureByUserCompetence_Call {
 	_c.Call.Return(run)
 	return _c
 }

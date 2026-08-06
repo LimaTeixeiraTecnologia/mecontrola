@@ -3,7 +3,6 @@ package usecases
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
 
@@ -11,18 +10,13 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 )
 
-type AlertContextExpirer interface {
-	PurgeExpired(ctx context.Context, resourceID string, now time.Time) error
-}
-
 type HandleInbound struct {
-	runtime      agent.AgentRuntime
-	alertContext AlertContextExpirer
-	o11y         observability.Observability
+	runtime agent.AgentRuntime
+	o11y    observability.Observability
 }
 
-func NewHandleInbound(runtime agent.AgentRuntime, alertContext AlertContextExpirer, o11y observability.Observability) *HandleInbound {
-	return &HandleInbound{runtime: runtime, alertContext: alertContext, o11y: o11y}
+func NewHandleInbound(runtime agent.AgentRuntime, o11y observability.Observability) *HandleInbound {
+	return &HandleInbound{runtime: runtime, o11y: o11y}
 }
 
 func (uc *HandleInbound) Execute(ctx context.Context, in input.InboundInput) (agent.Outcome, error) {
@@ -32,8 +26,6 @@ func (uc *HandleInbound) Execute(ctx context.Context, in input.InboundInput) (ag
 	if err := in.Validate(); err != nil {
 		return agent.Outcome{}, err
 	}
-
-	uc.purgeExpiredAlertContext(ctx, in.ResourceID)
 
 	outcome, err := uc.runtime.Execute(ctx, agent.InboundRequest{
 		ResourceID: in.ResourceID,
@@ -48,15 +40,4 @@ func (uc *HandleInbound) Execute(ctx context.Context, in input.InboundInput) (ag
 	}
 
 	return outcome, nil
-}
-
-func (uc *HandleInbound) purgeExpiredAlertContext(ctx context.Context, resourceID string) {
-	if uc.alertContext == nil {
-		return
-	}
-	if err := uc.alertContext.PurgeExpired(ctx, resourceID, time.Now().UTC()); err != nil {
-		uc.o11y.Logger().Warn(ctx, "agents.usecase.handle_inbound.alert_context_purge_failed",
-			observability.Error(err),
-		)
-	}
 }

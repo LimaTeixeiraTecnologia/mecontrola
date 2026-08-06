@@ -30,8 +30,6 @@ type thresholdAlertPayload struct {
 	RootSlug             string `json:"root_slug,omitempty"`
 	PercentUsedBps       int32  `json:"percent_used_bps"`
 	AmountRemainingCents int64  `json:"amount_remaining_cents"`
-	PlannedCents         int64  `json:"planned_cents"`
-	SpentCents           int64  `json:"spent_cents"`
 	RefDay               string `json:"ref_day"`
 }
 
@@ -102,8 +100,6 @@ func (c *ThresholdAlertNotifier) Handle(ctx context.Context, event events.Event)
 		RootSlug:             p.RootSlug,
 		PercentUsedBps:       p.PercentUsedBps,
 		AmountRemainingCents: p.AmountRemainingCents,
-		PlannedCents:         p.PlannedCents,
-		SpentCents:           p.SpentCents,
 		RefDay:               refDay.UTC(),
 	}
 
@@ -119,14 +115,6 @@ func parseAlertKindLabel(s string) (services.ThresholdAlertKind, error) {
 		return services.ThresholdAlertCategory, nil
 	case "goal_achieved":
 		return services.ThresholdAlertGoal, nil
-	case "category_threshold_80":
-		return services.ThresholdAlertCategory80, nil
-	case "category_threshold_100":
-		return services.ThresholdAlertCategory100, nil
-	case "budget_missing_month_start":
-		return services.ThresholdAlertBudgetMissingMonthStart, nil
-	case "budget_not_reviewed_day_3":
-		return services.ThresholdAlertBudgetNotReviewedDay3, nil
 	default:
 		return 0, fmt.Errorf("budgets.consumer.threshold_alert_notifier: kind desconhecido %q", s)
 	}

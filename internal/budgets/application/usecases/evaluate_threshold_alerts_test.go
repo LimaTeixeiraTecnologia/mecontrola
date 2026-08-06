@@ -41,8 +41,6 @@ func (s *EvaluateThresholdAlertsSuite) SetupTest() {
 	s.sentRepo = mockInterfaces.NewThresholdAlertSentRepository(s.T())
 	s.publisher = mockInterfaces.NewThresholdAlertPublisher(s.T())
 	s.factory.EXPECT().ThresholdAlertSentRepository(mock.Anything).Return(s.sentRepo).Maybe()
-	s.sentRepo.EXPECT().ListUsersMissingBudget(mock.Anything, mock.Anything, 100).Return(nil, nil).Maybe()
-	s.sentRepo.EXPECT().ListUnreviewedBudgets(mock.Anything, mock.Anything, 100).Return(nil, nil).Maybe()
 	s.uow = uowMocks.NewUnitOfWorkVoid(s.T())
 
 	cfg := services.ThresholdConfig{
@@ -56,7 +54,6 @@ func (s *EvaluateThresholdAlertsSuite) SetupTest() {
 		cfg,
 		time.UTC,
 		100,
-		false,
 		s.obs,
 	)
 }
@@ -101,7 +98,7 @@ func (s *EvaluateThresholdAlertsSuite) TestExecute_DispatchesCategoryAlert() {
 		Publish(mock.Anything, mock.Anything, mock.MatchedBy(func(alert services.DomainAlert) bool {
 			return alert.UserID == userID &&
 				alert.BudgetID == budgetID &&
-				alert.Kind == services.ThresholdAlertCategory80 &&
+				alert.Kind == services.ThresholdAlertCategory &&
 				alert.PercentUsedBps == 9000 &&
 				alert.AmountRemainingCents == 100
 		}), mock.Anything).
@@ -112,7 +109,7 @@ func (s *EvaluateThresholdAlertsSuite) TestExecute_DispatchesCategoryAlert() {
 		InsertSent(mock.Anything, mock.MatchedBy(func(rec interfaces.ThresholdAlertSentRecord) bool {
 			return rec.UserID == userID &&
 				rec.BudgetID == budgetID &&
-				rec.Kind == services.ThresholdAlertCategory80
+				rec.Kind == services.ThresholdAlertCategory
 		})).
 		Return(nil).
 		Once()
@@ -121,7 +118,7 @@ func (s *EvaluateThresholdAlertsSuite) TestExecute_DispatchesCategoryAlert() {
 	s.NoError(err)
 }
 
-func (s *EvaluateThresholdAlertsSuite) TestExecute_GoalRootIsNotEmittedInReleaseOne() {
+func (s *EvaluateThresholdAlertsSuite) TestExecute_GoalKindWhenRootIsMetas() {
 	userID := uuid.New()
 	budgetID := uuid.New()
 	comp := valueobjects.CompetenceFromTime(time.Now().UTC(), time.UTC)
@@ -139,69 +136,9 @@ func (s *EvaluateThresholdAlertsSuite) TestExecute_GoalRootIsNotEmittedInRelease
 
 	s.sentRepo.EXPECT().ListActiveForThresholdScan(mock.Anything, mock.Anything, 100).Return(active, nil).Once()
 	s.sentRepo.EXPECT().ListSentForDay(mock.Anything, mock.Anything).Return(nil, nil).Once()
-
-	err := s.useCase.Execute(s.ctx)
-	s.NoError(err)
-}
-
-func (s *EvaluateThresholdAlertsSuite) TestExecute_EmitsCategory100WhenFullyConsumed() {
-	userID := uuid.New()
-	budgetID := uuid.New()
-	comp := valueobjects.CompetenceFromTime(time.Now().UTC(), time.UTC)
-
-	active := []interfaces.ActiveBudgetForScan{
-		{
-			UserID:       userID,
-			BudgetID:     budgetID,
-			Competence:   comp,
-			RootSlug:     valueobjects.RootSlugCustoFixo,
-			PlannedCents: 1000,
-			SpentCents:   1000,
-		},
-	}
-
-	s.sentRepo.EXPECT().ListActiveForThresholdScan(mock.Anything, mock.Anything, 100).Return(active, nil).Once()
-	s.sentRepo.EXPECT().ListSentForDay(mock.Anything, mock.Anything).Return(nil, nil).Once()
 	s.publisher.EXPECT().
 		Publish(mock.Anything, mock.Anything, mock.MatchedBy(func(a services.DomainAlert) bool {
-			return a.Kind == services.ThresholdAlertCategory100
-		}), mock.Anything).
-		Return(nil).
-		Once()
-	s.sentRepo.EXPECT().InsertSent(mock.Anything, mock.Anything).Return(nil).Once()
-
-	err := s.useCase.Execute(s.ctx)
-	s.NoError(err)
-}
-
-func (s *EvaluateThresholdAlertsSuite) TestExecute_OnlyOneAlertPerUserPerRound() {
-	userID := uuid.New()
-	comp := valueobjects.CompetenceFromTime(time.Now().UTC(), time.UTC)
-
-	active := []interfaces.ActiveBudgetForScan{
-		{
-			UserID:       userID,
-			BudgetID:     uuid.New(),
-			Competence:   comp,
-			RootSlug:     valueobjects.RootSlugCustoFixo,
-			PlannedCents: 1000,
-			SpentCents:   850,
-		},
-		{
-			UserID:       userID,
-			BudgetID:     uuid.New(),
-			Competence:   comp,
-			RootSlug:     valueobjects.RootSlugConhecimento,
-			PlannedCents: 1000,
-			SpentCents:   1200,
-		},
-	}
-
-	s.sentRepo.EXPECT().ListActiveForThresholdScan(mock.Anything, mock.Anything, 100).Return(active, nil).Once()
-	s.sentRepo.EXPECT().ListSentForDay(mock.Anything, mock.Anything).Return(nil, nil).Once()
-	s.publisher.EXPECT().
-		Publish(mock.Anything, mock.Anything, mock.MatchedBy(func(a services.DomainAlert) bool {
-			return a.Kind == services.ThresholdAlertCategory100
+			return a.Kind == services.ThresholdAlertGoal
 		}), mock.Anything).
 		Return(nil).
 		Once()
@@ -235,42 +172,7 @@ func (s *EvaluateThresholdAlertsSuite) TestExecute_DedupsAlreadySent() {
 			{
 				UserID:   userID,
 				BudgetID: budgetID,
-				Kind:     services.ThresholdAlertCategory80,
-				RefDay:   day,
-				SentAt:   time.Now().UTC(),
-			},
-		}, nil).
-		Once()
-
-	err := s.useCase.Execute(s.ctx)
-	s.NoError(err)
-}
-
-func (s *EvaluateThresholdAlertsSuite) TestExecute_SuppressesUserAlreadyAlertedByDifferentKindInEarlierRound() {
-	userID := uuid.New()
-	budgetID := uuid.New()
-	comp := valueobjects.CompetenceFromTime(time.Now().UTC(), time.UTC)
-	day := time.Now().UTC().Truncate(24 * time.Hour)
-
-	active := []interfaces.ActiveBudgetForScan{
-		{
-			UserID:       userID,
-			BudgetID:     budgetID,
-			Competence:   comp,
-			RootSlug:     valueobjects.RootSlugCustoFixo,
-			PlannedCents: 1000,
-			SpentCents:   900,
-		},
-	}
-
-	s.sentRepo.EXPECT().ListActiveForThresholdScan(mock.Anything, mock.Anything, 100).Return(active, nil).Once()
-	s.sentRepo.EXPECT().
-		ListSentForDay(mock.Anything, mock.Anything).
-		Return([]interfaces.ThresholdAlertSentRecord{
-			{
-				UserID:   userID,
-				BudgetID: uuid.New(),
-				Kind:     services.ThresholdAlertBudgetMissingMonthStart,
+				Kind:     services.ThresholdAlertCategory,
 				RefDay:   day,
 				SentAt:   time.Now().UTC(),
 			},
@@ -313,47 +215,4 @@ func (s *EvaluateThresholdAlertsSuite) TestExecute_PublishError_Propagates() {
 
 	err := s.useCase.Execute(s.ctx)
 	s.Error(err)
-}
-
-func (s *EvaluateThresholdAlertsSuite) TestExecute_DryRunDoesNotPublishOrPersist() {
-	userID := uuid.New()
-	budgetID := uuid.New()
-	comp := valueobjects.CompetenceFromTime(time.Now().UTC(), time.UTC)
-
-	active := []interfaces.ActiveBudgetForScan{
-		{
-			UserID:       userID,
-			BudgetID:     budgetID,
-			Competence:   comp,
-			RootSlug:     valueobjects.RootSlugCustoFixo,
-			PlannedCents: 1000,
-			SpentCents:   900,
-		},
-	}
-
-	s.sentRepo.EXPECT().
-		ListActiveForThresholdScan(mock.Anything, mock.Anything, 100).
-		Return(active, nil).
-		Once()
-	s.sentRepo.EXPECT().
-		ListSentForDay(mock.Anything, mock.Anything).
-		Return(nil, nil).
-		Once()
-
-	uc := NewEvaluateThresholdAlerts(
-		s.factory,
-		s.publisher,
-		s.uow,
-		services.ThresholdConfig{
-			Category: valueobjects.MustThresholdRatio(0.80),
-			Goal:     valueobjects.MustThresholdRatio(0.50),
-		},
-		time.UTC,
-		100,
-		true,
-		s.obs,
-	)
-
-	err := uc.Execute(s.ctx)
-	s.NoError(err)
 }

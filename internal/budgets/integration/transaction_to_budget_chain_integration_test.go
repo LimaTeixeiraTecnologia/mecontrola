@@ -95,7 +95,7 @@ func (s *TransactionToBudgetChainSuite) TestExpenseTransactionUpdatesBudgetReadM
 	s.Require().NoError(err, "transactions module")
 	s.Require().NotNil(txModule.CreateTransactionUC, "CreateTransactionUC deve estar wired")
 
-	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil, nil)
+	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil)
 	s.Require().NoError(err, "budgets module")
 	s.Require().NotNil(budgetsModule.TransactionCreatedConsumer, "consumer deve estar wired")
 
@@ -224,7 +224,7 @@ func (s *TransactionToBudgetChainSuite) TestUpdateChain_ReconciliationMovesValue
 	s.Require().NoError(err)
 	txModule, err := transactions.NewTransactionsModule(cfg, o11y, mgr, cardModule, categoriesModule, authMW)
 	s.Require().NoError(err)
-	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil, nil)
+	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(budgetsModule.TransactionUpdatedConsumer, "TransactionUpdatedConsumer deve estar wired")
 
@@ -334,7 +334,7 @@ func (s *TransactionToBudgetChainSuite) TestI6_DeleteChain_ExpenseSoftDeleted() 
 	s.Require().NoError(err)
 	txModule, err := transactions.NewTransactionsModule(cfg, o11y, mgr, cardModule, categoriesModule, authMW)
 	s.Require().NoError(err)
-	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil, nil)
+	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(budgetsModule.TransactionDeletedConsumer, "TransactionDeletedConsumer deve estar wired")
 
@@ -376,7 +376,7 @@ func (s *TransactionToBudgetChainSuite) TestEditBudgetTotal_PersistsNewTotalAndR
 	ctx := context.Background()
 
 	categoriesModule := categories.NewCategoriesModule(mgr, o11y, authMW)
-	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil, nil)
+	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(budgetsModule.EditBudgetTotalUC, "EditBudgetTotalUC deve estar wired")
 
@@ -443,7 +443,7 @@ func (s *TransactionToBudgetChainSuite) TestBudgetActivationPublishesOutboxEvent
 	ctx := context.Background()
 
 	categoriesModule := categories.NewCategoriesModule(mgr, o11y, authMW)
-	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil, nil)
+	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil)
 	s.Require().NoError(err)
 
 	userID := uuid.New()
@@ -488,12 +488,11 @@ func (s *TransactionToBudgetChainSuite) TestThresholdAlertsJobPublishesOutboxEve
 	o11y := noop.NewProvider()
 	cfg := s.buildConfig()
 	cfg.BudgetsConfig.ThresholdAlertsMode = configs.ThresholdAlertsModeBoth
-	cfg.BudgetsConfig.ThresholdAlertsDryRun = false
 	authMW := func(h http.Handler) http.Handler { return h }
 	ctx := context.Background()
 
 	categoriesModule := categories.NewCategoriesModule(mgr, o11y, authMW)
-	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil, nil)
+	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(budgetsModule.ThresholdAlertsJob)
 
@@ -542,73 +541,6 @@ func (s *TransactionToBudgetChainSuite) TestThresholdAlertsJobPublishesOutboxEve
 	)
 	s.Require().NoError(row.Scan(&count))
 	s.Equal(1, count)
-}
-
-func (s *TransactionToBudgetChainSuite) TestThresholdAlertsJobDryRunPublishesNothing() {
-	mgr, _ := testcontainer.Postgres(s.T())
-	o11y := noop.NewProvider()
-	cfg := s.buildConfig()
-	cfg.BudgetsConfig.ThresholdAlertsMode = configs.ThresholdAlertsModeBoth
-	cfg.BudgetsConfig.ThresholdAlertsDryRun = true
-	authMW := func(h http.Handler) http.Handler { return h }
-	ctx := context.Background()
-
-	categoriesModule := categories.NewCategoriesModule(mgr, o11y, authMW)
-	budgetsModule, err := budgets.NewBudgetsModule(cfg, o11y, mgr, categoriesModule, authMW, nil, nil, nil)
-	s.Require().NoError(err)
-	s.Require().NotNil(budgetsModule.ThresholdAlertsJob)
-
-	userID := uuid.New()
-	s.ensureUserExists(ctx, mgr, userID)
-
-	now := time.Now().UTC()
-	loc := budgetvo.SaoPauloLocation()
-	if loc == nil {
-		loc = time.UTC
-	}
-	competence := budgetvo.CompetenceFromTime(now, loc).String()
-
-	created, err := budgetsModule.CreateBudgetUC.Execute(ctx, budgetinput.CreateBudgetInput{
-		UserID:     userID.String(),
-		Competence: competence,
-		TotalCents: 100000,
-		Allocations: []budgetinput.AllocationInput{
-			{RootSlug: "expense.prazeres", BasisPoints: 10000},
-		},
-	})
-	s.Require().NoError(err)
-
-	_, err = budgetsModule.ActivateBudgetUC.Execute(ctx, budgetinput.ActivateBudgetInput{
-		UserID:     userID.String(),
-		Competence: competence,
-	})
-	s.Require().NoError(err)
-
-	_, err = budgetsModule.UpsertExpenseUC.Execute(ctx, budgetinput.UpsertExpenseInput{
-		UserID:                userID.String(),
-		Source:                "transactions",
-		ExternalTransactionID: uuid.New().String(),
-		SubcategoryID:         deliverySubcategoryID,
-		Competence:            competence,
-		AmountCents:           int64(85000),
-		OccurredAt:            now,
-	})
-	s.Require().NoError(err)
-	s.Require().NoError(budgetsModule.ThresholdAlertsJob.Run(ctx))
-
-	var outboxCount int
-	s.Require().NoError(mgr.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM outbox_events WHERE event_type = $1 AND aggregate_id = $2 AND aggregate_user_id = $3`,
-		"budgets.threshold_alert_triggered.v1", created.ID, userID.String(),
-	).Scan(&outboxCount))
-	s.Equal(0, outboxCount, "dry-run nao pode publicar outbox")
-
-	var sentCount int
-	s.Require().NoError(mgr.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM mecontrola.budget_alerts_sent WHERE user_id = $1`,
-		userID,
-	).Scan(&sentCount))
-	s.Equal(0, sentCount, "dry-run nao pode gravar dedup de envio")
 }
 
 func (s *TransactionToBudgetChainSuite) claimTransactionDeletedEnvelope(ctx context.Context, mgr *sqlx.DB, aggregateID string) outbox.Envelope {

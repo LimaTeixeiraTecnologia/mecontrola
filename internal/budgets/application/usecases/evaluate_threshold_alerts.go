@@ -16,12 +16,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
 )
 
-const (
-	EvaluateOutcomeEligible = "eligible"
-	EvaluateOutcomeQueued   = "queued"
-	EvaluateOutcomeSkipped  = "skipped"
-)
-
 type EvaluateThresholdAlerts struct {
 	factory    interfaces.RepositoryFactory
 	publisher  interfaces.ThresholdAlertPublisher
@@ -29,13 +23,8 @@ type EvaluateThresholdAlerts struct {
 	thresholds services.ThresholdConfig
 	location   *time.Location
 	scanLimit  int
-	dryRun     bool
 	o11y       observability.Observability
 	dispatched observability.Counter
-	evaluated  observability.Counter
-	suppressed observability.Counter
-	queued     observability.Counter
-	dryRunHits observability.Counter
 }
 
 func NewEvaluateThresholdAlerts(
@@ -45,9 +34,13 @@ func NewEvaluateThresholdAlerts(
 	thresholds services.ThresholdConfig,
 	location *time.Location,
 	scanLimit int,
-	dryRun bool,
 	o11y observability.Observability,
 ) *EvaluateThresholdAlerts {
+	dispatched := o11y.Metrics().Counter(
+		"budgets_threshold_alerts_dispatched_total",
+		"Total de alertas proativos de limiar disparados",
+		"1",
+	)
 	if scanLimit <= 0 {
 		scanLimit = 500
 	}
@@ -58,33 +51,8 @@ func NewEvaluateThresholdAlerts(
 		thresholds: thresholds,
 		location:   location,
 		scanLimit:  scanLimit,
-		dryRun:     dryRun,
 		o11y:       o11y,
-		dispatched: o11y.Metrics().Counter(
-			"budgets_threshold_alerts_dispatched_total",
-			"Total de alertas proativos de limiar disparados",
-			"1",
-		),
-		evaluated: o11y.Metrics().Counter(
-			"proactive_alerts_evaluated_total",
-			"Total de alertas proativos avaliados por kind e outcome",
-			"1",
-		),
-		suppressed: o11y.Metrics().Counter(
-			"proactive_alerts_suppressed_total",
-			"Total de alertas proativos suprimidos por kind e motivo",
-			"1",
-		),
-		queued: o11y.Metrics().Counter(
-			"proactive_alerts_queued_total",
-			"Total de alertas proativos enfileirados para envio por kind",
-			"1",
-		),
-		dryRunHits: o11y.Metrics().Counter(
-			"proactive_alerts_dry_run_total",
-			"Total de alertas proativos avaliados em dry-run por kind e outcome",
-			"1",
-		),
+		dispatched: dispatched,
 	}
 }
 
@@ -103,7 +71,6 @@ func (uc *EvaluateThresholdAlerts) Execute(ctx context.Context) error {
 	uc.o11y.Logger().Info(ctx, "budgets.usecase.evaluate_threshold_alerts.start",
 		observability.String("competence", competence.String()),
 		observability.String("ref_day", refDay.Format("2006-01-02")),
-		observability.Bool("dry_run", uc.dryRun),
 	)
 
 	_, err := uow.Do(ctx, uc.uow, func(ctx context.Context, tx database.DBTX) (struct{}, error) {
@@ -126,18 +93,7 @@ func (uc *EvaluateThresholdAlerts) executeInTx(ctx context.Context, tx database.
 	if err != nil {
 		return fmt.Errorf("budgets.usecase.evaluate_threshold_alerts: listar budgets ativos: %w", err)
 	}
-
-	missing, err := sentRepo.ListUsersMissingBudget(ctx, competence, uc.scanLimit)
-	if err != nil {
-		return fmt.Errorf("budgets.usecase.evaluate_threshold_alerts: listar orcamentos ausentes: %w", err)
-	}
-
-	unreviewed, err := sentRepo.ListUnreviewedBudgets(ctx, competence, uc.scanLimit)
-	if err != nil {
-		return fmt.Errorf("budgets.usecase.evaluate_threshold_alerts: listar orcamentos nao revisados: %w", err)
-	}
-
-	if len(active) == 0 && len(missing) == 0 && len(unreviewed) == 0 {
+	if len(active) == 0 {
 		return nil
 	}
 
@@ -147,7 +103,6 @@ func (uc *EvaluateThresholdAlerts) executeInTx(ctx context.Context, tx database.
 	}
 
 	alreadySent := make(map[services.ThresholdSentKey]struct{}, len(sent))
-	alreadyAlertedToday := make(map[uuid.UUID]struct{}, len(sent))
 	for _, s := range sent {
 		alreadySent[services.ThresholdSentKey{
 			UserID:   s.UserID,
@@ -155,49 +110,12 @@ func (uc *EvaluateThresholdAlerts) executeInTx(ctx context.Context, tx database.
 			Kind:     s.Kind,
 			RefDay:   s.RefDay.UTC().Truncate(24 * time.Hour),
 		}] = struct{}{}
-		alreadyAlertedToday[s.UserID] = struct{}{}
 	}
 
-	candidates := services.ThresholdWorkflow{}.DecideAlerts(uc.buildSnapshots(active), uc.thresholds, alreadySent, refDay)
-	candidates = append(candidates, services.DecideBudgetLifecycleAlerts(
-		uc.buildMissingSnapshots(missing),
-		uc.buildUnreviewedSnapshots(unreviewed),
-		alreadySent,
-		refDay,
-	)...)
+	snapshots := uc.buildSnapshots(active)
+	alerts := services.ThresholdWorkflow{}.DecideAlerts(snapshots, uc.thresholds, alreadySent, refDay)
 
-	for _, candidate := range candidates {
-		uc.evaluated.Add(ctx, 1,
-			observability.String("kind", candidate.Kind.String()),
-			observability.String("outcome", EvaluateOutcomeEligible),
-		)
-	}
-
-	selected, dropped := services.DecideDailyRoundAlerts(candidates, alreadyAlertedToday)
-
-	for _, drop := range dropped {
-		uc.suppressed.Add(ctx, 1,
-			observability.String("kind", drop.Kind.String()),
-			observability.String("reason", drop.Reason.String()),
-		)
-		uc.o11y.Logger().Info(ctx, "budgets.usecase.evaluate_threshold_alerts.suppressed",
-			observability.String("kind", drop.Kind.String()),
-			observability.String("reason", drop.Reason.String()),
-		)
-	}
-
-	for _, alert := range selected {
-		if uc.dryRun {
-			uc.dryRunHits.Add(ctx, 1,
-				observability.String("kind", alert.Kind.String()),
-				observability.String("outcome", EvaluateOutcomeSkipped),
-			)
-			uc.o11y.Logger().Info(ctx, "budgets.usecase.evaluate_threshold_alerts.dry_run",
-				observability.String("kind", alert.Kind.String()),
-				observability.String("budget_id", alert.BudgetID.String()),
-			)
-			continue
-		}
+	for _, alert := range alerts {
 		if err := uc.publishAndPersist(ctx, tx, sentRepo, alert, now); err != nil {
 			return err
 		}
@@ -208,31 +126,20 @@ func (uc *EvaluateThresholdAlerts) executeInTx(ctx context.Context, tx database.
 func (uc *EvaluateThresholdAlerts) buildSnapshots(active []interfaces.ActiveBudgetForScan) []services.ActiveBudgetSnapshot {
 	out := make([]services.ActiveBudgetSnapshot, 0, len(active))
 	for _, a := range active {
+		kind := services.ThresholdAlertCategory
+		if a.RootSlug == valueobjects.RootSlugMetas {
+			kind = services.ThresholdAlertGoal
+		}
 		out = append(out, services.ActiveBudgetSnapshot{
 			UserID:       a.UserID,
 			BudgetID:     a.BudgetID,
+			Kind:         kind,
 			CategoryID:   uuid.Nil,
 			CardID:       uuid.Nil,
 			RootSlug:     a.RootSlug,
 			PlannedCents: a.PlannedCents,
 			SpentCents:   a.SpentCents,
 		})
-	}
-	return out
-}
-
-func (uc *EvaluateThresholdAlerts) buildMissingSnapshots(missing []interfaces.MissingBudgetForScan) []services.MissingBudgetSnapshot {
-	out := make([]services.MissingBudgetSnapshot, 0, len(missing))
-	for _, m := range missing {
-		out = append(out, services.MissingBudgetSnapshot{UserID: m.UserID})
-	}
-	return out
-}
-
-func (uc *EvaluateThresholdAlerts) buildUnreviewedSnapshots(unreviewed []interfaces.UnreviewedBudgetForScan) []services.UnreviewedBudgetSnapshot {
-	out := make([]services.UnreviewedBudgetSnapshot, 0, len(unreviewed))
-	for _, u := range unreviewed {
-		out = append(out, services.UnreviewedBudgetSnapshot{UserID: u.UserID, BudgetID: u.BudgetID})
 	}
 	return out
 }
@@ -257,11 +164,6 @@ func (uc *EvaluateThresholdAlerts) publishAndPersist(
 		return fmt.Errorf("budgets.usecase.evaluate_threshold_alerts: marcar enviado: %w", err)
 	}
 	uc.dispatched.Add(ctx, 1, observability.String("kind", alert.Kind.String()))
-	uc.queued.Add(ctx, 1, observability.String("kind", alert.Kind.String()))
-	uc.evaluated.Add(ctx, 1,
-		observability.String("kind", alert.Kind.String()),
-		observability.String("outcome", EvaluateOutcomeQueued),
-	)
 	uc.o11y.Logger().Info(ctx, "budgets.usecase.evaluate_threshold_alerts.dispatched",
 		observability.String("kind", alert.Kind.String()),
 		observability.String("budget_id", alert.BudgetID.String()),

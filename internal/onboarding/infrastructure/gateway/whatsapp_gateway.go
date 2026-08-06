@@ -7,7 +7,6 @@ import (
 
 	application "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/application"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/client/meta"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
 )
 
 type WhatsAppGateway struct {
@@ -19,49 +18,20 @@ func NewWhatsAppGateway(client *meta.Client) *WhatsAppGateway {
 }
 
 func (g *WhatsAppGateway) SendActivationTemplate(ctx context.Context, toE164, templateName, token string) (string, error) {
-	wamid, err := g.SendTemplateMessage(ctx, toE164, notification.TemplateMessage{
-		Channel:      notification.ChannelWhatsApp,
-		ExternalID:   toE164,
-		TemplateName: templateName,
-		LanguageCode: "pt_BR",
-		Components: []notification.TemplateComponent{
-			{
-				Type: notification.TemplateComponentBody,
-				Parameters: []notification.TemplateParameter{
-					{Type: notification.TemplateParameterText, Text: "ATIVAR " + token},
+	components := []any{
+		map[string]any{
+			"type": "body",
+			"parameters": []any{
+				map[string]any{
+					"type": "text",
+					"text": "ATIVAR " + token,
 				},
 			},
 		},
-	})
+	}
+	wamid, err := g.client.SendTemplate(ctx, toE164, templateName, "pt_BR", components)
 	if err != nil {
 		return "", g.classifyError(err, "enviar template de ativação")
-	}
-	return wamid, nil
-}
-
-func (g *WhatsAppGateway) SendTemplateMessage(ctx context.Context, toE164 string, message notification.TemplateMessage) (string, error) {
-	components := make([]any, 0, len(message.Components))
-	for _, component := range message.Components {
-		parameters := make([]any, 0, len(component.Parameters))
-		for _, parameter := range component.Parameters {
-			parameters = append(parameters, map[string]any{
-				"type": string(parameter.Type),
-				"text": parameter.Text,
-			})
-		}
-		entry := map[string]any{
-			"type":       string(component.Type),
-			"parameters": parameters,
-		}
-		if component.Type == notification.TemplateComponentButton {
-			entry["sub_type"] = string(component.SubType)
-			entry["index"] = component.Index
-		}
-		components = append(components, entry)
-	}
-	wamid, err := g.client.SendTemplate(ctx, toE164, message.TemplateName, message.LanguageCode, components)
-	if err != nil {
-		return "", g.classifyError(err, "enviar template")
 	}
 	return wamid, nil
 }

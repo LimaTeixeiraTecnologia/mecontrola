@@ -85,7 +85,7 @@ func TestThresholdAlertsJobIntegration_DispatchesAlertWhenAboveThreshold(t *test
 		Goal:     mustThresholdRatio(t, 0.50),
 	}
 
-	uc := usecases.NewEvaluateThresholdAlerts(factory, publisher, unitOfWork, thresholdConfig, time.UTC, 500, false, o11y)
+	uc := usecases.NewEvaluateThresholdAlerts(factory, publisher, unitOfWork, thresholdConfig, time.UTC, 500, o11y)
 	job := handlers.NewThresholdAlertsJob(uc, configs.BudgetsConfig{ThresholdAlertsCron: "@hourly"})
 
 	now := time.Now().UTC()
@@ -124,7 +124,7 @@ func TestThresholdAlertsJobIntegration_DoubleRunDoesNotDuplicateAlerts(t *testin
 		Goal:     mustThresholdRatio(t, 0.50),
 	}
 
-	uc := usecases.NewEvaluateThresholdAlerts(factory, publisher, unitOfWork, thresholdConfig, time.UTC, 500, false, o11y)
+	uc := usecases.NewEvaluateThresholdAlerts(factory, publisher, unitOfWork, thresholdConfig, time.UTC, 500, o11y)
 	job := handlers.NewThresholdAlertsJob(uc, configs.BudgetsConfig{ThresholdAlertsCron: "@hourly"})
 
 	now := time.Now().UTC()
@@ -145,7 +145,7 @@ func TestThresholdAlertsJobIntegration_DoubleRunDoesNotDuplicateAlerts(t *testin
 	).Scan(&countAfterFirst)
 	require.NoError(t, err)
 
-	uc2 := usecases.NewEvaluateThresholdAlerts(factory, publisher, uow.NewUnitOfWork(db), thresholdConfig, time.UTC, 500, false, o11y)
+	uc2 := usecases.NewEvaluateThresholdAlerts(factory, publisher, uow.NewUnitOfWork(db), thresholdConfig, time.UTC, 500, o11y)
 	job2 := handlers.NewThresholdAlertsJob(uc2, configs.BudgetsConfig{ThresholdAlertsCron: "@hourly"})
 
 	require.NoError(t, job2.Run(ctx))

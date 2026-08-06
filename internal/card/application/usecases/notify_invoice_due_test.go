@@ -35,10 +35,6 @@ func (g *recordingGateway) SendActivationTemplate(_ context.Context, _, _, _, _ 
 	return "", nil
 }
 
-func (g *recordingGateway) SendTemplate(_ context.Context, _ notification.TemplateMessage) (string, error) {
-	return "", nil
-}
-
 type NotifyInvoiceDueSuite struct {
 	suite.Suite
 	obs      observability.Observability

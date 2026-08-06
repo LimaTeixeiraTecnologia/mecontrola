@@ -125,7 +125,7 @@ func (s *MultiChannelGatewaySuite) TestSendActivationTemplate() {
 			templateName: "activation",
 			token:        "tok",
 			senders: map[string]notification.ChannelSenders{
-				notification.ChannelWhatsApp: {Template: func(_ context.Context, _ notification.TemplateMessage) (string, error) {
+				notification.ChannelWhatsApp: {Template: func(_ context.Context, _, _, _ string) (string, error) {
 					return "wamid.123", nil
 				}},
 			},
@@ -158,7 +158,7 @@ func (s *MultiChannelGatewaySuite) TestSendActivationTemplate() {
 			templateName: "",
 			token:        "x",
 			senders: map[string]notification.ChannelSenders{
-				notification.ChannelWhatsApp: {Template: func(_ context.Context, _ notification.TemplateMessage) (string, error) {
+				notification.ChannelWhatsApp: {Template: func(_ context.Context, _, _, _ string) (string, error) {
 					return "x", nil
 				}},
 			},
@@ -179,34 +179,4 @@ func (s *MultiChannelGatewaySuite) TestSendActivationTemplate() {
 			s.Equal(scenario.expectMsgID, id)
 		})
 	}
-}
-
-func (s *MultiChannelGatewaySuite) TestSendTemplate() {
-	gw := notification.NewMultiChannelGateway(map[string]notification.ChannelSenders{
-		notification.ChannelWhatsApp: {
-			Template: func(_ context.Context, message notification.TemplateMessage) (string, error) {
-				s.Equal("generic_template", message.TemplateName)
-				s.Len(message.Components, 1)
-				return "wamid.generic", nil
-			},
-		},
-	})
-
-	id, err := gw.SendTemplate(context.Background(), notification.TemplateMessage{
-		Channel:      notification.ChannelWhatsApp,
-		ExternalID:   "+5511999990003",
-		TemplateName: "generic_template",
-		LanguageCode: "pt_BR",
-		Components: []notification.TemplateComponent{
-			{
-				Type: notification.TemplateComponentBody,
-				Parameters: []notification.TemplateParameter{
-					{Type: notification.TemplateParameterText, Text: "mercado"},
-				},
-			},
-		},
-	})
-
-	s.Require().NoError(err)
-	s.Equal("wamid.generic", id)
 }

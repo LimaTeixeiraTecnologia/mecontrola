@@ -7,7 +7,6 @@ package mocks
 import (
 	"context"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -112,78 +111,6 @@ func (_c *WhatsAppGateway_SendActivationTemplate_Call) Return(wamid string, err 
 }
 
 func (_c *WhatsAppGateway_SendActivationTemplate_Call) RunAndReturn(run func(ctx context.Context, toE164 string, templateName string, token string) (string, error)) *WhatsAppGateway_SendActivationTemplate_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// SendTemplateMessage provides a mock function for the type WhatsAppGateway
-func (_mock *WhatsAppGateway) SendTemplateMessage(ctx context.Context, toE164 string, message notification.TemplateMessage) (string, error) {
-	ret := _mock.Called(ctx, toE164, message)
-
-	if len(ret) == 0 {
-		panic("no return value specified for SendTemplateMessage")
-	}
-
-	var r0 string
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, notification.TemplateMessage) (string, error)); ok {
-		return returnFunc(ctx, toE164, message)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, notification.TemplateMessage) string); ok {
-		r0 = returnFunc(ctx, toE164, message)
-	} else {
-		r0 = ret.Get(0).(string)
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, notification.TemplateMessage) error); ok {
-		r1 = returnFunc(ctx, toE164, message)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// WhatsAppGateway_SendTemplateMessage_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SendTemplateMessage'
-type WhatsAppGateway_SendTemplateMessage_Call struct {
-	*mock.Call
-}
-
-// SendTemplateMessage is a helper method to define mock.On call
-//   - ctx context.Context
-//   - toE164 string
-//   - message notification.TemplateMessage
-func (_e *WhatsAppGateway_Expecter) SendTemplateMessage(ctx any, toE164 any, message any) *WhatsAppGateway_SendTemplateMessage_Call {
-	return &WhatsAppGateway_SendTemplateMessage_Call{Call: _e.mock.On("SendTemplateMessage", ctx, toE164, message)}
-}
-
-func (_c *WhatsAppGateway_SendTemplateMessage_Call) Run(run func(ctx context.Context, toE164 string, message notification.TemplateMessage)) *WhatsAppGateway_SendTemplateMessage_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 string
-		if args[1] != nil {
-			arg1 = args[1].(string)
-		}
-		var arg2 notification.TemplateMessage
-		if args[2] != nil {
-			arg2 = args[2].(notification.TemplateMessage)
-		}
-		run(
-			arg0,
-			arg1,
-			arg2,
-		)
-	})
-	return _c
-}
-
-func (_c *WhatsAppGateway_SendTemplateMessage_Call) Return(wamid string, err error) *WhatsAppGateway_SendTemplateMessage_Call {
-	_c.Call.Return(wamid, err)
-	return _c
-}
-
-func (_c *WhatsAppGateway_SendTemplateMessage_Call) RunAndReturn(run func(ctx context.Context, toE164 string, message notification.TemplateMessage) (string, error)) *WhatsAppGateway_SendTemplateMessage_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -12,7 +12,7 @@ type WhatsAppTextSender interface {
 }
 
 type WhatsAppTemplateSender interface {
-	SendTemplateMessage(ctx context.Context, toE164 string, message notification.TemplateMessage) (string, error)
+	SendActivationTemplate(ctx context.Context, toE164, templateName, token string) (string, error)
 }
 
 type WhatsAppGatewayBridge interface {
@@ -35,8 +35,8 @@ func (s *WhatsAppSender) SendText(ctx context.Context, externalID, text string) 
 	return nil
 }
 
-func (s *WhatsAppSender) SendTemplate(ctx context.Context, message notification.TemplateMessage) (string, error) {
-	messageID, err := s.bridge.SendTemplateMessage(ctx, message.ExternalID, message)
+func (s *WhatsAppSender) SendTemplate(ctx context.Context, externalID, templateName, token string) (string, error) {
+	messageID, err := s.bridge.SendActivationTemplate(ctx, externalID, templateName, token)
 	if err != nil {
 		return "", fmt.Errorf("notification.whatsapp: send template: %w", err)
 	}

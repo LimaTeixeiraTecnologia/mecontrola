@@ -39,10 +39,6 @@ func (s *stubChannelGateway) SendActivationTemplate(_ context.Context, _, _, _, 
 	return "", nil
 }
 
-func (s *stubChannelGateway) SendTemplate(_ context.Context, _ notification.TemplateMessage) (string, error) {
-	return "", nil
-}
-
 func (s *stubChannelGateway) callCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

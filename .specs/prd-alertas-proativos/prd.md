@@ -44,7 +44,7 @@ Fonte de verdade de refinamento: `docs/refin/2026-08-05-sdd-alertas-proativos.md
 - RF-02: O sistema deve manter alerta de 90% desabilitado até alteração explícita de domínio, constraint e migration PostgreSQL.
 - RF-03: O sistema deve avaliar alerta de orçamento ausente no início do mês.
 - RF-04: O sistema deve avaliar alerta de orçamento não revisado até o terceiro dia do mês.
-- RF-05: O sistema deve manter motivação semanal (`weekly_motivation`) e retomada de uso após 3 dias (`usage_reactivation_3d`) fora do Release 1, bloqueados de forma auditável mesmo quando allowlistados, template `APPROVED` e opt-in `MARKETING` existirem — nenhum dos dois kinds pode ser emitido enquanto não houver alteração explícita de escopo.
+- RF-05: O sistema deve permitir motivação semanal e retomada de uso após 3 dias somente quando template `APPROVED` e opt-in `MARKETING` estiverem válidos.
 - RF-06: O sistema deve manter risco de abandono, fechamento mensal e meta atingida fora do Release 1.
 - RF-07: O sistema deve aplicar no máximo um alerta proativo iniciado pelo sistema por usuário por rodada diária.
 - RF-08: O sistema deve registrar supressões por prioridade, frequência, canal ausente, opt-in ausente, quiet hours e template ausente ou não aprovado.
@@ -81,7 +81,6 @@ O usuário recebe uma mensagem objetiva no WhatsApp com o motivo do alerta e uma
 - Threshold 90% sem migration e alteração explícita de VO/constraint.
 - Meta atingida enquanto não houver entidade de meta individual provada no codebase.
 - Fechamento mensal e risco de abandono no Release 1.
-- Motivação semanal (`weekly_motivation`) e retomada de uso após 3 dias (`usage_reactivation_3d`), mesmo com template `APPROVED` e opt-in `MARKETING` presentes.
 - Machine learning para churn, otimização automática de horário e experimentos A/B.
 - Novo canal além de WhatsApp.
 - Reescrever o runtime agentivo ou o kernel de workflow.

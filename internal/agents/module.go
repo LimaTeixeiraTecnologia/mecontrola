@@ -16,7 +16,6 @@ import (
 	agenttools "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/tools"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
-	agentalerts "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/alerts"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/binding"
 	jobhandlers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/jobs/handlers"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/messaging/database/consumers"
@@ -112,7 +111,6 @@ type Deps struct {
 	InboundDedup       consumers.MessageDedupStore
 	InboundTimeout     time.Duration
 	AgentMaxTokens     int
-	AlertContextTTL    time.Duration
 }
 
 type whatsAppInboundPayload struct {
@@ -291,8 +289,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		),
 		agent.WithClockLocation(brazilLoc),
 	)
-	alertContextRecorder := agentalerts.NewAlertContextRecorder(threadGateway, messageStore, workingMem, deps.AlertContextTTL, deps.O11y)
-	handleInbound := usecases.NewHandleInbound(runtime, alertContextRecorder, deps.O11y)
+	handleInbound := usecases.NewHandleInbound(runtime, deps.O11y)
 
 	resolveOnboarding := usecases.NewResolveOnboardingOrAgent(onboardingEngine, workflowStore, workingMem, onboardingDef, deps.O11y)
 

@@ -100,90 +100,6 @@ func (r *thresholdAlertSentRepository) ListActiveForThresholdScan(ctx context.Co
 	return out, nil
 }
 
-func (r *thresholdAlertSentRepository) ListUsersMissingBudget(ctx context.Context, refMonth valueobjects.Competence, limit int) ([]interfaces.MissingBudgetForScan, error) {
-	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.threshold_alert_sent.list_users_missing_budget")
-	defer span.End()
-
-	if limit <= 0 {
-		limit = 500
-	}
-
-	const query = `
-		SELECT DISTINCT prev.user_id
-		  FROM mecontrola.budgets prev
-		 WHERE prev.competence < $1
-		   AND NOT EXISTS (
-		         SELECT 1
-		           FROM mecontrola.budgets cur
-		          WHERE cur.user_id    = prev.user_id
-		            AND cur.competence = $1
-		   )
-		 ORDER BY prev.user_id
-		 LIMIT $2
-	`
-
-	rows, err := r.db.QueryContext(ctx, query, refMonth.String(), limit)
-	if err != nil {
-		span.RecordError(err)
-		return nil, fmt.Errorf("budgets/postgres: threshold_alert_sent.list_users_missing_budget: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var out []interfaces.MissingBudgetForScan
-	for rows.Next() {
-		var userID uuid.UUID
-		if err := rows.Scan(&userID); err != nil {
-			return nil, fmt.Errorf("budgets/postgres: threshold_alert_sent.list_users_missing_budget scan: %w", err)
-		}
-		out = append(out, interfaces.MissingBudgetForScan{UserID: userID})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("budgets/postgres: threshold_alert_sent.list_users_missing_budget rows: %w", err)
-	}
-	return out, nil
-}
-
-func (r *thresholdAlertSentRepository) ListUnreviewedBudgets(ctx context.Context, refMonth valueobjects.Competence, limit int) ([]interfaces.UnreviewedBudgetForScan, error) {
-	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.threshold_alert_sent.list_unreviewed_budgets")
-	defer span.End()
-
-	if limit <= 0 {
-		limit = 500
-	}
-
-	const query = `
-		SELECT b.user_id, b.id AS budget_id
-		  FROM mecontrola.budgets b
-		 WHERE b.competence = $1
-		   AND b.auto_draft = TRUE
-		 ORDER BY b.user_id, b.id
-		 LIMIT $2
-	`
-
-	rows, err := r.db.QueryContext(ctx, query, refMonth.String(), limit)
-	if err != nil {
-		span.RecordError(err)
-		return nil, fmt.Errorf("budgets/postgres: threshold_alert_sent.list_unreviewed_budgets: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var out []interfaces.UnreviewedBudgetForScan
-	for rows.Next() {
-		var (
-			userID   uuid.UUID
-			budgetID uuid.UUID
-		)
-		if err := rows.Scan(&userID, &budgetID); err != nil {
-			return nil, fmt.Errorf("budgets/postgres: threshold_alert_sent.list_unreviewed_budgets scan: %w", err)
-		}
-		out = append(out, interfaces.UnreviewedBudgetForScan{UserID: userID, BudgetID: budgetID})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("budgets/postgres: threshold_alert_sent.list_unreviewed_budgets rows: %w", err)
-	}
-	return out, nil
-}
-
 func (r *thresholdAlertSentRepository) ListSentForDay(ctx context.Context, refDay time.Time) ([]interfaces.ThresholdAlertSentRecord, error) {
 	ctx, span := r.o11y.Tracer().Start(ctx, "budgets.repository.threshold_alert_sent.list_sent_for_day")
 	defer span.End()
@@ -306,16 +222,6 @@ func parseAlertKind(s string) (services.ThresholdAlertKind, error) {
 		return services.ThresholdAlertCategory, nil
 	case "goal_achieved":
 		return services.ThresholdAlertGoal, nil
-	case "category_threshold_80":
-		return services.ThresholdAlertCategory80, nil
-	case "category_threshold_100":
-		return services.ThresholdAlertCategory100, nil
-	case "category_threshold_90":
-		return services.ThresholdAlertCategory90, nil
-	case "budget_missing_month_start":
-		return services.ThresholdAlertBudgetMissingMonthStart, nil
-	case "budget_not_reviewed_day_3":
-		return services.ThresholdAlertBudgetNotReviewedDay3, nil
 	default:
 		return 0, fmt.Errorf("budgets/postgres: kind desconhecido: %q", s)
 	}

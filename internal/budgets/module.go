@@ -17,7 +17,6 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/application/usecases"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/services"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/domain/valueobjects"
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/alerts"
 	budgetsconfig "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/config"
 	budgetsserver "github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/http/server"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets/infrastructure/http/server/handlers"
@@ -75,7 +74,6 @@ type moduleBuilder struct {
 	gatewayAuth             func(http.Handler) http.Handler
 	channelGateway          notification.ChannelGateway
 	channelResolver         appinterfaces.UserChannelResolver
-	alertContext            appinterfaces.AlertContextRecorder
 }
 
 type moduleRepositories struct {
@@ -110,7 +108,6 @@ func NewBudgetsModule(
 	gatewayAuth func(http.Handler) http.Handler,
 	channelGateway notification.ChannelGateway,
 	channelResolver appinterfaces.UserChannelResolver,
-	alertContext appinterfaces.AlertContextRecorder,
 ) (*BudgetsModule, error) {
 	outboxFactory := outbox.NewRepositoryFactory(o11y)
 	idGen := id.NewUUIDGenerator()
@@ -124,7 +121,6 @@ func NewBudgetsModule(
 		gatewayAuth:             gatewayAuth,
 		channelGateway:          channelGateway,
 		channelResolver:         channelResolver,
-		alertContext:            alertContext,
 	}
 	return builder.Build()
 }
@@ -165,26 +161,7 @@ func (b *moduleBuilder) Build() (*BudgetsModule, error) {
 
 	var thresholdAlertNotifier *consumers.ThresholdAlertNotifier
 	if b.channelGateway != nil && b.channelResolver != nil {
-		quietStart, quietEnd, quietErr := b.quietHours()
-		if quietErr != nil {
-			return nil, quietErr
-		}
-		notifierLocation, locErr := b.resolveLocation()
-		if locErr != nil {
-			return nil, locErr
-		}
-		notifyAlertUC := usecases.NewNotifyThresholdAlert(
-			repositories.factory.ThresholdAlertSentRepository(b.db),
-			b.channelResolver,
-			b.channelGateway,
-			alerts.NewTemplateCatalog(b.templateCatalogEntries()),
-			alerts.NewFallbackTimezoneResolver(notifierLocation),
-			alerts.NewDenyAllMarketingConsent(),
-			b.alertContext,
-			quietStart,
-			quietEnd,
-			b.o11y,
-		)
+		notifyAlertUC := usecases.NewNotifyThresholdAlert(repositories.factory.ThresholdAlertSentRepository(b.db), b.channelResolver, b.channelGateway, b.o11y)
 		thresholdAlertNotifier = consumers.NewThresholdAlertNotifier(notifyAlertUC, b.o11y)
 		eventHandlers = append(eventHandlers, BudgetsEventHandlerRegistration{
 			EventType: "budgets.threshold_alert_triggered.v1",
@@ -303,7 +280,6 @@ func (b *moduleBuilder) buildUseCases(repositories moduleRepositories, categorie
 			thresholdConfig,
 			location,
 			b.cfg.BudgetsConfig.ThresholdAlertsScanLimit,
-			b.cfg.BudgetsConfig.ThresholdAlertsDryRun,
 			b.o11y,
 		),
 	}, nil
@@ -353,85 +329,16 @@ func (b *moduleBuilder) buildRouter(useCases moduleUseCases) *budgetsserver.Budg
 }
 
 func (b *moduleBuilder) resolveLocation() (*time.Location, error) {
-	if fallback := b.cfg.BudgetsConfig.ThresholdAlertsTimezoneFallback; fallback != "" {
-		location, err := time.LoadLocation(fallback)
-		if err != nil {
-			return nil, fmt.Errorf("budgets: carregar timezone fallback: %w", err)
-		}
-		return location, nil
-	}
-
 	location := valueobjects.SaoPauloLocation()
 	if location != nil {
 		return location, nil
 	}
-	return nil, fmt.Errorf("budgets: timezone fallback não configurado")
-}
 
-func (b *moduleBuilder) quietHours() (time.Duration, time.Duration, error) {
-	start, err := parseClockDuration(b.cfg.BudgetsConfig.ThresholdAlertsQuietHoursStart)
+	loadedLocation, err := time.LoadLocation("America/Sao_Paulo")
 	if err != nil {
-		return 0, 0, fmt.Errorf("budgets: quiet hours start invalido: %w", err)
+		return nil, fmt.Errorf("budgets: carregar timezone: %w", err)
 	}
-	end, err := parseClockDuration(b.cfg.BudgetsConfig.ThresholdAlertsQuietHoursEnd)
-	if err != nil {
-		return 0, 0, fmt.Errorf("budgets: quiet hours end invalido: %w", err)
-	}
-	return start, end, nil
-}
-
-func parseClockDuration(raw string) (time.Duration, error) {
-	parsed, err := time.Parse("15:04", strings.TrimSpace(raw))
-	if err != nil {
-		return 0, err
-	}
-	return time.Duration(parsed.Hour())*time.Hour + time.Duration(parsed.Minute())*time.Minute, nil
-}
-
-func (b *moduleBuilder) templateCatalogEntries() []alerts.CatalogEntry {
-	approved := splitKindSet(b.cfg.BudgetsConfig.ThresholdTemplatesApprovedKinds)
-	marketing := splitKindSet(b.cfg.BudgetsConfig.ThresholdTemplatesMarketingKinds)
-	language := b.cfg.BudgetsConfig.ThresholdAlertsLanguageCode
-
-	definitions := []struct {
-		kind services.ThresholdAlertKind
-		name string
-	}{
-		{services.ThresholdAlertCategory80, b.cfg.BudgetsConfig.ThresholdTemplateCategory80},
-		{services.ThresholdAlertCategory100, b.cfg.BudgetsConfig.ThresholdTemplateCategory100},
-		{services.ThresholdAlertBudgetMissingMonthStart, b.cfg.BudgetsConfig.ThresholdTemplateBudgetMissing},
-		{services.ThresholdAlertBudgetNotReviewedDay3, b.cfg.BudgetsConfig.ThresholdTemplateBudgetDay3},
-	}
-
-	entries := make([]alerts.CatalogEntry, 0, len(definitions))
-	for _, definition := range definitions {
-		label := definition.kind.String()
-		category := services.TemplateCategoryUtility
-		if _, ok := marketing[label]; ok {
-			category = services.TemplateCategoryMarketing
-		}
-		_, isApproved := approved[label]
-		entries = append(entries, alerts.CatalogEntry{
-			Kind:         definition.kind,
-			Name:         definition.name,
-			LanguageCode: language,
-			Category:     category,
-			Approved:     isApproved,
-		})
-	}
-	return entries
-}
-
-func splitKindSet(raw string) map[string]struct{} {
-	out := map[string]struct{}{}
-	for _, part := range strings.Split(raw, ",") {
-		kind := strings.TrimSpace(part)
-		if kind == "" {
-			continue
-		}
-		out[kind] = struct{}{}
-	}
-	return out
+	return loadedLocation, nil
 }
 
 func (b *moduleBuilder) pendingTTL() time.Duration {

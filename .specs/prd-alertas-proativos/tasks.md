@@ -1,4 +1,4 @@
-<!-- spec-hash-prd: b60e8b64377579e1541f87f00dfc714dac75e5ae51da73a73518d2fb63e91c9b -->
+<!-- spec-hash-prd: 0c576e503ceb25e4988cef6a1cb2fb50c9964f3e4efca6d5e6943ecbc4c11d65 -->
 <!-- spec-hash-techspec: 5277fe78c579baeddc6f7d884921a5251d0deb56eeef9942bd91ff37c732c3f6 -->
 # Resumo das Tarefas de Implementação para Alertas Proativos
 
@@ -23,14 +23,14 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|-------------|---------------|--------|
-| 1.0 | Configuração e dry-run seguro de thresholds | done | — | — | domain-modeling-production, design-patterns-mandatory |
-| 2.0 | Política de domínio Release 1 | done | 1.0 | Com 3.0 | domain-modeling-production, design-patterns-mandatory |
-| 3.0 | Template genérico WhatsApp/Meta sem regressão | done | 1.0 | Com 2.0 | design-patterns-mandatory |
-| 4.0 | Notifier por template aprovado e sucesso real | done | 2.0, 3.0 | Não | domain-modeling-production, design-patterns-mandatory |
-| 5.0 | Follow-up agentivo com contexto de alerta | done | 4.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory |
-| 6.0 | Observabilidade e auditoria operacional | done | 4.0 | Com 7.0 | golden-signals-otel-standards |
-| 7.0 | Gates de rollout e validação Meta | done | 4.0 | Com 6.0 | design-patterns-mandatory |
-| 8.0 | Validação integrada e documentação final | done | 5.0, 6.0, 7.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory |
+| 1.0 | Configuração e dry-run seguro de thresholds | pending | — | — | domain-modeling-production, design-patterns-mandatory |
+| 2.0 | Política de domínio Release 1 | pending | 1.0 | Com 3.0 | domain-modeling-production, design-patterns-mandatory |
+| 3.0 | Template genérico WhatsApp/Meta sem regressão | pending | 1.0 | Com 2.0 | design-patterns-mandatory |
+| 4.0 | Notifier por template aprovado e sucesso real | pending | 2.0, 3.0 | Não | domain-modeling-production, design-patterns-mandatory |
+| 5.0 | Follow-up agentivo com contexto de alerta | pending | 4.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory |
+| 6.0 | Observabilidade e auditoria operacional | pending | 4.0 | Com 7.0 | golden-signals-otel-standards |
+| 7.0 | Gates de rollout e validação Meta | pending | 4.0 | Com 6.0 | design-patterns-mandatory |
+| 8.0 | Validação integrada e documentação final | pending | 5.0, 6.0, 7.0 | Não | mastra, domain-modeling-production, design-patterns-mandatory |
 
 ## Dependências Críticas
 - 1.0 precede 2.0 e 3.0 porque define o modo seguro de rollout.

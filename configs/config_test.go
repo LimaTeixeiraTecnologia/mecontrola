@@ -254,105 +254,6 @@ func (s *ConfigSuite) TestValidate() {
 			},
 		},
 		{
-			name: "deve retornar erro quando threshold alerts mode for invalido",
-			args: args{
-				build: func() *configs.Config {
-					cfg := s.newBaseConfig()
-					cfg.BudgetsConfig.ThresholdAlertsMode = "disabled"
-					return cfg
-				},
-			},
-			setup: func() {},
-			expect: func(_ *configs.Config, err error) {
-				s.assertConfigError(err, "BUDGETS_THRESHOLD_ALERTS_MODE inválido")
-			},
-		},
-		{
-			name: "deve retornar erro quando quiet hours start for invalido",
-			args: args{
-				build: func() *configs.Config {
-					cfg := s.newBaseConfig()
-					cfg.BudgetsConfig.ThresholdAlertsQuietHoursStart = "25:00"
-					return cfg
-				},
-			},
-			setup: func() {},
-			expect: func(_ *configs.Config, err error) {
-				s.assertConfigError(err, "BUDGETS_THRESHOLD_ALERTS_QUIET_HOURS_START inválido")
-			},
-		},
-		{
-			name: "deve retornar erro quando approved kinds contiver kind fora do Release 1",
-			args: args{
-				build: func() *configs.Config {
-					cfg := s.newBaseConfig()
-					cfg.BudgetsConfig.ThresholdTemplatesApprovedKinds = "category_threshold_90"
-					return cfg
-				},
-			},
-			setup: func() {},
-			expect: func(_ *configs.Config, err error) {
-				s.assertConfigError(err, "BUDGETS_THRESHOLD_TEMPLATES_APPROVED_KINDS contem kind invalido")
-			},
-		},
-		{
-			name: "deve retornar erro quando marketing kinds contiver kind desconhecido",
-			args: args{
-				build: func() *configs.Config {
-					cfg := s.newBaseConfig()
-					cfg.BudgetsConfig.ThresholdTemplatesMarketingKinds = "goal_achieved"
-					return cfg
-				},
-			},
-			setup: func() {},
-			expect: func(_ *configs.Config, err error) {
-				s.assertConfigError(err, "BUDGETS_THRESHOLD_TEMPLATES_MARKETING_KINDS contem kind invalido")
-			},
-		},
-		{
-			name: "deve aceitar approved kinds validos do Release 1",
-			args: args{
-				build: func() *configs.Config {
-					cfg := s.newBaseConfig()
-					cfg.BudgetsConfig.ThresholdTemplatesApprovedKinds = "category_threshold_80, category_threshold_100"
-					return cfg
-				},
-			},
-			setup: func() {},
-			expect: func(_ *configs.Config, err error) {
-				s.NoError(err)
-			},
-		},
-		{
-			name: "deve exigir template configurado quando dry-run estiver desligado",
-			args: args{
-				build: func() *configs.Config {
-					cfg := s.newBaseConfig()
-					cfg.BudgetsConfig.ThresholdAlertsDryRun = false
-					cfg.BudgetsConfig.ThresholdTemplateCategory80 = ""
-					return cfg
-				},
-			},
-			setup: func() {},
-			expect: func(_ *configs.Config, err error) {
-				s.assertConfigError(err, "BUDGETS_THRESHOLD_TEMPLATE_CATEGORY_80 obrigatório")
-			},
-		},
-		{
-			name: "deve retornar erro quando timezone fallback for vazio",
-			args: args{
-				build: func() *configs.Config {
-					cfg := s.newBaseConfig()
-					cfg.BudgetsConfig.ThresholdAlertsTimezoneFallback = ""
-					return cfg
-				},
-			},
-			setup: func() {},
-			expect: func(_ *configs.Config, err error) {
-				s.assertConfigError(err, "BUDGETS_THRESHOLD_ALERTS_TIMEZONE_FALLBACK obrigatório")
-			},
-		},
-		{
 			name: "deve validar staging sem exigir senha longa",
 			args: args{
 				build: func() *configs.Config {
@@ -1946,25 +1847,10 @@ func (s *ConfigSuite) assertConfigError(err error, messages ...string) {
 
 func (s *ConfigSuite) newBaseConfig() *configs.Config {
 	return &configs.Config{
-		AppConfig:  configs.AppConfig{Environment: "local", AppMode: "server"},
-		HTTPConfig: configs.HTTPConfig{Port: 8080},
-		DBConfig:   configs.DBConfig{Password: "qualquer", User: "user"},
-		O11yConfig: configs.O11yConfig{TraceSampleRate: 1},
-		BudgetsConfig: configs.BudgetsConfig{
-			ThresholdAlertsScanLimit:         500,
-			ThresholdAlertsMode:              configs.ThresholdAlertsModeLegacy,
-			ThresholdAlertsDryRun:            true,
-			ThresholdAlertsQuietHoursStart:   "20:00",
-			ThresholdAlertsQuietHoursEnd:     "08:00",
-			ThresholdAlertsTimezoneFallback:  "America/Sao_Paulo",
-			ThresholdAlertsLanguageCode:      "pt_BR",
-			ThresholdTemplateCategory80:      "mecontrola_category_threshold_80",
-			ThresholdTemplateCategory100:     "mecontrola_category_threshold_100",
-			ThresholdTemplateBudgetMissing:   "mecontrola_budget_missing_month_start",
-			ThresholdTemplateBudgetDay3:      "mecontrola_budget_not_reviewed_day_3",
-			ThresholdTemplatesMarketingKinds: "budget_not_reviewed_day_3",
-			ThresholdAlertContextTTL:         24 * time.Hour,
-		},
+		AppConfig:     configs.AppConfig{Environment: "local", AppMode: "server"},
+		HTTPConfig:    configs.HTTPConfig{Port: 8080},
+		DBConfig:      configs.DBConfig{Password: "qualquer", User: "user"},
+		O11yConfig:    configs.O11yConfig{TraceSampleRate: 1},
 		AuthRateLimit: configs.AuthRateLimitConfig{PerUserPerMin: 120, PerUserBurst: 30},
 		WhatsAppConfig: configs.WhatsAppConfig{
 			WebhookRateLimitPerMin: 600,

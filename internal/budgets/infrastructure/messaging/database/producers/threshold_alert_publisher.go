@@ -29,8 +29,6 @@ type thresholdAlertPayload struct {
 	RootSlug             string `json:"root_slug,omitempty"`
 	PercentUsedBps       int32  `json:"percent_used_bps"`
 	AmountRemainingCents int64  `json:"amount_remaining_cents"`
-	PlannedCents         int64  `json:"planned_cents"`
-	SpentCents           int64  `json:"spent_cents"`
 	RefDay               string `json:"ref_day"`
 }
 
@@ -63,8 +61,6 @@ func (p *ThresholdAlertPublisher) Publish(ctx context.Context, db database.DBTX,
 		RootSlug:             alert.RootSlug.String(),
 		PercentUsedBps:       alert.PercentUsedBps,
 		AmountRemainingCents: alert.AmountRemainingCents,
-		PlannedCents:         alert.PlannedCents,
-		SpentCents:           alert.SpentCents,
 		RefDay:               alert.RefDay.UTC().Format("2006-01-02"),
 	}
 	if alert.CategoryID.String() != "00000000-0000-0000-0000-000000000000" {

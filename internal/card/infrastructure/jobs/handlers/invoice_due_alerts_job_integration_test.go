@@ -28,10 +28,6 @@ func (s *stubChannelGateway) SendActivationTemplate(_ context.Context, _, _, _, 
 	return "", fmt.Errorf("unsupported")
 }
 
-func (s *stubChannelGateway) SendTemplate(_ context.Context, _ notification.TemplateMessage) (string, error) {
-	return "", fmt.Errorf("unsupported")
-}
-
 type stubUserChannelResolver struct {
 	userID string
 	phone  string
