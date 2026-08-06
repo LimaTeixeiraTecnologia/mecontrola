@@ -46,6 +46,8 @@ var (
 	budgetWriteMonthExplicitRe = regexp.MustCompile(`(?i)\b(janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+(20[0-9]{2})\b`)
 	budgetWriteMonthNamedRe    = regexp.MustCompile(`(?i)\b(janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\b`)
 	budgetWriteTotalAmountRe   = regexp.MustCompile(`(?i)(?:r\$\s*)?[0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?`)
+
+	budgetWriteDistributionAmountRe = regexp.MustCompile(`(?i)r\$\s*[0-9]|\b[0-9]{2,}\b`)
 )
 
 type budgetWriteShortcutGuard struct {
@@ -107,7 +109,10 @@ func parseBudgetDistributionShortcut(message string) (map[string]any, bool) {
 		return nil, false
 	}
 	if !containsAnyText(normalized, budgetWriteDistributionHints...) {
-		if !containsAnyText(normalized, budgetWriteCategoryHints...) || !strings.Contains(normalized, "%") {
+		if countBudgetCategoryMentions(normalized) < 2 {
+			return nil, false
+		}
+		if !strings.Contains(normalized, "%") && !budgetWriteDistributionAmountRe.MatchString(normalized) {
 			return nil, false
 		}
 	}

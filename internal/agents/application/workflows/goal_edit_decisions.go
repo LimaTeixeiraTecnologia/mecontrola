@@ -33,13 +33,10 @@ func DecideGoalEditConfirmation(state GoalEditState, msg PendingMessage, now tim
 		return GoalEditActionReplay
 	}
 
-	text := strings.TrimSpace(msg.Text)
-
-	if reConfirmYes.MatchString(text) {
+	switch DecideConfirmAnswer(msg.Text) {
+	case ConfirmAnswerYes:
 		return GoalEditActionAccept
-	}
-
-	if reConfirmNo.MatchString(text) || isCancelMessage(text) {
+	case ConfirmAnswerNo:
 		return GoalEditActionCancel
 	}
 

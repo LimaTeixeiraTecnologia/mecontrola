@@ -107,9 +107,134 @@ var (
 		regexp.MustCompile(`(?i)^nao\s+registra(r)?$`),
 	}
 
-	reConfirmYes = regexp.MustCompile(`(?i)^(sim|confirmar|confirma|ok|pode)$`)
-	reConfirmNo  = regexp.MustCompile(`(?i)^(não|nao|cancela|cancels|deixa\s+pra\s+lá|não\s+registra)$`)
+	reConfirmSeparators = regexp.MustCompile(`[^\p{L}\p{N}]+`)
 
+	confirmYesTokens = map[string]bool{
+		"sim":        true,
+		"s":          true,
+		"ok":         true,
+		"okay":       true,
+		"confirma":   true,
+		"confirmar":  true,
+		"confirmo":   true,
+		"confirmado": true,
+		"pode":       true,
+		"podem":      true,
+		"claro":      true,
+		"beleza":     true,
+		"blz":        true,
+		"correto":    true,
+		"exato":      true,
+		"exatamente": true,
+		"perfeito":   true,
+		"positivo":   true,
+		"isso":       true,
+		"certo":      true,
+	}
+
+	confirmNoTokens = map[string]bool{
+		"nao":      true,
+		"n":        true,
+		"nunca":    true,
+		"jamais":   true,
+		"negativo": true,
+		"cancela":  true,
+		"cancels":  true,
+		"cancelar": true,
+		"cancele":  true,
+		"cancelo":  true,
+		"esquece":  true,
+		"esquecer": true,
+		"errado":   true,
+		"errada":   true,
+		"erro":     true,
+	}
+
+	confirmNoPhrases = []string{
+		"deixa pra la",
+		"deixa quieto",
+		"deixa isso",
+	}
+)
+
+type ConfirmAnswer int
+
+const (
+	ConfirmAnswerYes ConfirmAnswer = iota + 1
+	ConfirmAnswerNo
+	ConfirmAnswerAmbiguous
+)
+
+func (a ConfirmAnswer) String() string {
+	switch a {
+	case ConfirmAnswerYes:
+		return "yes"
+	case ConfirmAnswerNo:
+		return "no"
+	case ConfirmAnswerAmbiguous:
+		return "ambiguous"
+	default:
+		return "unknown"
+	}
+}
+
+func (a ConfirmAnswer) IsValid() bool {
+	return a >= ConfirmAnswerYes && a <= ConfirmAnswerAmbiguous
+}
+
+func confirmAnswerTokens(text string) []string {
+	tokens := make([]string, 0, 8)
+	for _, token := range reConfirmSeparators.Split(normalizeText(text), -1) {
+		if token != "" {
+			tokens = append(tokens, token)
+		}
+	}
+	return tokens
+}
+
+func hasConfirmNoPhrase(tokens []string) bool {
+	joined := strings.Join(tokens, " ")
+	for _, phrase := range confirmNoPhrases {
+		if strings.Contains(joined, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+func DecideConfirmAnswer(text string) ConfirmAnswer {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" || strings.HasSuffix(trimmed, "?") {
+		return ConfirmAnswerAmbiguous
+	}
+
+	tokens := confirmAnswerTokens(trimmed)
+	if len(tokens) == 0 {
+		return ConfirmAnswerAmbiguous
+	}
+
+	var yes, no bool
+	for _, token := range tokens {
+		if confirmYesTokens[token] {
+			yes = true
+		}
+		if confirmNoTokens[token] {
+			no = true
+		}
+	}
+	no = no || hasConfirmNoPhrase(tokens)
+
+	switch {
+	case no && !yes:
+		return ConfirmAnswerNo
+	case yes && !no:
+		return ConfirmAnswerYes
+	default:
+		return ConfirmAnswerAmbiguous
+	}
+}
+
+var (
 	knownPaymentMethods = map[string]string{
 		"pix":             "pix",
 		"debito":          "debit_card",
@@ -160,24 +285,6 @@ var (
 		"pela":   true,
 	}
 )
-
-func isSim(s string) bool {
-	switch s {
-	case "sim", "confirmar", "confirmo", "ok", "pode", "yes", "s":
-		return true
-	default:
-		return false
-	}
-}
-
-func isNao(s string) bool {
-	switch s {
-	case "não", "nao", "cancelar", "cancelo", "no", "n":
-		return true
-	default:
-		return false
-	}
-}
 
 func isCancelMessage(text string) bool {
 	normalized := strings.TrimSpace(text)

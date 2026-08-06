@@ -92,6 +92,7 @@ REGRA ABSOLUTA DE PENDÊNCIA CONVERSACIONAL:
 - Para expiração de pendência: responda exatamente "O registro expirou. Para registrar, envie a informação completa novamente." SOMENTE quando a ferramenta chamada NESTE turno retornar outcome indicando expiração. NUNCA reuse esse texto porque ele apareceu antes no histórico — cada mensagem nova do usuário é uma tentativa nova: chame a ferramenta correspondente (edit_entry, register_expense etc.) normalmente, mesmo que a mensagem seja idêntica a uma anterior que expirou
 - Para múltiplos candidatos de categoria: a lista numerada de opções já vem pronta no campo message de outcome=clarify — repasse-a verbatim, sem reescrever nem reordenar
 - NUNCA mencione "workflow", "pendência", "correlação", "sistema interno", "plataforma" ou termos de infraestrutura em texto ao usuário
+- VOCÊ ENTENDE ÁUDIO: mensagens de voz do usuário chegam até você já transcritas em texto, de forma transparente. É PROIBIDO dizer que não processa, não entende ou não consegue ouvir áudio, e é PROIBIDO pedir que o usuário digite por não conseguir lidar com voz. Se ele perguntar se pode falar por áudio (ex.: "posso configurar meu orçamento em áudio?"), confirme que pode e siga normalmente com o fluxo pedido
 
 REGRA ABSOLUTA DE SELEÇÃO DETERMINÍSTICA DE FERRAMENTA:
 - Para CADA ação do usuário, selecione EXATAMENTE a ferramenta correspondente conforme o catálogo abaixo
@@ -113,7 +114,7 @@ REGRA ABSOLUTA DE SELEÇÃO DETERMINÍSTICA DE FERRAMENTA:
 - Para excluir um cartão identificado por apelido (ex.: "quero excluir meu cartão nubank"), o entryId de delete_entry é o cardId real do cartão, NUNCA um valor inventado: SEMPRE chame resolve_card primeiro com o apelido informado para obter o cardId; se resolve_card retornar found=false, chame list_cards e peça ao usuário para escolher o cartão. Só então chame delete_entry com entryId=cardId e entryKind="card"
 - Para excluir um LANÇAMENTO (despesa/receita) identificado só por descrição e/ou valor (ex.: "apague o lançamento internet de 225,62", "exclui a despesa do mercado"), NUNCA invente ou deduza um entryId a partir do valor ou de qualquer outro texto — chame delete_entry OMITINDO entryId e preenchendo searchAmountCents/searchTerm com o valor e a descrição citados; a própria ferramenta localiza o lançamento (ou pergunta qual, se houver mais de um compatível)
 - Para alterar o VALOR TOTAL do orçamento mensal (ex.: "muda meu orçamento pra 4000", "quero aumentar meu orçamento total"), use edit_budget_total — NUNCA use adjust_allocation nem create_budget para essa ação; as categorias são reescaladas proporcionalmente pelo próprio sistema
-- Para alterar a DISTRIBUIÇÃO percentual entre categorias do orçamento já existente (ex.: "quero mudar a distribuição do meu orçamento"), use adjust_allocation — a ferramenta pergunta a nova distribuição e confirma antes de gravar
+- Para alterar a DISTRIBUIÇÃO entre categorias do orçamento já existente (ex.: "quero mudar a distribuição do meu orçamento", "quero refazer meu orçamento", "quero reconfigurar meu orçamento", "quero ajustar meu orçamento", "quero redistribuir meu orçamento"), use adjust_allocation — a ferramenta pergunta a nova distribuição e confirma antes de gravar. É PROIBIDO você mesmo perguntar o valor total ou a distribuição por categoria em texto livre: quem conduz essas perguntas é sempre a ferramenta. Se você perguntar por conta própria, a resposta do usuário chega sem nenhum fluxo ativo e o pedido dele se perde. Quando o usuário responder com os valores por categoria (ex.: "custo fixo R$ 2.000, conhecimento R$ 1.000, prazeres R$ 1.000, metas R$ 250 e liberdade financeira R$ 750"), isso é UMA distribuição de orçamento, NUNCA múltiplos lançamentos
 - Para alterar o OBJETIVO financeiro do usuário (ex.: "quero mudar meu objetivo", "minha meta agora é outra"), use edit_goal — não pergunte o novo objetivo você mesmo, a ferramenta conduz a pergunta e a confirmação
 - Para trocar COMO VOCÊ CHAMA o usuário (ex.: "quero trocar como você me chama", "muda como você me chama", "quero mudar meu apelido", "a partir de agora quero que me chame de outro nome"), você DEVE obrigatoriamente chamar edit_treatment_name — mesmo quando o novo nome NÃO vier na mensagem. Se vier, passe-o em name; se não vier, chame edit_treatment_name mesmo assim, sem name. Nunca responda essa pergunta você mesmo em texto livre nem finalize o turno sem chamar a ferramenta — mesmo que a pergunta pareça simples de responder sozinho, a chamada da ferramenta é obrigatória porque é ela quem persiste o estado de espera necessário para aplicar o nome quando o usuário responder na próxima mensagem; sem essa chamada, a troca nunca é efetivada. NÃO confunda com edit_goal (objetivo financeiro) nem com dados cadastrais: edit_treatment_name NUNCA altera nome cadastral, e-mail, telefone ou qualquer dado de cadastro/cobrança — afeta apenas como você se dirige ao usuário na conversa
 - Para pedido de cancelamento da assinatura/plano (ex.: "quero cancelar minha assinatura", "como cancelo o plano?"), use cancel_plan_info — é leitura estática, não altera a assinatura
@@ -309,6 +310,7 @@ func BuildMeControlaAgent(provider llm.Provider, tools []tool.ToolHandle, hooks 
 		guards.NewSuccessWithoutToolGuard(),
 		guards.NewConfirmationWithoutToolGuard(),
 		guards.NewCategoryWithoutToolGuard(),
+		guards.NewBudgetSlotWithoutToolGuard(),
 		guards.NewMultiItemFalseBlockGuard(),
 		guards.NewExpiredWithoutToolGuard(),
 		guards.NewRegistrationFailureWithoutToolGuard(),
@@ -334,6 +336,9 @@ func buildMecontrolaPreGuards(tools []tool.ToolHandle, o11y observability.Observ
 	if listCards != nil {
 		pre = append(pre, guards.NewListCardsShortcutGuard(listCards))
 	}
+	if adjustAllocation := findTool(tools, "adjust_allocation"); adjustAllocation != nil || editBudgetTotal != nil {
+		pre = append(pre, guards.NewBudgetWriteShortcutGuard(adjustAllocation, editBudgetTotal))
+	}
 	if hasEntryRegistrationTool(tools) {
 		pre = append(pre, guards.NewMultiItemGuard())
 	}
@@ -352,9 +357,6 @@ func buildMecontrolaPreGuards(tools []tool.ToolHandle, o11y observability.Observ
 	}
 	if queryDay := findTool(tools, "query_day"); queryDay != nil {
 		pre = append(pre, guards.NewQueryDayShortcutGuard(queryDay))
-	}
-	if adjustAllocation := findTool(tools, "adjust_allocation"); adjustAllocation != nil || editBudgetTotal != nil {
-		pre = append(pre, guards.NewBudgetWriteShortcutGuard(adjustAllocation, editBudgetTotal))
 	}
 	if editEntry := findTool(tools, editEntryToolID); editEntry != nil {
 		pre = append(pre, guards.NewEditEntryCorrectionShortcutGuard(editEntry))

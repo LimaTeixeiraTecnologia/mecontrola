@@ -1,7 +1,6 @@
 package workflows
 
 import (
-	"strings"
 	"time"
 )
 
@@ -25,13 +24,10 @@ func DecideDestructiveManageConfirmation(state DestructiveManageState, msg Pendi
 		return DestructiveManageActionExpire
 	}
 
-	text := strings.ToLower(strings.TrimSpace(msg.Text))
-
-	if isSim(text) {
+	switch DecideConfirmAnswer(msg.Text) {
+	case ConfirmAnswerYes:
 		return DestructiveManageActionAccept
-	}
-
-	if isNao(text) {
+	case ConfirmAnswerNo:
 		return DestructiveManageActionCancel
 	}
 

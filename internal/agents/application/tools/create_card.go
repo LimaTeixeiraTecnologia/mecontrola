@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/messages"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
@@ -37,7 +36,7 @@ type CreateCardOutput struct {
 	ClarifyPrompt      string `json:"clarifyPrompt"`
 }
 
-func BuildCreateCardTool(engine wf.Engine[workflows.CardManageState], def wf.Definition[workflows.CardManageState], cards interfaces.CardManager) tool.ToolHandle {
+func BuildCreateCardTool(engine wf.Engine[workflows.CardManageState], def wf.Definition[workflows.CardManageState]) tool.ToolHandle {
 	in := llm.Schema{
 		Name:   "create_card_input",
 		Strict: false,
@@ -66,11 +65,11 @@ func BuildCreateCardTool(engine wf.Engine[workflows.CardManageState], def wf.Def
 			"additionalProperties": false,
 		},
 	}
-	exec := buildCreateCardExec(engine, def, cards)
+	exec := buildCreateCardExec(engine, def)
 	return tool.NewTool[CreateCardInput, CreateCardOutput]("create_card", "Cadastra um novo 💳 de crédito pela conversa. Requer confirmação humana explícita antes de criar.", in, out, exec)
 }
 
-func buildCreateCardExec(engine wf.Engine[workflows.CardManageState], def wf.Definition[workflows.CardManageState], cards interfaces.CardManager) func(context.Context, CreateCardInput) (CreateCardOutput, error) {
+func buildCreateCardExec(engine wf.Engine[workflows.CardManageState], def wf.Definition[workflows.CardManageState]) func(context.Context, CreateCardInput) (CreateCardOutput, error) {
 	return func(ctx context.Context, in CreateCardInput) (CreateCardOutput, error) {
 		rc, ok := wf.RuntimeFrom(ctx)
 		if !ok {
@@ -86,45 +85,27 @@ func buildCreateCardExec(engine wf.Engine[workflows.CardManageState], def wf.Def
 			return CreateCardOutput{}, fmt.Errorf("agents.tool.create_card: parse resource uuid: %w", err)
 		}
 
-		if clarify, ok := createCardMissingSlot(in); ok {
-			return CreateCardOutput{
-				Outcome:       createCardOutcomeNeedsSlot,
-				ClarifyPrompt: clarify,
-			}, nil
-		}
-
-		recognized, err := cards.BankRecognized(ctx, in.Bank)
-		if err != nil {
-			return CreateCardOutput{}, fmt.Errorf("agents.tool.create_card: verificar banco: %w", err)
-		}
-
 		var (
 			closingDay         int
 			closingDayProvided bool
 		)
-		switch {
-		case recognized:
-			closingDayProvided = false
-		case in.ClosingDay == nil:
-			return CreateCardOutput{
-				Outcome:       createCardOutcomeNeedsClosing,
-				ClarifyPrompt: "Não reconheço esse banco na minha lista. Qual é o dia de fechamento da fatura desse 💳?",
-			}, nil
-		default:
+		if in.ClosingDay != nil && *in.ClosingDay >= 1 && *in.ClosingDay <= 31 {
 			closingDay = *in.ClosingDay
 			closingDayProvided = true
 		}
 
+		nickname := strings.TrimSpace(in.Nickname)
+		bank := strings.TrimSpace(in.Bank)
 		state := workflows.CardManageState{
 			Status:             workflows.CardManageActive,
 			Operation:          workflows.CardManageOpCreate,
 			UserID:             userID,
-			Nickname:           in.Nickname,
-			NicknameProvided:   true,
-			Bank:               in.Bank,
-			BankProvided:       true,
+			Nickname:           nickname,
+			NicknameProvided:   nickname != "",
+			Bank:               bank,
+			BankProvided:       bank != "",
 			DueDay:             in.DueDay,
-			DueDayProvided:     true,
+			DueDayProvided:     in.DueDay >= 1 && in.DueDay <= 31,
 			ClosingDay:         closingDay,
 			ClosingDayProvided: closingDayProvided,
 			MessageID:          req.MessageID,
@@ -142,22 +123,23 @@ func buildCreateCardExec(engine wf.Engine[workflows.CardManageState], def wf.Def
 			}, nil
 		}
 
+		if result.State.Awaiting == workflows.CardManageAwaitingConfirm {
+			return CreateCardOutput{
+				Outcome:            createCardOutcomeNeedsConfirmation,
+				ConfirmationPrompt: result.State.ResponseText,
+			}, nil
+		}
+
 		return CreateCardOutput{
-			Outcome:            createCardOutcomeNeedsConfirmation,
-			ConfirmationPrompt: result.State.ResponseText,
+			Outcome:       createCardOutcomeFor(result.State.Awaiting),
+			ClarifyPrompt: result.State.ResponseText,
 		}, nil
 	}
 }
 
-func createCardMissingSlot(in CreateCardInput) (string, bool) {
-	if strings.TrimSpace(in.Nickname) == "" {
-		return "Qual apelido você quer dar para esse 💳?", true
+func createCardOutcomeFor(awaiting workflows.CardManageAwaiting) string {
+	if awaiting == workflows.CardManageAwaitingClosingDay {
+		return createCardOutcomeNeedsClosing
 	}
-	if strings.TrimSpace(in.Bank) == "" {
-		return "Qual é o banco desse 💳?", true
-	}
-	if in.DueDay <= 0 {
-		return "Qual é o dia de vencimento da fatura desse 💳?", true
-	}
-	return "", false
+	return createCardOutcomeNeedsSlot
 }

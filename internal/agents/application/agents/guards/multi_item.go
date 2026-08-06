@@ -3,6 +3,7 @@ package guards
 import (
 	"context"
 	"regexp"
+	"strings"
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/application/workflows"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
@@ -22,8 +23,38 @@ var (
 	multiItemInstallmentRe = regexp.MustCompile(`(?i)\d{1,2}\s*x\b`)
 	multiItemOrdinalRe     = regexp.MustCompile(`\d+(?:º|ª)`)
 	multiItemMoneyTokenRe  = regexp.MustCompile(`(?i)r\$\s*\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d{1,3}(?:\.\d{3})+,\d{1,2}|\d+,\d{1,2}|\d+\s*(?:reais|real)\b|\d+`)
-	multiItemCorrectionRe  = regexp.MustCompile(`(?i)\b(editar?|edite|edita|corrigir|corrige|corrija|alterar?|altera|altere|mudar?|muda|mude|atualizar?|atualiza|atualize|errei|errado|errada)\b|\be\s+n[aã]o\b|\bn[aã]o\s+foi\b|\bna\s+verdade\b`)
+	multiItemCorrectionRe  = regexp.MustCompile(`(?i)\b(editar?|edite|edita|editando|corrigir|corrige|corrija|alterar?|altera|altere|mudar?|muda|mude|atualizar?|atualiza|atualize|ajustar?|ajusta|ajuste|errei|errado|errada)\b|\be\s+n[aã]o\b|\bn[aã]o\s+foi\b|\bna\s+verdade\b`)
+
+	budgetCategoryCanonical = map[string]string{
+		"custo fixo":           "custo_fixo",
+		"custos fixos":         "custo_fixo",
+		"custo_fixo":           "custo_fixo",
+		"conhecimento":         "conhecimento",
+		"prazeres":             "prazeres",
+		"metas":                "metas",
+		"liberdade financeira": "liberdade_financeira",
+		"liberdade_financeira": "liberdade_financeira",
+	}
 )
+
+func countBudgetCategoryMentions(message string) int {
+	normalized := strings.ToLower(message)
+	seen := make(map[string]bool, len(budgetCategoryCanonical))
+	for hint, canonical := range budgetCategoryCanonical {
+		if strings.Contains(normalized, hint) {
+			seen[canonical] = true
+		}
+	}
+	return len(seen)
+}
+
+func IsBudgetAllocationIntent(message string) bool {
+	return countBudgetCategoryMentions(message) >= 2
+}
+
+func IsMultiItemExempt(message string) bool {
+	return IsCorrectionOrEditIntent(message) || IsBudgetAllocationIntent(message)
+}
 
 const moneyWordPlaceholder = "\x00MONEYWORD\x00"
 
@@ -69,7 +100,7 @@ func IsCorrectionOrEditIntent(message string) bool {
 
 func (g *multiItemGuard) Inspect(_ context.Context, in agent.Request) GuardDecision {
 	message := lastUserMessageContent(in.Messages)
-	if !DetectMultipleMonetaryValues(message) || IsCorrectionOrEditIntent(message) {
+	if !DetectMultipleMonetaryValues(message) || IsMultiItemExempt(message) {
 		return GuardDecision{}
 	}
 	return GuardDecision{

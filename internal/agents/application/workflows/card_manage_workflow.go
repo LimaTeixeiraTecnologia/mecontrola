@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/JailtonJunior94/devkit-go/pkg/observability"
@@ -68,6 +69,17 @@ func cardManageExecMap() map[CardManageOperationKind]cardManageExecFn {
 func buildCardManageStep(cards interfaces.CardManager, idem IdempotentWriter, metrics *cardManageMetrics) func(context.Context, CardManageState) (workflow.StepOutput[CardManageState], error) {
 	execMap := cardManageExecMap()
 	return func(ctx context.Context, state CardManageState) (workflow.StepOutput[CardManageState], error) {
+		if state.Awaiting == 0 {
+			if state.ResumeText == "" {
+				return cardManageEnter(ctx, state, cards)
+			}
+			state.Awaiting = CardManageAwaitingConfirm
+		}
+
+		if state.Awaiting != CardManageAwaitingConfirm {
+			return handleCardManageSlot(ctx, state, cards)
+		}
+
 		if state.ResumeText == "" {
 			return cardManageAskConfirmation(ctx, state, cards)
 		}
@@ -114,6 +126,166 @@ func buildCardManageStep(cards interfaces.CardManager, idem IdempotentWriter, me
 			return workflow.StepOutput[CardManageState]{State: state, Status: workflow.StepStatusCompleted}, nil
 		}
 	}
+}
+
+func cardManageSuspend(state CardManageState, prompt string) (workflow.StepOutput[CardManageState], error) {
+	state.ResponseText = prompt
+	return workflow.StepOutput[CardManageState]{
+		State:  state,
+		Status: workflow.StepStatusSuspended,
+		Suspend: &workflow.Suspension{
+			Reason: workflow.SuspendAwaitingInput,
+			Prompt: prompt,
+		},
+	}, nil
+}
+
+func cardManageComplete(state CardManageState, status CardManageStatus, response string) (workflow.StepOutput[CardManageState], error) {
+	state.Status = status
+	state.ResponseText = response
+	return workflow.StepOutput[CardManageState]{State: state, Status: workflow.StepStatusCompleted}, nil
+}
+
+func cardManageExpireStep(state CardManageState) (workflow.StepOutput[CardManageState], error) {
+	state.Status = CardManageExpired
+	state.Expired = true
+	state.ResponseText = ""
+	return workflow.StepOutput[CardManageState]{State: state, Status: workflow.StepStatusCompleted}, nil
+}
+
+func cardManageSlotPrompt(slot CardManageAwaiting, state CardManageState) string {
+	switch slot {
+	case CardManageAwaitingNickname:
+		return "Qual apelido você quer dar para esse 💳?"
+	case CardManageAwaitingBank:
+		return "Qual é o banco desse 💳?"
+	case CardManageAwaitingDueDay:
+		return "Qual é o dia de vencimento da fatura desse 💳?"
+	case CardManageAwaitingClosingDay:
+		return fmt.Sprintf(
+			"Não reconheço o banco *%s* na minha lista, então preciso do dia de *fechamento* da fatura — é o dia em que a fatura fecha, normalmente diferente do vencimento (dia %d). Qual é?",
+			state.Bank, state.DueDay,
+		)
+	default:
+		return cardManageConfirmQuestion(state)
+	}
+}
+
+func cardManageClosingDayEchoPrompt(state CardManageState) string {
+	return fmt.Sprintf(
+		"Só pra confirmar: o dia %d é o *vencimento* que você já me passou. O *fechamento* é o dia em que a fatura fecha e costuma ser outro. Qual é o dia de fechamento? Se for o dia %d mesmo, é só repetir.",
+		state.DueDay, state.DueDay,
+	)
+}
+
+func cardManageEnter(ctx context.Context, state CardManageState, cards interfaces.CardManager) (workflow.StepOutput[CardManageState], error) {
+	if state.Operation == CardManageOpEdit {
+		state.Awaiting = CardManageAwaitingConfirm
+		return cardManageAskConfirmation(ctx, state, cards)
+	}
+	return cardManageAdvanceCreate(ctx, state, cards)
+}
+
+func cardManageAdvanceCreate(ctx context.Context, state CardManageState, cards interfaces.CardManager) (workflow.StepOutput[CardManageState], error) {
+	if strings.TrimSpace(state.Bank) != "" && !state.BankChecked {
+		recognized, err := cards.BankRecognized(ctx, state.Bank)
+		if err != nil {
+			state.ResponseText = "Não consegui cadastrar o cartão. Tente novamente em breve."
+			return workflow.StepOutput[CardManageState]{State: state, Status: workflow.StepStatusFailed}, fmt.Errorf("agents.card_manage.create: bank_recognized: %w", err)
+		}
+		state.BankChecked = true
+		state.BankRecognized = recognized
+		if recognized {
+			state.ClosingDay = 0
+			state.ClosingDayProvided = false
+		}
+	}
+
+	next := DecideCardManageNextSlot(state)
+	state.Awaiting = next
+	state.SlotReprompt = 0
+	state.SuspendedAt = time.Now().UTC()
+
+	if next == CardManageAwaitingConfirm {
+		return cardManageAskConfirmation(ctx, state, cards)
+	}
+	return cardManageSuspend(state, cardManageSlotPrompt(next, state))
+}
+
+func handleCardManageSlot(ctx context.Context, state CardManageState, cards interfaces.CardManager) (workflow.StepOutput[CardManageState], error) {
+	if state.ResumeText == "" {
+		return cardManageSuspend(state, cardManageSlotPrompt(state.Awaiting, state))
+	}
+	if isCardManageSlotExpired(state, time.Now().UTC()) {
+		return cardManageExpireStep(state)
+	}
+
+	answer := state.ResumeText
+	state.ResumeText = ""
+
+	if ShouldReleaseCardManageSlot(answer) {
+		state.Status = CardManageCancelled
+		state.Released = true
+		state.ResponseText = ""
+		return workflow.StepOutput[CardManageState]{State: state, Status: workflow.StepStatusCompleted}, nil
+	}
+
+	decision, ok := decideCardManageSlotAnswer(state, answer)
+	if !ok {
+		return cardManageAdvanceCreate(ctx, state, cards)
+	}
+
+	switch decision.Action {
+	case CardManageSlotCancel:
+		return cardManageComplete(state, CardManageCancelled, "🚫 Cadastro do 💳 cancelado conforme solicitado.")
+	case CardManageSlotDisambiguate:
+		state.ClosingDayEcho++
+		state.SuspendedAt = time.Now().UTC()
+		return cardManageSuspend(state, cardManageClosingDayEchoPrompt(state))
+	case CardManageSlotReprompt:
+		state.SlotReprompt++
+		if state.SlotReprompt >= cardManageMaxSlotReprompts {
+			return cardManageComplete(state, CardManageCancelled, "🚫 Não consegui entender. Cancelei o cadastro do 💳 — é só me chamar de novo quando quiser. 🙂")
+		}
+		return cardManageSuspend(state, cardManageSlotPrompt(state.Awaiting, state))
+	}
+
+	return cardManageAdvanceCreate(ctx, applyCardManageSlotFill(state, decision), cards)
+}
+
+func decideCardManageSlotAnswer(state CardManageState, answer string) (CardManageSlotDecision, bool) {
+	switch state.Awaiting {
+	case CardManageAwaitingNickname:
+		return DecideCardManageNicknameAnswer(answer), true
+	case CardManageAwaitingBank:
+		return DecideCardManageBankAnswer(answer), true
+	case CardManageAwaitingDueDay:
+		return DecideCardManageDueDayAnswer(answer), true
+	case CardManageAwaitingClosingDay:
+		return DecideCardManageClosingDayAnswer(state, answer), true
+	default:
+		return CardManageSlotDecision{}, false
+	}
+}
+
+func applyCardManageSlotFill(state CardManageState, decision CardManageSlotDecision) CardManageState {
+	switch state.Awaiting {
+	case CardManageAwaitingNickname:
+		state.Nickname = decision.Text
+		state.NicknameProvided = true
+	case CardManageAwaitingBank:
+		state.Bank = decision.Text
+		state.BankProvided = true
+		state.BankChecked = false
+		state.BankRecognized = false
+	case CardManageAwaitingDueDay:
+		state.DueDay = decision.Day
+		state.DueDayProvided = true
+	case CardManageAwaitingClosingDay:
+		state.ClosingDay = decision.Day
+		state.ClosingDayProvided = true
+	}
+	return state
 }
 
 func cardManageAskConfirmation(ctx context.Context, state CardManageState, cards interfaces.CardManager) (workflow.StepOutput[CardManageState], error) {
@@ -353,7 +525,7 @@ func ContinueCardManage(
 		return true, result.State.ResponseText, fmt.Errorf("workflows.card_manage: resume: %w", resumeErr)
 	}
 
-	if result.State.Expired {
+	if result.State.Expired || result.State.Released {
 		return false, "", nil
 	}
 

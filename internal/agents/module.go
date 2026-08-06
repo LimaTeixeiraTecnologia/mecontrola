@@ -510,7 +510,7 @@ func buildFinancialTools(
 		agenttools.BuildCreateRecurrenceTool(transactionWriteStarter, cards),
 		agenttools.BuildSuggestAllocationTool(planner),
 		agenttools.BuildListCategoriesTool(reader),
-		agenttools.BuildCreateCardTool(cardManageEngine, cardManageDef, cards),
+		agenttools.BuildCreateCardTool(cardManageEngine, cardManageDef),
 		agenttools.BuildCreateBudgetTool(budgetManageEngine, budgetManageDef),
 		agenttools.BuildEditBudgetTotalTool(budgetManageEngine, budgetManageDef),
 		agenttools.BuildCategoryDetailTool(planner, ledger, reader),

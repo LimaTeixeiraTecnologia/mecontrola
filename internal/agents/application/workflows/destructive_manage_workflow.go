@@ -154,7 +154,7 @@ func handleDestructiveEntryCandidateResume(state DestructiveManageState) (workfl
 	text := strings.TrimSpace(state.ResumeText)
 	state.ResumeText = ""
 
-	if isNao(strings.ToLower(text)) {
+	if DecideConfirmAnswer(text) == ConfirmAnswerNo {
 		state.Status = DestructiveManageCancelled
 		state.ResponseText = "🚫 Operação cancelada conforme solicitado."
 		return workflow.StepOutput[DestructiveManageState]{State: state, Status: workflow.StepStatusCompleted}, nil

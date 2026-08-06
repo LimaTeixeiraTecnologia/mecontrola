@@ -88,7 +88,63 @@ func ParseCardManageStatus(s string) (CardManageStatus, error) {
 	}
 }
 
+type CardManageAwaiting int
+
+const (
+	CardManageAwaitingNickname CardManageAwaiting = iota + 1
+	CardManageAwaitingBank
+	CardManageAwaitingDueDay
+	CardManageAwaitingClosingDay
+	CardManageAwaitingConfirm
+)
+
+func (a CardManageAwaiting) String() string {
+	switch a {
+	case CardManageAwaitingNickname:
+		return "nickname"
+	case CardManageAwaitingBank:
+		return "bank"
+	case CardManageAwaitingDueDay:
+		return "due_day"
+	case CardManageAwaitingClosingDay:
+		return "closing_day"
+	case CardManageAwaitingConfirm:
+		return "confirm"
+	default:
+		return "unknown"
+	}
+}
+
+func (a CardManageAwaiting) IsValid() bool {
+	return a >= CardManageAwaitingNickname && a <= CardManageAwaitingConfirm
+}
+
+var errInvalidCardManageAwaiting = errors.New("workflows: card manage awaiting inválido")
+
+func ParseCardManageAwaiting(s string) (CardManageAwaiting, error) {
+	switch s {
+	case "nickname":
+		return CardManageAwaitingNickname, nil
+	case "bank":
+		return CardManageAwaitingBank, nil
+	case "due_day":
+		return CardManageAwaitingDueDay, nil
+	case "closing_day":
+		return CardManageAwaitingClosingDay, nil
+	case "confirm":
+		return CardManageAwaitingConfirm, nil
+	default:
+		return 0, fmt.Errorf("%w: %q", errInvalidCardManageAwaiting, s)
+	}
+}
+
 type CardManageState struct {
+	Awaiting           CardManageAwaiting      `json:"awaiting"`
+	BankChecked        bool                    `json:"bankChecked"`
+	BankRecognized     bool                    `json:"bankRecognized"`
+	SlotReprompt       int                     `json:"slotReprompt"`
+	Released           bool                    `json:"released"`
+	ClosingDayEcho     int                     `json:"closingDayEcho"`
 	Status             CardManageStatus        `json:"status"`
 	Operation          CardManageOperationKind `json:"operation"`
 	UserID             uuid.UUID               `json:"userId"`

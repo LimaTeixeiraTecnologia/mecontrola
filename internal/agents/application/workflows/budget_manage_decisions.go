@@ -101,12 +101,11 @@ func DecideBudgetManageApplyScope(text string) BudgetManageDecision {
 }
 
 func isBudgetManageConfirmYes(text string) bool {
-	return reConfirmYes.MatchString(strings.TrimSpace(text))
+	return DecideConfirmAnswer(text) == ConfirmAnswerYes
 }
 
 func isBudgetManageConfirmNo(text string) bool {
-	normalized := strings.TrimSpace(text)
-	return reConfirmNo.MatchString(normalized) || isCancelMessage(normalized)
+	return DecideConfirmAnswer(text) == ConfirmAnswerNo
 }
 
 func DecideBudgetManageConfirmation(state BudgetManageState, msg BudgetManageMessage, now time.Time) BudgetManageDecision {

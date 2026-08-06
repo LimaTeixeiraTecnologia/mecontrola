@@ -79,6 +79,7 @@ func (s *CardManageWorkflowSuite) TestBuildCardManageWorkflow_Definition() {
 }
 
 func (s *CardManageWorkflowSuite) TestCreateFirstEntrySuspendsWithConfirmQuestion() {
+	s.cardsMock.EXPECT().BankRecognized(mock.Anything, "nubank").Return(true, nil).Once()
 	def := BuildCardManageWorkflowWithObservability(s.cardsMock, s.idem, nil)
 	state := CardManageState{
 		UserID:    s.userID,

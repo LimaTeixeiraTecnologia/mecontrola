@@ -33,7 +33,7 @@ func (g *multiItemFalseBlockGuard) Inspect(_ context.Context, in agent.Request, 
 		return GuardDecision{}
 	}
 	message := lastUserMessageContent(in.Messages)
-	if DetectMultipleMonetaryValues(message) && !IsCorrectionOrEditIntent(message) {
+	if DetectMultipleMonetaryValues(message) && !IsMultiItemExempt(message) {
 		return GuardDecision{}
 	}
 	if hasSuccessfulWriteTool(out.ToolCalls) {

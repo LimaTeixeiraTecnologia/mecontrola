@@ -191,13 +191,10 @@ func DecideTransactionConfirmation(state TransactionWriteState, msg PendingMessa
 		return TransactionConfirmActionReplay
 	}
 
-	text := strings.TrimSpace(msg.Text)
-
-	if reConfirmYes.MatchString(text) {
+	switch DecideConfirmAnswer(msg.Text) {
+	case ConfirmAnswerYes:
 		return TransactionConfirmActionAccept
-	}
-
-	if reConfirmNo.MatchString(text) || isCancelMessage(text) {
+	case ConfirmAnswerNo:
 		return TransactionConfirmActionCancel
 	}
 
