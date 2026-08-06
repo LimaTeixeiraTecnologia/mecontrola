@@ -23,6 +23,7 @@ import (
 	cardinterfaces "github.com/LimaTeixeiraTecnologia/mecontrola/internal/card/application/interfaces"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/categories"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/postgres"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/worker"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
 	txconsumers "github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions/infrastructure/messaging/database/consumers"
@@ -48,6 +49,10 @@ type txNoOpChannelGateway struct{}
 
 func (g *txNoOpChannelGateway) SendText(_ context.Context, _, _, _ string) error { return nil }
 func (g *txNoOpChannelGateway) SendActivationTemplate(_ context.Context, _, _, _, _ string) (string, error) {
+	return "", fmt.Errorf("not supported in tx e2e")
+}
+
+func (g *txNoOpChannelGateway) SendTemplate(_ context.Context, _ notification.TemplateMessage) (string, error) {
 	return "", fmt.Errorf("not supported in tx e2e")
 }
 

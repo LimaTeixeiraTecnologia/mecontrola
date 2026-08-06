@@ -26,6 +26,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/configs"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents"
+	agentalerts "github.com/LimaTeixeiraTecnologia/mecontrola/internal/agents/infrastructure/alerts"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/billing"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/bootstrap"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/budgets"
@@ -35,6 +36,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
 	onboardingpostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/repositories/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
+	memorypostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/memory/infrastructure/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/observability/runtimemetrics"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup"
@@ -280,7 +282,14 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		return nil, fmt.Errorf("worker: inicializar modulo transactions: %w", err)
 	}
 
-	budgetsModule, err := budgets.NewBudgetsModule(r.cfg, r.o11y, r.db, categoriesModule, passthroughGateway, channelGateway, channelResolver)
+	alertContextRecorder := agentalerts.NewAlertContextRecorder(
+		memorypostgres.NewThreadRepository(r.db, r.o11y),
+		memorypostgres.NewMessageRepository(r.db, r.o11y),
+		memorypostgres.NewWorkingMemoryRepository(r.db, r.o11y),
+		r.cfg.BudgetsConfig.ThresholdAlertContextTTL,
+		r.o11y,
+	)
+	budgetsModule, err := budgets.NewBudgetsModule(r.cfg, r.o11y, r.db, categoriesModule, passthroughGateway, channelGateway, channelResolver, alertContextRecorder)
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo budgets: %w", err)
 	}
@@ -320,6 +329,7 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		InboundDedup:       consumerDedupRepo,
 		InboundTimeout:     r.cfg.AgentConfig.InboundTimeout,
 		AgentMaxTokens:     r.cfg.AgentConfig.MecontrolaMaxTokens,
+		AlertContextTTL:    r.cfg.BudgetsConfig.ThresholdAlertContextTTL,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo agents: %w", err)

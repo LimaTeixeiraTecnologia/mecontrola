@@ -12,6 +12,7 @@ import (
 
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/gateway"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/http/client/meta"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
 )
 
 type WhatsAppGatewaySuite struct {
@@ -91,4 +92,48 @@ func (s *WhatsAppGatewaySuite) TestSendActivationTemplate() {
 			scenario.expect(capturedBody, wamid, err)
 		})
 	}
+}
+
+func (s *WhatsAppGatewaySuite) TestSendTemplateMessage() {
+	var capturedBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.Require().NoError(json.NewDecoder(r.Body).Decode(&capturedBody))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		s.Require().NoError(json.NewEncoder(w).Encode(map[string]any{
+			"messages": []map[string]string{{"id": "wamid.generic"}},
+		}))
+	}))
+	defer server.Close()
+
+	client, err := meta.NewClient(devkitfake.NewProvider(), meta.Config{
+		PhoneNumberID: "123",
+		AccessToken:   "token",
+		BaseURL:       server.URL,
+	})
+	s.Require().NoError(err)
+
+	whatsAppGateway := gateway.NewWhatsAppGateway(client)
+	wamid, err := whatsAppGateway.SendTemplateMessage(context.Background(), "+5511999990000", notification.TemplateMessage{
+		Channel:      notification.ChannelWhatsApp,
+		ExternalID:   "+5511999990000",
+		TemplateName: "mecontrola_category_threshold_80",
+		LanguageCode: "pt_BR",
+		Components: []notification.TemplateComponent{
+			{
+				Type: notification.TemplateComponentBody,
+				Parameters: []notification.TemplateParameter{
+					{Type: notification.TemplateParameterText, Text: "Custo Fixo"},
+					{Type: notification.TemplateParameterText, Text: "R$ 500,00"},
+				},
+			},
+		},
+	})
+	s.Require().NoError(err)
+	s.Equal("wamid.generic", wamid)
+	template := capturedBody["template"].(map[string]any)
+	s.Equal("mecontrola_category_threshold_80", template["name"])
+	components := template["components"].([]any)
+	parameters := components[0].(map[string]any)["parameters"].([]any)
+	s.Equal("Custo Fixo", parameters[0].(map[string]any)["text"])
 }

@@ -227,7 +227,7 @@ func (s *MigrationSuite) TestReconcilePlatformThreadColumnsFromLegacy() {
 
 	version, dirty, err := migrator.Version()
 	s.Require().NoError(err)
-	s.Equal(uint(18), version)
+	s.Equal(uint(19), version)
 	s.False(dirty)
 }
 
@@ -243,7 +243,7 @@ func (s *MigrationSuite) TestReconcileIsNoopOnFreshBaseline() {
 
 	version, dirty, err := migrator.Version()
 	s.Require().NoError(err)
-	s.Equal(uint(18), version)
+	s.Equal(uint(19), version)
 	s.False(dirty)
 }
 
@@ -2323,4 +2323,43 @@ func (s *MigrationSuite) TestDictionaryFuelVehicleTerms() {
 func execSQL(db database.DBTX, ctx context.Context, query string, args ...any) error {
 	_, err := db.ExecContext(ctx, query, args...)
 	return err
+}
+
+func (s *MigrationSuite) TestBudgetAlertsSentReleaseOneKinds() {
+	migrator := s.newMigrator()
+	s.applyBaseline(migrator)
+
+	s.assertConstraintPresent("budget_alerts_sent", "budget_alerts_sent_kind_chk")
+
+	insertKind := func(kind string, budgetID uuid.UUID) error {
+		return execSQL(s.db, s.ctx, `
+			INSERT INTO mecontrola.budget_alerts_sent (user_id, budget_id, kind, ref_day)
+			VALUES (gen_random_uuid(), $1, $2, DATE '2026-08-05')
+		`, budgetID, kind)
+	}
+
+	for _, kind := range []string{
+		"category_threshold_80",
+		"category_threshold_100",
+		"budget_missing_month_start",
+		"budget_not_reviewed_day_3",
+	} {
+		s.Require().NoError(insertKind(kind, uuid.New()), kind)
+	}
+
+	for _, legacy := range []string{"category_threshold", "goal_achieved", "card_limit_near"} {
+		s.Require().NoError(insertKind(legacy, uuid.New()), legacy)
+	}
+
+	blockedErr := insertKind("category_threshold_90", uuid.New())
+	s.Require().Error(blockedErr)
+	s.Contains(blockedErr.Error(), "budget_alerts_sent_kind_chk")
+
+	unknownErr := insertKind("kind_inexistente", uuid.New())
+	s.Require().Error(unknownErr)
+	s.Contains(unknownErr.Error(), "budget_alerts_sent_kind_chk")
+
+	sharedBudget := uuid.New()
+	s.Require().NoError(insertKind("category_threshold_80", sharedBudget))
+	s.Require().NoError(insertKind("category_threshold_100", sharedBudget))
 }

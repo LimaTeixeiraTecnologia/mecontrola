@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -199,9 +200,71 @@ func (s *HandleInboundSuite) TestExecute() {
 
 	for _, scenario := range scenarios {
 		s.Run(scenario.name, func() {
-			uc := NewHandleInbound(scenario.dependencies.runtimeMock, s.obs)
+			uc := NewHandleInbound(scenario.dependencies.runtimeMock, nil, s.obs)
 			outcome, err := uc.Execute(s.ctx, scenario.args.in)
 			scenario.expect(outcome, err)
 		})
 	}
+}
+
+type stubAlertContextExpirer struct {
+	calls      int
+	resourceID string
+	err        error
+}
+
+func (s *stubAlertContextExpirer) PurgeExpired(_ context.Context, resourceID string, _ time.Time) error {
+	s.calls++
+	s.resourceID = resourceID
+	return s.err
+}
+
+func (s *HandleInboundSuite) TestExecutePurgesExpiredAlertContextBeforeRuntime() {
+	in := input.InboundInput{
+		ResourceID: "user-1",
+		ThreadID:   "+5511999990000",
+		AgentID:    "mecontrola",
+		Message:    "sim",
+		MessageID:  "wamid.1",
+	}
+
+	s.Run("expiracao roda antes do runtime", func() {
+		s.SetupTest()
+		expirer := &stubAlertContextExpirer{}
+		s.runtimeMock.EXPECT().Execute(mock.Anything, mock.Anything).
+			RunAndReturn(func(_ context.Context, _ agent.InboundRequest) (agent.Outcome, error) {
+				s.Equal(1, expirer.calls)
+				return agent.Outcome{}, nil
+			}).Once()
+
+		uc := NewHandleInbound(s.runtimeMock, expirer, s.obs)
+		_, err := uc.Execute(s.ctx, in)
+
+		s.Require().NoError(err)
+		s.Equal(1, expirer.calls)
+		s.Equal("user-1", expirer.resourceID)
+	})
+
+	s.Run("falha na expiracao nao bloqueia o inbound", func() {
+		s.SetupTest()
+		expirer := &stubAlertContextExpirer{err: errors.New("memory down")}
+		s.runtimeMock.EXPECT().Execute(mock.Anything, mock.Anything).Return(agent.Outcome{}, nil).Once()
+
+		uc := NewHandleInbound(s.runtimeMock, expirer, s.obs)
+		_, err := uc.Execute(s.ctx, in)
+
+		s.Require().NoError(err)
+		s.Equal(1, expirer.calls)
+	})
+
+	s.Run("input invalido nao chama expiracao", func() {
+		s.SetupTest()
+		expirer := &stubAlertContextExpirer{}
+
+		uc := NewHandleInbound(s.runtimeMock, expirer, s.obs)
+		_, err := uc.Execute(s.ctx, input.InboundInput{})
+
+		s.Require().Error(err)
+		s.Zero(expirer.calls)
+	})
 }

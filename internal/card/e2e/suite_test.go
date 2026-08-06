@@ -62,6 +62,10 @@ func (g *cardE2EChannelGateway) SendActivationTemplate(_ context.Context, _, _, 
 	return "", fmt.Errorf("unsupported in card e2e")
 }
 
+func (g *cardE2EChannelGateway) SendTemplate(_ context.Context, _ notification.TemplateMessage) (string, error) {
+	return "", fmt.Errorf("unsupported in card e2e")
+}
+
 type cardE2EUserChannelResolver struct{}
 
 func (r *cardE2EUserChannelResolver) ResolvePreferred(_ context.Context, userID uuid.UUID) (cardinterfaces.UserChannelPreference, bool, error) {

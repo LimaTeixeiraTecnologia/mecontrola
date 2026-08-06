@@ -27,6 +27,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/database/uow"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/id"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/notification"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/testcontainer"
 )
@@ -63,6 +64,10 @@ func (f *fakeGateway) SendTextMessage(_ context.Context, _, _ string) error { re
 
 type integrationAttemptEvent struct {
 	envelope outbox.Envelope
+}
+
+func (f *fakeGateway) SendTemplateMessage(_ context.Context, _ string, _ notification.TemplateMessage) (string, error) {
+	return "", nil
 }
 
 func (e *integrationAttemptEvent) GetEventType() string { return "onboarding.activation.attempted.v1" }

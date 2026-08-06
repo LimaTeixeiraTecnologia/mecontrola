@@ -100,17 +100,29 @@ type IdentityConfig struct {
 }
 
 type BudgetsConfig struct {
-	PendingReaperInterval    string        `mapstructure:"BUDGETS_PENDING_REAPER_INTERVAL"`
-	PendingTTLHours          int           `mapstructure:"BUDGETS_PENDING_TTL_HOURS"`
-	PendingTTL               time.Duration `mapstructure:"-"`
-	AbandonedDraftCron       string        `mapstructure:"BUDGETS_ABANDONED_DRAFT_CRON"`
-	RetentionPurgeCron       string        `mapstructure:"BUDGETS_RETENTION_PURGE_CRON"`
-	RetentionPurgeBatchSize  int           `mapstructure:"BUDGETS_RETENTION_PURGE_BATCH_SIZE"`
-	ThresholdAlertsCron      string        `mapstructure:"BUDGETS_THRESHOLD_ALERTS_CRON"`
-	ThresholdAlertsScanLimit int           `mapstructure:"BUDGETS_THRESHOLD_ALERTS_SCAN_LIMIT"`
-	ThresholdAlertsMode      string        `mapstructure:"BUDGETS_THRESHOLD_ALERTS_MODE"`
-	ThresholdCategoryRatio   float64       `mapstructure:"BUDGETS_THRESHOLD_CATEGORY_RATIO"`
-	ThresholdGoalRatio       float64       `mapstructure:"BUDGETS_THRESHOLD_GOAL_RATIO"`
+	PendingReaperInterval            string        `mapstructure:"BUDGETS_PENDING_REAPER_INTERVAL"`
+	PendingTTLHours                  int           `mapstructure:"BUDGETS_PENDING_TTL_HOURS"`
+	PendingTTL                       time.Duration `mapstructure:"-"`
+	AbandonedDraftCron               string        `mapstructure:"BUDGETS_ABANDONED_DRAFT_CRON"`
+	RetentionPurgeCron               string        `mapstructure:"BUDGETS_RETENTION_PURGE_CRON"`
+	RetentionPurgeBatchSize          int           `mapstructure:"BUDGETS_RETENTION_PURGE_BATCH_SIZE"`
+	ThresholdAlertsCron              string        `mapstructure:"BUDGETS_THRESHOLD_ALERTS_CRON"`
+	ThresholdAlertsScanLimit         int           `mapstructure:"BUDGETS_THRESHOLD_ALERTS_SCAN_LIMIT"`
+	ThresholdAlertsMode              string        `mapstructure:"BUDGETS_THRESHOLD_ALERTS_MODE"`
+	ThresholdAlertsDryRun            bool          `mapstructure:"BUDGETS_THRESHOLD_ALERTS_DRY_RUN"`
+	ThresholdAlertsQuietHoursStart   string        `mapstructure:"BUDGETS_THRESHOLD_ALERTS_QUIET_HOURS_START"`
+	ThresholdAlertsQuietHoursEnd     string        `mapstructure:"BUDGETS_THRESHOLD_ALERTS_QUIET_HOURS_END"`
+	ThresholdAlertsTimezoneFallback  string        `mapstructure:"BUDGETS_THRESHOLD_ALERTS_TIMEZONE_FALLBACK"`
+	ThresholdAlertsLanguageCode      string        `mapstructure:"BUDGETS_THRESHOLD_ALERTS_LANGUAGE_CODE"`
+	ThresholdTemplateCategory80      string        `mapstructure:"BUDGETS_THRESHOLD_TEMPLATE_CATEGORY_80"`
+	ThresholdTemplateCategory100     string        `mapstructure:"BUDGETS_THRESHOLD_TEMPLATE_CATEGORY_100"`
+	ThresholdTemplateBudgetMissing   string        `mapstructure:"BUDGETS_THRESHOLD_TEMPLATE_BUDGET_MISSING"`
+	ThresholdTemplateBudgetDay3      string        `mapstructure:"BUDGETS_THRESHOLD_TEMPLATE_BUDGET_DAY_3"`
+	ThresholdTemplatesApprovedKinds  string        `mapstructure:"BUDGETS_THRESHOLD_TEMPLATES_APPROVED_KINDS"`
+	ThresholdTemplatesMarketingKinds string        `mapstructure:"BUDGETS_THRESHOLD_TEMPLATES_MARKETING_KINDS"`
+	ThresholdAlertContextTTL         time.Duration `mapstructure:"BUDGETS_THRESHOLD_ALERT_CONTEXT_TTL"`
+	ThresholdCategoryRatio           float64       `mapstructure:"BUDGETS_THRESHOLD_CATEGORY_RATIO"`
+	ThresholdGoalRatio               float64       `mapstructure:"BUDGETS_THRESHOLD_GOAL_RATIO"`
 }
 
 const (
@@ -679,6 +691,18 @@ func (l *configLoader) setBudgetsDefaults() {
 	l.v.SetDefault("BUDGETS_THRESHOLD_ALERTS_CRON", "@hourly")
 	l.v.SetDefault("BUDGETS_THRESHOLD_ALERTS_SCAN_LIMIT", 500)
 	l.v.SetDefault("BUDGETS_THRESHOLD_ALERTS_MODE", ThresholdAlertsModeLegacy)
+	l.v.SetDefault("BUDGETS_THRESHOLD_ALERTS_DRY_RUN", true)
+	l.v.SetDefault("BUDGETS_THRESHOLD_ALERTS_QUIET_HOURS_START", "20:00")
+	l.v.SetDefault("BUDGETS_THRESHOLD_ALERTS_QUIET_HOURS_END", "08:00")
+	l.v.SetDefault("BUDGETS_THRESHOLD_ALERTS_TIMEZONE_FALLBACK", "America/Sao_Paulo")
+	l.v.SetDefault("BUDGETS_THRESHOLD_ALERTS_LANGUAGE_CODE", "pt_BR")
+	l.v.SetDefault("BUDGETS_THRESHOLD_TEMPLATE_CATEGORY_80", "mecontrola_category_threshold_80")
+	l.v.SetDefault("BUDGETS_THRESHOLD_TEMPLATE_CATEGORY_100", "mecontrola_category_threshold_100")
+	l.v.SetDefault("BUDGETS_THRESHOLD_TEMPLATE_BUDGET_MISSING", "mecontrola_budget_missing_month_start")
+	l.v.SetDefault("BUDGETS_THRESHOLD_TEMPLATE_BUDGET_DAY_3", "mecontrola_budget_not_reviewed_day_3")
+	l.v.SetDefault("BUDGETS_THRESHOLD_TEMPLATES_APPROVED_KINDS", "")
+	l.v.SetDefault("BUDGETS_THRESHOLD_TEMPLATES_MARKETING_KINDS", "budget_not_reviewed_day_3")
+	l.v.SetDefault("BUDGETS_THRESHOLD_ALERT_CONTEXT_TTL", 24*time.Hour)
 	l.v.SetDefault("BUDGETS_THRESHOLD_CATEGORY_RATIO", 0.80)
 	l.v.SetDefault("BUDGETS_THRESHOLD_GOAL_RATIO", 0.50)
 }
@@ -814,6 +838,7 @@ func (c *Config) Validate() error {
 	}
 
 	errs = append(errs, c.validatePoolTunables()...)
+	errs = append(errs, c.validateBudgets()...)
 	errs = append(errs, c.validateOutbox()...)
 	errs = append(errs, c.validateBilling()...)
 	errs = append(errs, c.validateOnboarding()...)
@@ -961,6 +986,138 @@ func (c *Config) validateOutbox() []string {
 	}
 
 	return errs
+}
+
+var ReleaseOneAlertKinds = []string{
+	"category_threshold_80",
+	"category_threshold_100",
+	"budget_missing_month_start",
+	"budget_not_reviewed_day_3",
+}
+
+func (c *Config) validateBudgets() []string {
+	var errs []string
+
+	mode := strings.TrimSpace(c.BudgetsConfig.ThresholdAlertsMode)
+	if mode != "" && !slices.Contains([]string{
+		ThresholdAlertsModeLegacy,
+		ThresholdAlertsModeJob,
+		ThresholdAlertsModeBoth,
+	}, mode) {
+		errs = append(errs, fmt.Sprintf(
+			"BUDGETS_THRESHOLD_ALERTS_MODE inválido %q: deve ser um de {legacy, job, both}",
+			mode,
+		))
+	}
+
+	if c.BudgetsConfig.ThresholdAlertsScanLimit < 1 {
+		errs = append(errs, "BUDGETS_THRESHOLD_ALERTS_SCAN_LIMIT deve ser maior que zero")
+	}
+
+	if _, err := parseClockHHMM(c.BudgetsConfig.ThresholdAlertsQuietHoursStart); err != nil {
+		errs = append(errs, fmt.Sprintf(
+			"BUDGETS_THRESHOLD_ALERTS_QUIET_HOURS_START inválido %q: %v",
+			c.BudgetsConfig.ThresholdAlertsQuietHoursStart,
+			err,
+		))
+	}
+
+	if _, err := parseClockHHMM(c.BudgetsConfig.ThresholdAlertsQuietHoursEnd); err != nil {
+		errs = append(errs, fmt.Sprintf(
+			"BUDGETS_THRESHOLD_ALERTS_QUIET_HOURS_END inválido %q: %v",
+			c.BudgetsConfig.ThresholdAlertsQuietHoursEnd,
+			err,
+		))
+	}
+
+	if strings.TrimSpace(c.BudgetsConfig.ThresholdAlertsTimezoneFallback) == "" {
+		errs = append(errs, "BUDGETS_THRESHOLD_ALERTS_TIMEZONE_FALLBACK obrigatório: não pode ser vazio")
+	} else if _, err := time.LoadLocation(c.BudgetsConfig.ThresholdAlertsTimezoneFallback); err != nil {
+		errs = append(errs, fmt.Sprintf(
+			"BUDGETS_THRESHOLD_ALERTS_TIMEZONE_FALLBACK inválido %q: %v",
+			c.BudgetsConfig.ThresholdAlertsTimezoneFallback,
+			err,
+		))
+	}
+
+	if strings.TrimSpace(c.BudgetsConfig.ThresholdAlertsLanguageCode) == "" {
+		errs = append(errs, "BUDGETS_THRESHOLD_ALERTS_LANGUAGE_CODE obrigatório: não pode ser vazio")
+	}
+
+	if c.BudgetsConfig.ThresholdAlertContextTTL <= 0 {
+		errs = append(errs, "BUDGETS_THRESHOLD_ALERT_CONTEXT_TTL deve ser maior que zero")
+	}
+
+	errs = append(errs, c.validateBudgetKindLists()...)
+
+	if !c.BudgetsConfig.ThresholdAlertsDryRun {
+		errs = append(errs, c.validateBudgetRequiredTemplates()...)
+	}
+
+	return errs
+}
+
+func (c *Config) validateBudgetKindLists() []string {
+	var errs []string
+
+	for _, kindList := range []struct {
+		name  string
+		value string
+	}{
+		{"BUDGETS_THRESHOLD_TEMPLATES_APPROVED_KINDS", c.BudgetsConfig.ThresholdTemplatesApprovedKinds},
+		{"BUDGETS_THRESHOLD_TEMPLATES_MARKETING_KINDS", c.BudgetsConfig.ThresholdTemplatesMarketingKinds},
+	} {
+		errs = append(errs, c.validateBudgetKindList(kindList.name, kindList.value)...)
+	}
+
+	return errs
+}
+
+func (c *Config) validateBudgetKindList(name, value string) []string {
+	var errs []string
+
+	for _, raw := range strings.Split(value, ",") {
+		kind := strings.TrimSpace(raw)
+		if kind == "" {
+			continue
+		}
+		if !slices.Contains(ReleaseOneAlertKinds, kind) {
+			errs = append(errs, fmt.Sprintf("%s contem kind invalido %q: deve ser um de %v", name, kind, ReleaseOneAlertKinds))
+		}
+	}
+
+	return errs
+}
+
+func (c *Config) validateBudgetRequiredTemplates() []string {
+	var errs []string
+
+	for _, field := range []struct {
+		name  string
+		value string
+	}{
+		{"BUDGETS_THRESHOLD_TEMPLATE_CATEGORY_80", c.BudgetsConfig.ThresholdTemplateCategory80},
+		{"BUDGETS_THRESHOLD_TEMPLATE_CATEGORY_100", c.BudgetsConfig.ThresholdTemplateCategory100},
+		{"BUDGETS_THRESHOLD_TEMPLATE_BUDGET_MISSING", c.BudgetsConfig.ThresholdTemplateBudgetMissing},
+		{"BUDGETS_THRESHOLD_TEMPLATE_BUDGET_DAY_3", c.BudgetsConfig.ThresholdTemplateBudgetDay3},
+	} {
+		if strings.TrimSpace(field.value) == "" {
+			errs = append(errs, fmt.Sprintf("%s obrigatório quando BUDGETS_THRESHOLD_ALERTS_DRY_RUN=false", field.name))
+		}
+	}
+
+	return errs
+}
+
+func parseClockHHMM(raw string) (time.Duration, error) {
+	if len(raw) != len("15:04") {
+		return 0, fmt.Errorf("esperado HH:MM")
+	}
+	parsed, err := time.Parse("15:04", raw)
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration(parsed.Hour())*time.Hour + time.Duration(parsed.Minute())*time.Minute, nil
 }
 
 func (c *Config) validateProduction() []string {
