@@ -156,11 +156,11 @@ func cardManageExpireStep(state CardManageState) (workflow.StepOutput[CardManage
 func cardManageSlotPrompt(slot CardManageAwaiting, state CardManageState) string {
 	switch slot {
 	case CardManageAwaitingNickname:
-		return "Qual apelido você quer dar para esse 💳?"
+		return "Qual apelido você quer dar para esse cartão 💳?"
 	case CardManageAwaitingBank:
-		return "Qual é o banco desse 💳?"
+		return "Qual é o banco desse cartão 💳?"
 	case CardManageAwaitingDueDay:
-		return "Qual é o dia de vencimento da fatura desse 💳?"
+		return "Qual é o dia de vencimento da fatura desse cartão 💳?"
 	case CardManageAwaitingClosingDay:
 		return fmt.Sprintf(
 			"Não reconheço o banco *%s* na minha lista, então preciso do dia de *fechamento* da fatura: é o dia em que a fatura fecha, normalmente diferente do vencimento (dia %d). Qual é?",
@@ -237,7 +237,7 @@ func handleCardManageSlot(ctx context.Context, state CardManageState, cards inte
 
 	switch decision.Action {
 	case CardManageSlotCancel:
-		return cardManageComplete(state, CardManageCancelled, "🚫 Cadastro do 💳 cancelado conforme solicitado.")
+		return cardManageComplete(state, CardManageCancelled, "🚫 Cadastro do cartão 💳 cancelado conforme solicitado.")
 	case CardManageSlotDisambiguate:
 		state.ClosingDayEcho++
 		state.SuspendedAt = time.Now().UTC()
@@ -245,7 +245,7 @@ func handleCardManageSlot(ctx context.Context, state CardManageState, cards inte
 	case CardManageSlotReprompt:
 		state.SlotReprompt++
 		if state.SlotReprompt >= cardManageMaxSlotReprompts {
-			return cardManageComplete(state, CardManageCancelled, "🚫 Não consegui entender. Cancelei o cadastro do 💳. É só me chamar de novo quando quiser. 🙂")
+			return cardManageComplete(state, CardManageCancelled, "🚫 Não consegui entender. Cancelei o cadastro do cartão 💳. É só me chamar de novo quando quiser. 🙂")
 		}
 		return cardManageSuspend(state, cardManageSlotPrompt(state.Awaiting, state))
 	}
@@ -340,14 +340,14 @@ func cardManageConfirmQuestion(state CardManageState) string {
 			dueDay = state.DueDay
 		}
 		base := fmt.Sprintf(
-			"⚠️ Confirma a atualização do 💳 *%s* (%s), vencimento dia %d, para *%s* (%s), vencimento dia %d?",
+			"⚠️ Confirma a atualização do cartão 💳 *%s* (%s), vencimento dia %d, para *%s* (%s), vencimento dia %d?",
 			state.PreviousNickname, state.PreviousBank, state.PreviousDueDay,
 			nickname, bank, dueDay,
 		)
 		return base + "\n\nResponda *sim* para confirmar ou *não* para cancelar."
 	}
 
-	base := fmt.Sprintf("⚠️ Confirma o cadastro do 💳 *%s* (%s), vencimento dia %d?", state.Nickname, state.Bank, state.DueDay)
+	base := fmt.Sprintf("⚠️ Confirma o cadastro do cartão 💳 *%s* (%s), vencimento dia %d?", state.Nickname, state.Bank, state.DueDay)
 	if state.ClosingDayProvided {
 		base = fmt.Sprintf("%s Fechamento dia %d.", base, state.ClosingDay)
 	}
@@ -413,9 +413,9 @@ func executeCardManageCreate(ctx context.Context, state CardManageState, cards i
 	state.CardID = resourceID.String()
 	seed := messages.NewMotivationSeed(state.MessageID)
 	if outcome == agent.ToolOutcomeReplay {
-		state.ResponseText = fmt.Sprintf("✅ 💳 *%s* já estava cadastrado.", state.Nickname)
+		state.ResponseText = fmt.Sprintf("✅ Cartão 💳 *%s* já estava cadastrado.", state.Nickname)
 	} else {
-		state.ResponseText = fmt.Sprintf("✅ 💳 *%s* cadastrado com sucesso.\n\n%s", state.Nickname, messages.CardManageMotivation(seed))
+		state.ResponseText = fmt.Sprintf("✅ Cartão 💳 *%s* cadastrado com sucesso.\n\n%s", state.Nickname, messages.CardManageMotivation(seed))
 	}
 	return workflow.StepOutput[CardManageState]{State: state, Status: workflow.StepStatusCompleted}, nil
 }
@@ -454,7 +454,7 @@ func executeCardManageEdit(ctx context.Context, state CardManageState, cards int
 
 	state.Status = CardManageCompleted
 	state.ProcessedMessageID = state.MessageID
-	state.ResponseText = "✅ 💳 atualizado com sucesso."
+	state.ResponseText = "✅ Cartão 💳 atualizado com sucesso."
 	return workflow.StepOutput[CardManageState]{State: state, Status: workflow.StepStatusCompleted}, nil
 }
 

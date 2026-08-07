@@ -989,7 +989,7 @@ const monthlyBudgetSystemPrompt = "Extraia o valor do orcamento mensal em reais 
 	"\"dois mil e quinhentos\" -> 2500; " +
 	"\"dez mil\" -> 10000."
 
-const cardsSystemPrompt = "Extraia do texto do usuario se ele quer adicionar um 💳 (wantsCard), o apelido (nickname), o banco emissor (bank) e o dia de vencimento (dueDay, inteiro 1-31). Se nao quiser 💳, retorne wantsCard=false, nickname vazio, bank vazio e dueDay=0."
+const cardsSystemPrompt = "Extraia do texto do usuario se ele quer adicionar um cartão 💳 (wantsCard), o apelido (nickname), o banco emissor (bank) e o dia de vencimento (dueDay, inteiro 1-31). Se nao quiser cartão 💳, retorne wantsCard=false, nickname vazio, bank vazio e dueDay=0."
 
 const recurrenceDecisionSystemPrompt = "Você extrai a resposta do usuário sobre repetir o orçamento automaticamente pelos próximos meses. " +
 	"Retorne intent, hasMonths e months; NÃO decida prioridade nem limites aqui; isso é resolvido por outra função. " +
@@ -1014,7 +1014,7 @@ const goalValueSystemPrompt = "Extraia, se houver, o valor em reais que o usuár
 func cardsPrompt(existing int) string {
 	if existing > 0 {
 		return fmt.Sprintf(
-			"Você já tem %d cartão 💳 cadastrado(s). Deseja cadastrar **outro** cartão agora?\n\n"+
+			"Você já tem %d cartão 💳 cadastrado(s). Deseja cadastrar **outro** cartão 💳 agora?\n\n"+
 				"Por exemplo:\n"+
 				"• \"Roxinho, Nubank e vencimento dia 1\"\n"+
 				"• \"Nubank e vencimento dia primeiro\" (sem apelido, o apelido fica igual ao banco)\n\n"+

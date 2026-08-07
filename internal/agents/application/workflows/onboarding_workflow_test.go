@@ -3903,7 +3903,7 @@ func (s *OnboardingWorkflowSuite) TestCardsPrompts_UseCardEmoji() {
 	s.NotContains(cardsPrompt(0), "cartão de crédito")
 
 	s.Contains(cardsPrompt(1), "cartão 💳")
-	s.Contains(cardsPrompt(1), "Deseja cadastrar **outro** cartão agora?")
+	s.Contains(cardsPrompt(1), "Deseja cadastrar **outro** cartão 💳 agora?")
 	s.Contains(cardsPrompt(1), "cadastrado(s)")
 	s.NotContains(cardsPrompt(1), "cartão de crédito")
 	s.NotContains(cardsPrompt(1), "OUTRO")
@@ -3917,7 +3917,7 @@ func (s *OnboardingWorkflowSuite) TestCardsPrompts_UseCardEmoji() {
 }
 
 func (s *OnboardingWorkflowSuite) TestCardsPrompts_ExactCopyWordEmojiAndExample() {
-	s.Contains(cardsPrompt(1), "Deseja cadastrar **outro** cartão agora?")
+	s.Contains(cardsPrompt(1), "Deseja cadastrar **outro** cartão 💳 agora?")
 	s.NotContains(cardsPrompt(1), "**Outro**")
 	s.NotContains(cardsPrompt(1), "**Deseja**")
 

@@ -64,7 +64,7 @@ func BuildUpdateCardTool(engine wf.Engine[workflows.CardManageState], def wf.Def
 		},
 	}
 	exec := buildUpdateCardExec(engine, def)
-	return tool.NewTool[UpdateCardInput, UpdateCardOutput]("update_card", "Atualiza apelido, banco e/ou dia de vencimento de um 💳. Toda alteração exige confirmação explícita do usuário.", in, out, exec)
+	return tool.NewTool[UpdateCardInput, UpdateCardOutput]("update_card", "Atualiza apelido, banco e/ou dia de vencimento de um cartão 💳. Toda alteração exige confirmação explícita do usuário.", in, out, exec)
 }
 
 func buildUpdateCardExec(engine wf.Engine[workflows.CardManageState], def wf.Definition[workflows.CardManageState]) func(context.Context, UpdateCardInput) (UpdateCardOutput, error) {

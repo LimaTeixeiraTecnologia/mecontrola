@@ -66,7 +66,7 @@ func BuildCreateCardTool(engine wf.Engine[workflows.CardManageState], def wf.Def
 		},
 	}
 	exec := buildCreateCardExec(engine, def)
-	return tool.NewTool[CreateCardInput, CreateCardOutput]("create_card", "Cadastra um novo 💳 de crédito pela conversa. Requer confirmação humana explícita antes de criar.", in, out, exec)
+	return tool.NewTool[CreateCardInput, CreateCardOutput]("create_card", "Cadastra um novo cartão 💳 de crédito pela conversa. Requer confirmação humana explícita antes de criar.", in, out, exec)
 }
 
 func buildCreateCardExec(engine wf.Engine[workflows.CardManageState], def wf.Definition[workflows.CardManageState]) func(context.Context, CreateCardInput) (CreateCardOutput, error) {

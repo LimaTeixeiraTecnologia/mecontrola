@@ -127,5 +127,5 @@ func createCardShortcutContent(raw []byte, verbatim string) string {
 			return payload.ClarifyPrompt
 		}
 	}
-	return "Vou cadastrar esse 💳 e te pedir confirmação antes de concluir. ✅"
+	return "Vou cadastrar esse cartão 💳 e te pedir confirmação antes de concluir. ✅"
 }

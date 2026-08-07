@@ -78,13 +78,13 @@ func listCardsShortcutContent(raw []byte, verbatim string) string {
 		} `json:"cards"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return "Não consegui consultar seus 💳 agora. Tente novamente em breve."
+		return "Não consegui consultar seus cartões 💳 agora. Tente novamente em breve."
 	}
 	if len(payload.Cards) == 0 {
-		return "Você ainda não tem nenhum 💳 cadastrado."
+		return "Você ainda não tem nenhum cartão 💳 cadastrado."
 	}
 	var b strings.Builder
-	b.WriteString("Aqui estão seus 💳:\n\n")
+	b.WriteString("Aqui estão seus cartões 💳:\n\n")
 	for i, card := range payload.Cards {
 		if i > 0 {
 			b.WriteString("\n")

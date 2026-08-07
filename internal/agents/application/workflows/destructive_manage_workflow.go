@@ -228,7 +228,7 @@ func destructiveManageConfirmQuestion(state DestructiveManageState) string {
 func destructiveManageSuccessMessage(op DestructiveOperationKind) string {
 	switch op {
 	case DestructiveOpDeleteCard:
-		return "✅ 💳 removido com sucesso."
+		return "✅ Cartão 💳 removido com sucesso."
 	case DestructiveOpDeleteRecurrence:
 		return "✅ Recorrência removida com sucesso."
 	case DestructiveOpDeleteEntry:
@@ -283,13 +283,13 @@ func BuildDestructiveManageImpactNote(ctx context.Context, targetRef, targetKind
 	case "card":
 		id, err := uuid.Parse(targetRef)
 		if err != nil {
-			return "Remoção permanente do 💳."
+			return "Remoção permanente do cartão 💳."
 		}
 		hasOpen, err := cards.HasOpenInstallments(ctx, id, userID)
 		if err != nil || !hasOpen {
-			return "Remoção permanente do 💳."
+			return "Remoção permanente do cartão 💳."
 		}
-		return "⚠️ Este 💳 possui compras parceladas em aberto. Removê-lo deixará as parcelas sem 💳 associado."
+		return "⚠️ Este cartão 💳 possui compras parceladas em aberto. Removê-lo deixará as parcelas sem cartão 💳 associado."
 	default:
 		return "Este lançamento será removido permanentemente."
 	}

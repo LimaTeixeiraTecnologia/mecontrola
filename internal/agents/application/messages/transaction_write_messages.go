@@ -134,7 +134,7 @@ func NoDeleteCandidateFound() string {
 }
 
 func NoDeleteCardIdentified() string {
-	return "Não consegui identificar qual 💳 você quer excluir. Pode me dizer o nome ou apelido dele?"
+	return "Não consegui identificar qual cartão 💳 você quer excluir. Pode me dizer o nome ou apelido dele?"
 }
 
 func DeleteCandidatesPrompt(paths []string) string {
