@@ -366,7 +366,7 @@ func (r *agentRuntime) buildMessages(ctx context.Context, a Agent, threadPK uuid
 	var msgs []llm.Message
 
 	instructions := a.Instructions()
-	systemContent := instructions + "\n\n## Data e Hora Atuais\n" + formatCurrentDateTime(time.Now().In(r.clockLoc))
+	systemContent := instructions
 	wm, _ := r.workingMem.Get(ctx, in.ResourceID)
 	if wm != "" {
 		systemContent += "\n\n## Working Memory\n" + wm
@@ -380,6 +380,7 @@ func (r *agentRuntime) buildMessages(ctx context.Context, a Agent, threadPK uuid
 			}
 		}
 	}
+	systemContent += "\n\n## Data e Hora Atuais\n" + formatCurrentDateTime(time.Now().In(r.clockLoc))
 	if systemContent != "" {
 		msgs = append(msgs, llm.Message{Role: "system", Content: systemContent})
 	}

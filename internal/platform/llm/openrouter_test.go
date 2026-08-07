@@ -80,6 +80,25 @@ func (s *LLMProviderSuite) TestComplete_HappyPath() {
 	s.False(resp.TruncatedByLength)
 }
 
+func (s *LLMProviderSuite) TestComplete_ParsesPromptTokensDetails() {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"choices":[{"message":{"role":"assistant","content":"{\"result\":\"ok\"}"},"finish_reason":"stop"}],
+			"usage":{"prompt_tokens":100,"completion_tokens":50,"prompt_tokens_details":{"cached_tokens":80}}
+		}`))
+	}))
+	defer server.Close()
+
+	sut := s.buildProvider(server)
+	resp, err := sut.Complete(s.ctx, Request{
+		Messages: []Message{{Role: "user", Content: "hello"}},
+	})
+
+	s.NoError(err)
+	s.Equal(100, resp.PromptTokens)
+	s.Equal(50, resp.CompletionTokens)
+}
+
 func (s *LLMProviderSuite) TestComplete_RetriesTransientPost() {
 	var attempts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

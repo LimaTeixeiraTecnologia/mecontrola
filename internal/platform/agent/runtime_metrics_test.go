@@ -130,6 +130,7 @@ func (s *RuntimeTestSuite) TestExecute_InjectsWorkingMemoryIntoSystemPrompt() {
 	s.Contains(system, "## Working Memory")
 	s.Contains(system, "User prefers BRL and weekly summaries.")
 	s.True(strings.Contains(system, "Be helpful"))
+	s.Greater(strings.Index(system, "## Data e Hora Atuais"), strings.Index(system, "## Working Memory"))
 }
 
 func (s *RuntimeTestSuite) TestExecute_InjectsCurrentDateTimeIntoSystemPrompt() {

@@ -362,6 +362,12 @@ func (p *openrouterProvider) recordTokens(ctx context.Context, usage chatUsage) 
 			observability.String("type", "completion"),
 		)
 	}
+	if usage.PromptDetails.CachedTokens > 0 {
+		p.tokens.Add(ctx, int64(usage.PromptDetails.CachedTokens),
+			observability.String("model", p.cfg.Model),
+			observability.String("type", "cached"),
+		)
+	}
 }
 
 func (p *openrouterProvider) setHeaders(req *http.Request) {
@@ -477,9 +483,14 @@ type chatChoice struct {
 	FinishReason string      `json:"finish_reason"`
 }
 
+type chatPromptDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
 type chatUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
+	PromptTokens     int               `json:"prompt_tokens"`
+	CompletionTokens int               `json:"completion_tokens"`
+	PromptDetails    chatPromptDetails `json:"prompt_tokens_details"`
 }
 
 type chatError struct {
