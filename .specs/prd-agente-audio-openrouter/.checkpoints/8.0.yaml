@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-agente-audio-openrouter/8.0_execution_report.md
-summary: Golden pareado audio/texto (5 grupos, score 1.0 real-LLM), 6 negativos obrigatorios, modo simulado sem OpenRouter, suite real STT com falha explicita sem credencial, 0 falso-sucesso e 0 HandleInbound em incerteza.
-timestamp: 2026-08-05T00:58:43Z

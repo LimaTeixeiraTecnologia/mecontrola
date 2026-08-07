@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-agente-audio-openrouter/4.0_execution_report.md
-summary: Decisor puro DecideAudioTranscription com AudioOutcome/AudioReason fechados; TranscriptionUncertain nunca permite HandleInbound.
-timestamp: 2026-08-04T21:27:14Z

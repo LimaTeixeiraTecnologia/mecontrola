@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-observabilidade-golden-signals-otel/5.0_execution_report.md
-summary: Migrado mc-api-5xx para http_server_request_duration_seconds_count (ADR-004/RF-08) e criado observability/STANDARD.md com a fonte canônica de RED.
-timestamp: 2026-08-04T13:48:10Z

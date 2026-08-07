@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-observabilidade-golden-signals-otel/2.0_execution_report.md
-summary: "Saturacao de runtime Go (server+worker) instrumentada via runtimemetrics.Start + RegisterGlobal:true; APPROVED"
-timestamp: 2026-08-04T00:00:00Z

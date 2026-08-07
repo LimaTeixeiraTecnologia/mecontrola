@@ -1,4 +1,0 @@
-status: done
-report_path: .specs/prd-observabilidade-golden-signals-otel/7.0_execution_report.md
-summary: Contact-point de e-mail nativo do Grafana + roteamento por severidade (critical->Telegram, warning->e-mail) + runbooks obrigatorios em todo alerta de pagina
-timestamp: 2026-08-04T14:03:20Z
