@@ -144,7 +144,7 @@ func buildQueryDayContent(raw []byte, kind dayQueryKind, dayRef string) (string,
 		if e.Direction != direction || strings.TrimSpace(e.AmountBRL) == "" {
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("%d. *%s* — %s", len(lines)+1, e.AmountBRL, e.Description))
+		lines = append(lines, fmt.Sprintf("%d. *%s*: %s", len(lines)+1, e.AmountBRL, e.Description))
 	}
 	var b strings.Builder
 	if len(lines) == 0 {

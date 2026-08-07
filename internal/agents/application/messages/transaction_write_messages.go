@@ -7,12 +7,12 @@ import (
 
 var editMotivationalPhrases = []string{
 	"Registro atualizado, tudo em ordem! 💪",
-	"Correção feita — seus dados seguem confiáveis! 🎯",
+	"Correção feita; seus dados seguem confiáveis! 🎯",
 	"Ajuste concluído, você no controle! 🙌",
 }
 
 var recurrenceMotivationalPhrases = []string{
-	"Recorrência configurada — no piloto automático! 🚀",
+	"Recorrência configurada; no piloto automático! 🚀",
 	"Agora isso se cuida sozinho todo mês! 🙌",
 	"Mais organização para sua rotina financeira! 🌱",
 }
@@ -110,7 +110,7 @@ func WriteFailure() string {
 }
 
 func WriteResumeFailure() string {
-	return "Não consegui concluir agora — pode tentar de novo? Se preferir desistir, envie *cancelar*. 🙂"
+	return "Não consegui concluir agora. Pode tentar de novo? Se preferir desistir, envie *cancelar*. 🙂"
 }
 
 func CardPrompt() string {

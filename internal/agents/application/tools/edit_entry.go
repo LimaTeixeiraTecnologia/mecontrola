@@ -42,7 +42,7 @@ func BuildEditEntryTool(editor entryEditor) tool.ToolHandle {
 				"entryId":           map[string]any{"type": "string", "description": "Id do lançamento a editar, quando já conhecido (ex.: retornado por search_transactions). Se ausente, searchAmountCents/searchTerm localizam o lançamento."},
 				"amountCents":       map[string]any{"type": "integer", "description": "Valor NOVO que o lançamento deve passar a ter. Preencha apenas se o usuário quiser mudar o valor; omita para manter o valor atual."},
 				"description":       map[string]any{"type": "string", "description": "Descrição NOVA que o lançamento deve passar a ter. Preencha apenas se o usuário quiser mudar a descrição; omita para manter a atual."},
-				"occurredAt":        map[string]any{"type": "string", "description": "Data NOVA do lançamento, como expressão literal do usuário (ex.: 'ontem', 'semana passada', 'mês passado', 'dia 10', 'sexta passada'). Repasse o texto verbatim; NUNCA calcule a data nem envie formato ISO/AAAA-MM-DD — a resolução do calendário é feita pelo sistema. Preencha apenas se o usuário quiser mudar a data; omita para manter a atual."},
+				"occurredAt":        map[string]any{"type": "string", "description": "Data NOVA do lançamento, como expressão literal do usuário (ex.: 'ontem', 'semana passada', 'mês passado', 'dia 10', 'sexta passada'). Repasse o texto verbatim; NUNCA calcule a data nem envie formato ISO/AAAA-MM-DD; a resolução do calendário é feita pelo sistema. Preencha apenas se o usuário quiser mudar a data; omita para manter a atual."},
 				"categoryId":        map[string]any{"type": "string"},
 				"subcategoryId":     map[string]any{"type": "string"},
 				"categoryVersion":   map[string]any{"type": "integer"},

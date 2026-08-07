@@ -299,7 +299,7 @@ func buildGeneralSummaryMessage(summary interfaces.BudgetSummary, nameBySlug map
 
 func moneyOrDash(cents *int64) string {
 	if cents == nil {
-		return "—"
+		return "-"
 	}
 	return money.FromCents(*cents).BRL()
 }

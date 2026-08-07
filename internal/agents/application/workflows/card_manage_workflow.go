@@ -163,7 +163,7 @@ func cardManageSlotPrompt(slot CardManageAwaiting, state CardManageState) string
 		return "Qual é o dia de vencimento da fatura desse 💳?"
 	case CardManageAwaitingClosingDay:
 		return fmt.Sprintf(
-			"Não reconheço o banco *%s* na minha lista, então preciso do dia de *fechamento* da fatura — é o dia em que a fatura fecha, normalmente diferente do vencimento (dia %d). Qual é?",
+			"Não reconheço o banco *%s* na minha lista, então preciso do dia de *fechamento* da fatura: é o dia em que a fatura fecha, normalmente diferente do vencimento (dia %d). Qual é?",
 			state.Bank, state.DueDay,
 		)
 	default:
@@ -245,7 +245,7 @@ func handleCardManageSlot(ctx context.Context, state CardManageState, cards inte
 	case CardManageSlotReprompt:
 		state.SlotReprompt++
 		if state.SlotReprompt >= cardManageMaxSlotReprompts {
-			return cardManageComplete(state, CardManageCancelled, "🚫 Não consegui entender. Cancelei o cadastro do 💳 — é só me chamar de novo quando quiser. 🙂")
+			return cardManageComplete(state, CardManageCancelled, "🚫 Não consegui entender. Cancelei o cadastro do 💳. É só me chamar de novo quando quiser. 🙂")
 		}
 		return cardManageSuspend(state, cardManageSlotPrompt(state.Awaiting, state))
 	}

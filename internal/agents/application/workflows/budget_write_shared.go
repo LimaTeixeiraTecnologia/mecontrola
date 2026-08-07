@@ -35,7 +35,7 @@ func budgetDistributionPrompt(totalCents int64) string {
 		cents := totalCents * int64(bp) / 10000
 		fmt.Fprintf(&b, "%s: %s (%d%%)\n", categoryLabels[slug], money.FromCents(cents).BRL(), bp/100)
 	}
-	b.WriteString("\nAceita esta sugestão? Responda \"sim\" para confirmar, ou envie novos valores para cada categoria — pode ser em reais (R$) ou em porcentagem (%).")
+	b.WriteString("\nAceita esta sugestão? Responda \"sim\" para confirmar, ou envie novos valores para cada categoria, pode ser em reais (R$) ou em porcentagem (%).")
 	return b.String()
 }
 

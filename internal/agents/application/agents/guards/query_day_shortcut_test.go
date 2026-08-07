@@ -112,7 +112,7 @@ func TestQueryDayShortcutGuard_ExpenseToday(t *testing.T) {
 		t.Fatalf("args = %s; want dayRefKind=today", stub.args)
 	}
 	content := decision.Result.Content
-	wantParts := []string{"Hoje, você gastou um total de *R$ 2.067,00*", "1. *R$ 130,00* — mercado", "2. *R$ 45,00* — farmácia"}
+	wantParts := []string{"Hoje, você gastou um total de *R$ 2.067,00*", "1. *R$ 130,00*: mercado", "2. *R$ 45,00*: farmácia"}
 	for _, part := range wantParts {
 		if !contains(content, part) {
 			t.Fatalf("content não contém %q:\n%s", part, content)
@@ -141,7 +141,7 @@ func TestQueryDayShortcutGuard_IncomeYesterday(t *testing.T) {
 	if !contains(content, "Ontem, você recebeu um total de *R$ 1.900,00*") {
 		t.Fatalf("content inesperado:\n%s", content)
 	}
-	if !contains(content, "1. *R$ 500,00* — freelance") {
+	if !contains(content, "1. *R$ 500,00*: freelance") {
 		t.Fatalf("receita não listada:\n%s", content)
 	}
 	if contains(content, "mercado") {

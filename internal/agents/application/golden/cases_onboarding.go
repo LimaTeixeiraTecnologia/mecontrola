@@ -28,7 +28,7 @@ func onboardingCases() []Case {
 		{
 			Name:           "guard de gatilho inicial nao regressa com valor por extenso na mensagem",
 			Category:       CategoryOnboarding,
-			Origin:         "synthetic (PRD onboarding-valor-extenso-confirmacao-meta, subtarefa 3.3: guarda de não regressão do gatilho determinístico onboarding_initial — internal/agents/application/agents/guards/onboarding_initial.go — quando a primeira mensagem já combina objetivo e valor por extenso; NÃO exercita BuildGoalStep/BuildMonthlyBudgetStep do workflow de onboarding, cobertos por real-LLM em onboarding_workflow_integration_test.go)",
+			Origin:         "synthetic (PRD onboarding-valor-extenso-confirmacao-meta, subtarefa 3.3: guarda de não regressão do gatilho determinístico onboarding_initial, internal/agents/application/agents/guards/onboarding_initial.go, quando a primeira mensagem já combina objetivo e valor por extenso; NÃO exercita BuildGoalStep/BuildMonthlyBudgetStep do workflow de onboarding, cobertos por real-LLM em onboarding_workflow_integration_test.go)",
 			Input:          "Quero começar a usar o MeControla, meu objetivo é juntar uma reserva de dez mil reais",
 			ToolSubset:     []string{"register_expense"},
 			NoToolExpected: true,

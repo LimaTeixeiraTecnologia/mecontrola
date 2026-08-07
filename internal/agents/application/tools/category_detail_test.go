@@ -93,7 +93,7 @@ func TestCategoryDetailExec_ResumoPorCategoria_CenarioProducao(t *testing.T) {
 	assert.Contains(t, out.Message, "R$ 2.081,16")
 	assert.Contains(t, out.Message, "R$ 30,00")
 	assert.Contains(t, out.Message, "R$ 2.051,16")
-	assert.NotContains(t, out.Message, "Planejado: —")
+	assert.NotContains(t, out.Message, "Planejado: -")
 }
 
 func TestCategoryNamesBySlug_ResumoGeralNomeAmigavel(t *testing.T) {

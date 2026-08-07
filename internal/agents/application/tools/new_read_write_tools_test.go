@@ -188,7 +188,7 @@ func TestBuildCategoryDetailTool_SpecificCategory(t *testing.T) {
 	assert.Contains(t, result.Message, "Custo Fixo")
 	assert.Contains(t, result.Message, "R$ 2.000,00")
 	assert.Contains(t, result.Message, "R$ 500,00")
-	assert.NotContains(t, result.Message, "Planejado: —")
+	assert.NotContains(t, result.Message, "Planejado: -")
 }
 
 func TestBuildCategoryDetailTool_CategoryNotFound(t *testing.T) {

@@ -60,7 +60,7 @@ func BuildEditTreatmentNameTool(engine wf.Engine[workflows.TreatmentNameEditStat
 		},
 	}
 	exec := buildEditTreatmentNameExec(engine, def)
-	return tool.NewTool[EditTreatmentNameInput, EditTreatmentNameOutput]("edit_treatment_name", "Inicia a alteração do nome de tratamento do usuário. SEMPRE chame esta ferramenta quando o usuário pedir para trocar como é chamado, mesmo que o campo name venha vazio — NUNCA responda essa pergunta diretamente sem chamar a ferramenta, pois é ela quem persiste o estado necessário para aplicar o nome na resposta seguinte. Aplica imediatamente quando o nome já vier na mensagem (name preenchido) ou pergunta o novo nome antes de gravar na memória de trabalho (name vazio).", in, out, exec)
+	return tool.NewTool[EditTreatmentNameInput, EditTreatmentNameOutput]("edit_treatment_name", "Inicia a alteração do nome de tratamento do usuário. SEMPRE chame esta ferramenta quando o usuário pedir para trocar como é chamado, mesmo que o campo name venha vazio; NUNCA responda essa pergunta diretamente sem chamar a ferramenta, pois é ela quem persiste o estado necessário para aplicar o nome na resposta seguinte. Aplica imediatamente quando o nome já vier na mensagem (name preenchido) ou pergunta o novo nome antes de gravar na memória de trabalho (name vazio).", in, out, exec)
 }
 
 func buildEditTreatmentNameExec(engine wf.Engine[workflows.TreatmentNameEditState], def wf.Definition[workflows.TreatmentNameEditState]) func(context.Context, EditTreatmentNameInput) (EditTreatmentNameOutput, error) {

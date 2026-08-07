@@ -39,7 +39,7 @@ func BuildRegisterIncomeTool(registrar entryRegistrar) tool.ToolHandle {
 			"properties": map[string]any{
 				"amountCents":     map[string]any{"type": "integer"},
 				"description":     map[string]any{"type": "string"},
-				"occurredAt":      map[string]any{"type": "string", "description": "Expressão de data exatamente como o usuário escreveu (ex.: 'ontem', 'anteontem', 'semana passada', 'mês passado', 'dia 10', 'sexta passada'). Repasse o texto literal; NUNCA calcule a data nem envie formato ISO/AAAA-MM-DD — a resolução do calendário é feita pelo sistema. Omita se o usuário não mencionar quando ocorreu."},
+				"occurredAt":      map[string]any{"type": "string", "description": "Expressão de data exatamente como o usuário escreveu (ex.: 'ontem', 'anteontem', 'semana passada', 'mês passado', 'dia 10', 'sexta passada'). Repasse o texto literal; NUNCA calcule a data nem envie formato ISO/AAAA-MM-DD; a resolução do calendário é feita pelo sistema. Omita se o usuário não mencionar quando ocorreu."},
 				"categoryId":      map[string]any{"type": "string"},
 				"subcategoryId":   map[string]any{"type": "string"},
 				"categoryVersion": map[string]any{"type": "integer"},

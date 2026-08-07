@@ -7,7 +7,7 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/agent"
 )
 
-const multiItemFalseBlockReask = "Me conta de novo esse lançamento — o valor e onde foi — que eu registro pra você. 🙂"
+const multiItemFalseBlockReask = "Me conta de novo esse lançamento, o valor e onde foi, que eu registro pra você. 🙂"
 
 const multiItemFalseBlockCorrectionReask = "Entendi que você quer corrigir um lançamento. Me confirma qual é e o que mudou (ex.: \"o uber de 30 virou 35\")? 🙂"
 

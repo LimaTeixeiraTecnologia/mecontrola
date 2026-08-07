@@ -90,10 +90,10 @@ func listCardsShortcutContent(raw []byte, verbatim string) string {
 			b.WriteString("\n")
 		}
 		if card.Nickname == card.Bank {
-			fmt.Fprintf(&b, "• %s — vencimento dia %d", card.Bank, card.DueDay)
+			fmt.Fprintf(&b, "• %s: vencimento dia %d", card.Bank, card.DueDay)
 			continue
 		}
-		fmt.Fprintf(&b, "• %s (%s) — vencimento dia %d", card.Nickname, card.Bank, card.DueDay)
+		fmt.Fprintf(&b, "• %s (%s): vencimento dia %d", card.Nickname, card.Bank, card.DueDay)
 	}
 	return b.String()
 }

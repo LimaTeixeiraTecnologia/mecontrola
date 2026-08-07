@@ -61,7 +61,7 @@ func BuildCreateBudgetTool(engine wf.Engine[workflows.BudgetManageState], def wf
 				"monthRefKind": map[string]any{
 					"type":        "string",
 					"enum":        []string{"current", "previous", "next", "explicit", "named_without_year", "unknown"},
-					"description": "Classificação da referência de mês citada pelo usuário. Use named_without_year sempre que um nome de mês (ex.: junho, março) for citado SEM um ano junto — mesmo que esse mês já tenha passado no ano corrente. NUNCA use current quando um nome de mês foi citado, mesmo sem ano.",
+					"description": "Classificação da referência de mês citada pelo usuário. Use named_without_year sempre que um nome de mês (ex.: junho, março) for citado SEM um ano junto, mesmo que esse mês já tenha passado no ano corrente. NUNCA use current quando um nome de mês foi citado, mesmo sem ano.",
 				},
 				"year":       map[string]any{"type": "integer", "description": "Ano numérico, apenas quando o usuário citou explicitamente o ano junto ao mês (monthRefKind=explicit). Omitir para named_without_year."},
 				"month":      map[string]any{"type": "integer", "minimum": 1, "maximum": 12, "description": "Mês numérico (1-12), quando monthRefKind=explicit ou named_without_year."},

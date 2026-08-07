@@ -20,7 +20,7 @@ const (
 	guardRetryOutcomeExhausted = "exhausted"
 
 	guardRetryNudgeRole    = "system"
-	guardRetryNudgeContent = "LEMBRETE CRITICO: sua ultima resposta continha um bloco de confirmacao ou pergunta de escrita fabricado por voce mesmo, sem chamar a ferramenta correspondente — isso e proibido pelas suas instrucoes. Chame AGORA a ferramenta de escrita apropriada (register_expense, register_income, create_recurrence, edit_entry ou equivalente) com os dados ja presentes nesta conversa. Nao escreva o texto de confirmacao ou pergunta voce mesmo; a ferramenta retorna esse texto pronto."
+	guardRetryNudgeContent = "LEMBRETE CRITICO: sua ultima resposta continha um bloco de confirmacao ou pergunta de escrita fabricado por voce mesmo, sem chamar a ferramenta correspondente; isso e proibido pelas suas instrucoes. Chame AGORA a ferramenta de escrita apropriada (register_expense, register_income, create_recurrence, edit_entry ou equivalente) com os dados ja presentes nesta conversa. Nao escreva o texto de confirmacao ou pergunta voce mesmo; a ferramenta retorna esse texto pronto."
 )
 
 type guardChainMetrics struct {

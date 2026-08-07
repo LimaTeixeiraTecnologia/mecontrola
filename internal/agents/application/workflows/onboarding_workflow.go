@@ -849,11 +849,11 @@ const treatmentNameWMSectionHeading = "## Nome de Tratamento"
 const treatmentNameSystemPrompt = "Extraia como o usuário quer ser chamado (nome/apelido de tratamento) a partir do texto. " +
 	"Defina hasName=true quando o usuário indicar um nome, apelido ou forma de tratamento utilizável, cobrindo variações como nome direto, \"pode me chamar de X\", \"me chama de X\", \"prefiro X\", \"meu apelido é X\", \"só X mesmo\", \"X tá bom\". " +
 	"Quando o usuário indicar explicitamente como quer ser chamado, use esse apelido em name; quando informar apenas um nome completo/composto sem indicar apelido, use o primeiro nome em name. " +
-	"Defina hasName=false e name vazio quando o usuário recusar (ex.: \"não\", \"tanto faz\", \"prefiro não dizer\") ou responder diretamente sobre outro assunto sem mencionar nenhum nome/apelido utilizável — nunca invente um nome que não esteja no texto."
+	"Defina hasName=false e name vazio quando o usuário recusar (ex.: \"não\", \"tanto faz\", \"prefiro não dizer\") ou responder diretamente sobre outro assunto sem mencionar nenhum nome/apelido utilizável; nunca invente um nome que não esteja no texto."
 
-const goalReprompt = "Não consegui identificar seu objetivo. Qual é o seu principal objetivo financeiro para este mês? Por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva. Se souber, pode me contar também o valor da meta — mas isso é totalmente opcional."
+const goalReprompt = "Não consegui identificar seu objetivo. Qual é o seu principal objetivo financeiro para este mês? Por exemplo: economizar R$ 500, quitar uma dívida ou montar uma reserva. Se souber, pode me contar também o valor da meta, mas isso é totalmente opcional."
 
-const goalValueReprompt = "Legal! E você já tem uma ideia de quanto (em R$) representa essa meta? Pode responder com um número, por exemplo \"R$ 5.000,00\" ou \"5 mil\" — se preferir não informar agora, é só responder \"não\" que a gente segue em frente."
+const goalValueReprompt = "Legal! E você já tem uma ideia de quanto (em R$) representa essa meta? Pode responder com um número, por exemplo \"R$ 5.000,00\" ou \"5 mil\"; se preferir não informar agora, é só responder \"não\" que a gente segue em frente."
 
 func goalConfirmationReprompt(goal string) string {
 	return fmt.Sprintf(
@@ -946,8 +946,8 @@ func recurrenceConfirmationFor(months int) string {
 
 const allocationInputSystemPrompt = "Você classifica a resposta do usuário sobre a distribuição do orçamento em 5 categorias: custo_fixo, conhecimento, prazeres, metas, liberdade_financeira. " +
 	"Defina action='confirm' SOMENTE quando o usuário aceitar a sugestão sem informar nenhum valor novo (ex.: sim, aceito, pode confirmar, ok); nunca use 'confirm' quando o texto contiver números para as categorias. " +
-	"Defina action='reais' quando o usuário informar valores em reais — valores acompanhados de R$/reais ou números grandes cuja soma se aproxima do orçamento mensal (ex.: 2500, 500, 2000). " +
-	"Defina action='percent' quando ele informar percentuais — números pequenos, acompanhados de % ou cuja soma se aproxima de 100. " +
+	"Defina action='reais' quando o usuário informar valores em reais: valores acompanhados de R$/reais ou números grandes cuja soma se aproxima do orçamento mensal (ex.: 2500, 500, 2000). " +
+	"Defina action='percent' quando ele informar percentuais: números pequenos, acompanhados de % ou cuja soma se aproxima de 100. " +
 	"Em caso de dúvida entre 'reais' e 'percent', escolha 'reais' se a soma dos números se aproximar do orçamento mensal e 'percent' se a soma se aproximar de 100; jamais coaja valores em reais para percentuais ou vice-versa. " +
 	"Preencha cada categoria com o número informado pelo usuário; use 0 quando a categoria não for citada. " +
 	"Converta valores por extenso para número, sempre em ponto decimal, nunca com símbolo de moeda ou separador de milhar. Exemplos de conversão: " +
@@ -961,7 +961,7 @@ const allocationInputSystemPrompt = "Você classifica a resposta do usuário sob
 
 const distributionIntentSystemPrompt = "Você classifica a intenção do usuário sobre o passo de distribuição do orçamento em 5 categorias. " +
 	"Retorne action e mixed_unit; NÃO extraia valores por categoria aqui. " +
-	"Precedência obrigatória entre as três intenções: 'values' > 'personalize' > 'accept' — se a mensagem contém números utilizáveis para pelo menos uma categoria (em reais, porcentagem ou por extenso), a ação é SEMPRE 'values', mesmo que o texto também contenha a palavra 'não' ou 'nao' (ex.: 'não, quero 40% em custo fixo e o resto dividido' -> action='values', pois há número; 'não, prefiro escolher os valores' sem número nenhum -> action='personalize'). " +
+	"Precedência obrigatória entre as três intenções: 'values' > 'personalize' > 'accept': se a mensagem contém números utilizáveis para pelo menos uma categoria (em reais, porcentagem ou por extenso), a ação é SEMPRE 'values', mesmo que o texto também contenha a palavra 'não' ou 'nao' (ex.: 'não, quero 40% em custo fixo e o resto dividido' -> action='values', pois há número; 'não, prefiro escolher os valores' sem número nenhum -> action='personalize'). " +
 	"Defina action='accept' somente quando o usuário aceitar a sugestão sem recusar e sem informar nenhum valor novo (ex.: 'sim', 'aceito', 'pode confirmar', 'ok', 'topo'). " +
 	"Defina action='personalize' quando o usuário recusar a sugestão ou pedir para escolher/personalizar sem informar nenhum número usável (ex.: 'não', 'nao', 'quero personalizar', 'prefiro escolher', 'quero mudar os valores'). " +
 	"Defina action='values' quando o usuário informar valores usáveis para pelo menos uma categoria, em reais ('R$ 1.000,00', '1000'), em porcentagem ('40%', '40') ou por extenso ('mil reais' -> 1000, 'quinhentos' -> 500, 'dois mil e quinhentos' -> 2500, 'dez mil' -> 10000, 'quarenta por cento' -> 40). " +
@@ -978,7 +978,7 @@ const goalWithValueSystemPrompt = "Extraia o objetivo financeiro principal do te
 	"\"10 mil reais\" -> amountBRL=10000; " +
 	"\"400 mil\" -> amountBRL=400000; " +
 	"\"1,5 milhão\" -> amountBRL=1500000. " +
-	"Se o usuário não mencionar nenhum valor, ou disser que não sabe, ou recusar informar, defina hasAmount=false e amountBRL=0 — nunca invente um valor que não esteja no texto."
+	"Se o usuário não mencionar nenhum valor, ou disser que não sabe, ou recusar informar, defina hasAmount=false e amountBRL=0; nunca invente um valor que não esteja no texto."
 
 const monthlyBudgetSystemPrompt = "Extraia o valor do orcamento mensal em reais (BRL) do texto do usuario. Retorne como numero decimal. " +
 	"Converta o valor mencionado para um número em reais (amountBRL), sempre em ponto decimal, nunca com símbolo de moeda ou separador de milhar. Exemplos de conversão: " +
@@ -992,11 +992,11 @@ const monthlyBudgetSystemPrompt = "Extraia o valor do orcamento mensal em reais 
 const cardsSystemPrompt = "Extraia do texto do usuario se ele quer adicionar um 💳 (wantsCard), o apelido (nickname), o banco emissor (bank) e o dia de vencimento (dueDay, inteiro 1-31). Se nao quiser 💳, retorne wantsCard=false, nickname vazio, bank vazio e dueDay=0."
 
 const recurrenceDecisionSystemPrompt = "Você extrai a resposta do usuário sobre repetir o orçamento automaticamente pelos próximos meses. " +
-	"Retorne intent, hasMonths e months; NÃO decida prioridade nem limites aqui — isso é resolvido por outra função. " +
+	"Retorne intent, hasMonths e months; NÃO decida prioridade nem limites aqui; isso é resolvido por outra função. " +
 	"Defina intent='positive' quando o usuário aceitar a recorrência (ex.: 'sim', 'pode', 'quero', 'confirmo', 'topo'), mesmo que também informe uma quantidade de meses. " +
 	"Defina intent='negative' quando o usuário recusar (ex.: 'não', 'nao', 'não quero', 'não precisa'). " +
 	"Defina intent='unclear' quando não houver intenção reconhecível na mensagem (ex.: 'talvez', 'sei lá', emoji isolado, texto sem relação com a pergunta). " +
-	"Defina hasMonths=true e preencha months sempre que o usuário mencionar uma quantidade de meses, numérica ou por extenso, mesmo que fora do intervalo permitido — não corrija nem limite o valor aqui, apenas extraia o número informado. " +
+	"Defina hasMonths=true e preencha months sempre que o usuário mencionar uma quantidade de meses, numérica ou por extenso, mesmo que fora do intervalo permitido; não corrija nem limite o valor aqui, apenas extraia o número informado. " +
 	"Converta números por extenso para inteiro. Exemplos de conversão: " +
 	"\"um\" -> 1; \"dois\" -> 2; \"três\" -> 3; \"quatro\" -> 4; \"cinco\" -> 5; \"seis\" -> 6; \"sete\" -> 7; \"oito\" -> 8; \"nove\" -> 9; \"dez\" -> 10; \"onze\" -> 11; \"doze\" -> 12. " +
 	"Se o usuário não mencionar nenhuma quantidade, defina hasMonths=false e months=0."
@@ -1009,7 +1009,7 @@ const goalValueSystemPrompt = "Extraia, se houver, o valor em reais que o usuár
 	"\"10 mil reais\" -> amountBRL=10000; " +
 	"\"400 mil\" -> amountBRL=400000; " +
 	"\"1,5 milhão\" -> amountBRL=1500000. " +
-	"Se o usuário recusar (ex.: \"não\", \"não sei\", \"prefiro não dizer\") ou não mencionar nenhum valor, defina hasAmount=false e amountBRL=0 — nunca invente um valor que não esteja no texto."
+	"Se o usuário recusar (ex.: \"não\", \"não sei\", \"prefiro não dizer\") ou não mencionar nenhum valor, defina hasAmount=false e amountBRL=0; nunca invente um valor que não esteja no texto."
 
 func cardsPrompt(existing int) string {
 	if existing > 0 {
@@ -1033,7 +1033,7 @@ func methodologyPrompt(items []interfaces.AllocationCents) string {
 	var b strings.Builder
 	b.WriteString("Agora vamos distribuir seu orçamento. O MeControla organiza tudo em 5 categorias. Esta é a sugestão com base no seu orçamento mensal:\n\n")
 	b.WriteString(renderAllocationLines(items))
-	b.WriteString("\nAceita esta sugestão? Responda \"sim\" para confirmar, envie novos valores para cada categoria — pode ser em reais (R$) ou em porcentagem (%) — ou responda \"não\" para personalizar e me dizer você mesmo quanto quer em cada categoria.")
+	b.WriteString("\nAceita esta sugestão? Responda \"sim\" para confirmar, envie novos valores para cada categoria, pode ser em reais (R$) ou em porcentagem (%), ou responda \"não\" para personalizar e me dizer você mesmo quanto quer em cada categoria.")
 	return b.String()
 }
 
@@ -1082,7 +1082,7 @@ func personalizePrompt(monthlyBudgetCents int64) string {
 	for _, slug := range canonicalSlugs {
 		fmt.Fprintf(&b, "%s\n", categoryLabels[slug])
 	}
-	b.WriteString("\nMe diga quanto vai para cada categoria — pode ser em reais (R$) ou em porcentagem (%), sempre somando o total do orçamento (ou 100%). Se alguma categoria não fizer sentido para você agora, pode colocar ZERO nela, sem problema.")
+	b.WriteString("\nMe diga quanto vai para cada categoria, pode ser em reais (R$) ou em porcentagem (%), sempre somando o total do orçamento (ou 100%). Se alguma categoria não fizer sentido para você agora, pode colocar ZERO nela, sem problema.")
 	return b.String()
 }
 
@@ -1090,7 +1090,7 @@ func personalizeReprompt(monthlyBudgetCents int64) string {
 	return "Não consegui identificar valores para as categorias. " + personalizePrompt(monthlyBudgetCents)
 }
 
-const distributionMixedUnitPrompt = "Entendi valores misturando reais (R$) e porcentagem (%) na mesma resposta. Use uma única unidade para todas as categorias — ou só em reais (R$), ou só em porcentagem (%) — e me envie de novo."
+const distributionMixedUnitPrompt = "Entendi valores misturando reais (R$) e porcentagem (%) na mesma resposta. Use uma única unidade para todas as categorias, ou só em reais (R$), ou só em porcentagem (%), e me envie de novo."
 
 func zeroedCategoriesWarning(items []interfaces.AllocationCents) string {
 	bySlug := allocationCentsBySlug(items)
@@ -1125,9 +1125,9 @@ func conclusionFinalMessage() string {
 
 func cardSummaryLine(card interfaces.Card) string {
 	if card.Nickname == card.Bank {
-		return fmt.Sprintf("- %s — vencimento dia %d", card.Bank, card.DueDay)
+		return fmt.Sprintf("- %s: vencimento dia %d", card.Bank, card.DueDay)
 	}
-	return fmt.Sprintf("- %s (%s) — vencimento dia %d", card.Nickname, card.Bank, card.DueDay)
+	return fmt.Sprintf("- %s (%s): vencimento dia %d", card.Nickname, card.Bank, card.DueDay)
 }
 
 func renderCardsSummary(cards []interfaces.Card) string {

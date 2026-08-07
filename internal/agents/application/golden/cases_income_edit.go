@@ -1,7 +1,7 @@
 package golden
 
 const GoldenEditEntryDefaultImpactNote = "Este lançamento será atualizado com os novos dados. Por favor confirme."
-const GoldenEditEntryMultipleCandidatesNote = "Encontrei mais de um lançamento compatível: 1) Salário — R$ 3.200,00 em 05/07; 2) Salário — R$ 3.200,00 em 20/07. Qual deles você quer editar?"
+const GoldenEditEntryMultipleCandidatesNote = "Encontrei mais de um lançamento compatível: 1) Salário: R$ 3.200,00 em 05/07; 2) Salário: R$ 3.200,00 em 20/07. Qual deles você quer editar?"
 const GoldenEditEntryNotFoundNote = "Não encontrei nenhum lançamento compatível com esses critérios. Nada foi alterado."
 const GoldenEditEntryInvalidAmountNote = "O novo valor informado não é válido; preciso de um valor maior que zero para corrigir."
 

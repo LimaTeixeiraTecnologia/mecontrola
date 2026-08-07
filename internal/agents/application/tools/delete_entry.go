@@ -39,7 +39,7 @@ func BuildDeleteEntryTool(engine wf.Engine[workflows.DestructiveManageState], de
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"entryId":           map[string]any{"type": "string", "description": "Id do lançamento ou 💳 a excluir, quando já conhecido (ex.: cardId retornado por resolve_card). Se ausente, para lançamentos use searchAmountCents/searchTerm para localizar o item — NUNCA invente um valor."},
+				"entryId":           map[string]any{"type": "string", "description": "Id do lançamento ou 💳 a excluir, quando já conhecido (ex.: cardId retornado por resolve_card). Se ausente, para lançamentos use searchAmountCents/searchTerm para localizar o item; NUNCA invente um valor."},
 				"entryKind":         map[string]any{"type": "string"},
 				"version":           map[string]any{"type": "integer"},
 				"searchAmountCents": map[string]any{"type": "integer", "description": "Valor do lançamento a excluir, usado só como critério de busca quando entryId é desconhecido (ignorado para entryKind=card)."},

@@ -177,7 +177,7 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 			name:         "deve delegar confirmacao de escrita financeira exclusivamente ao sistema",
 			dependencies: dependencies{},
 			expect: func(instructions string) {
-				s.Contains(instructions, "responsabilidade EXCLUSIVA do sistema (gate do workflow) — NUNCA do LLM")
+				s.Contains(instructions, "responsabilidade EXCLUSIVA do sistema (gate do workflow); NUNCA do LLM")
 				s.Contains(instructions, "Você NUNCA formula, redige ou improvisa uma pergunta de confirmação própria")
 			},
 		},
@@ -261,8 +261,8 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 			name:         "deve conter secao de consultas financeiras C1-C7",
 			dependencies: dependencies{},
 			expect: func(instructions string) {
-				s.Contains(instructions, "Consultas Financeiras (C1–C7)")
-				s.Contains(instructions, "MATRIZ DE ROTEAMENTO — CONSULTAS")
+				s.Contains(instructions, "Consultas Financeiras (C1-C7)")
+				s.Contains(instructions, "MATRIZ DE ROTEAMENTO DE CONSULTAS")
 			},
 		},
 		{
@@ -351,7 +351,7 @@ func (s *MecontrolaAgentBuilderSuite) TestBuildMeControlaAgent_HasInstructions()
 			name:         "deve conter regra C7 orçamento completo com plannedCents nulo",
 			dependencies: dependencies{},
 			expect: func(instructions string) {
-				s.Contains(instructions, "REGRA C7 — ORÇAMENTO COMPLETO")
+				s.Contains(instructions, "REGRA C7: ORÇAMENTO COMPLETO")
 				s.Contains(instructions, "*Sem limite definido*")
 				s.Contains(instructions, "totalPlannedCents")
 				s.Contains(instructions, "totalSpentCents")

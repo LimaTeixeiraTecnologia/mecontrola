@@ -144,7 +144,7 @@ var expenseMotivationalPhrases = []string{
 	"Você está no controle da sua grana! 💪",
 	"Mais um passo rumo aos seus objetivos! 🚀",
 	"Registrar é o primeiro passo pra prosperar! 🌱",
-	"Consistência é o segredo — você está mandando bem! 🙌",
+	"Consistência é o segredo; você está mandando bem! 🙌",
 	"Cada lançamento te deixa mais perto da sua meta! 🎯",
 }
 
@@ -164,11 +164,11 @@ var categoryAvailablePhrases = []string{
 
 var categoryNearLimitPhrases = []string{
 	"Fique de olho, mas você ainda está no jogo! 👀",
-	"Quase no limite — vamos com atenção daqui pra frente! ⚠️",
+	"Quase no limite; vamos com atenção daqui pra frente! ⚠️",
 }
 
 var categoryExactLimitPhrases = []string{
-	"Você usou exatamente o planejado — controle em dia! 🎯",
+	"Você usou exatamente o planejado; controle em dia! 🎯",
 	"No fio da navalha, mas dentro do combinado! ⚠️",
 }
 
@@ -178,7 +178,7 @@ var categoryExceededPhrases = []string{
 }
 
 var generalPositivePhrases = []string{
-	"Seu orçamento está saudável — parabéns! 💚",
+	"Seu orçamento está saudável; parabéns! 💚",
 	"Você está no caminho certo! 🚀",
 }
 
@@ -189,7 +189,7 @@ var generalAttentionPhrases = []string{
 
 var generalCriticalPhrases = []string{
 	"Vamos juntos reorganizar o que for preciso! 🚨",
-	"Momento de replanejar — você consegue! 🚨",
+	"Momento de replanejar; você consegue! 🚨",
 }
 
 var budgetManageMotivationalPhrases = []string{
@@ -204,7 +204,7 @@ var cardManageMotivationalPhrases = []string{
 }
 
 var goalEditMotivationalPhrases = []string{
-	"Seu novo objetivo está guardado — vamos juntos até lá! 💚",
+	"Seu novo objetivo está guardado; vamos juntos até lá! 💚",
 	"Motivação renovada é combustível pra prosperar! 🚀",
 	"Cada objetivo claro te aproxima da conquista! 🌱",
 }

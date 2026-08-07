@@ -73,7 +73,7 @@ func BuildQueryDayTool(ledger interfaces.TransactionsLedger) tool.ToolHandle {
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewTool("query_day", "Consulta o total gasto, o total recebido e os lançamentos de um dia específico (hoje ou ontem) do usuário; é a ÚNICA fonte confiável para perguntas como \"quanto gastei hoje?\" ou \"quanto gastei ontem?\" — nunca responda essas perguntas de memória ou a partir de query_month.", in, out, buildQueryDayExec(ledger))
+	return tool.NewTool("query_day", "Consulta o total gasto, o total recebido e os lançamentos de um dia específico (hoje ou ontem) do usuário; é a ÚNICA fonte confiável para perguntas como \"quanto gastei hoje?\" ou \"quanto gastei ontem?\"; nunca responda essas perguntas de memória ou a partir de query_month.", in, out, buildQueryDayExec(ledger))
 }
 
 func buildQueryDayExec(ledger interfaces.TransactionsLedger) func(context.Context, QueryDayInput) (QueryDayOutput, error) {

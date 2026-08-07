@@ -20,7 +20,7 @@ import (
 
 const PaymentMethodCreditCard = "credit_card"
 
-const MultiItemOrientationMessage = "Percebi mais de um lançamento na mesma mensagem. Por segurança, registro um de cada vez — me manda o primeiro (ex.: \"gastei 30 no ônibus\") que eu já cuido dele. 🙂"
+const MultiItemOrientationMessage = "Percebi mais de um lançamento na mesma mensagem. Por segurança, registro um de cada vez: me manda o primeiro (ex.: \"gastei 30 no ônibus\") que eu já cuido dele. 🙂"
 
 var ErrWriteAcceptedWithoutResource = errors.New("workflows.write_shared: escrita aceita sem recurso durável")
 

@@ -14,13 +14,13 @@ import (
 func main() {
 	root := &cobra.Command{
 		Use:   "mecontrola",
-		Short: "MeControla — agente financeiro conversacional",
+		Short: "MeControla: agente financeiro conversacional",
 		Long: `MeControla é um agente financeiro conversacional via WhatsApp.
 
 Utilize um dos subcomandos para iniciar a aplicação:
-  server   — sobe o servidor HTTP e o scheduler placeholder
-  worker   — sobe o worker de módulos em background
-  migrate  — aplica as migrations pendentes e termina`,
+  server:  sobe o servidor HTTP e o scheduler placeholder
+  worker:  sobe o worker de módulos em background
+  migrate: aplica as migrations pendentes e termina`,
 		SilenceUsage: true,
 	}
 

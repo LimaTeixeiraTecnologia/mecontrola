@@ -4225,7 +4225,7 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_SummaryWithOneCardList
 	s.Contains(out.State.FinalMessage, "Resumo de Onboarding")
 	s.Contains(out.State.FinalMessage, "🎯 Objetivo: comprar uma casa (meta de "+money.FromCents(state.GoalValueCents).BRL()+")")
 	s.Contains(out.State.FinalMessage, "Cartões:")
-	s.Contains(out.State.FinalMessage, "- Nubank — vencimento dia 1")
+	s.Contains(out.State.FinalMessage, "- Nubank: vencimento dia 1")
 	s.Contains(out.State.FinalMessage, "🔁 Recorrência: ligada (repete pelos próximos 12 meses)")
 }
 
@@ -4291,8 +4291,8 @@ func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_SummaryWithMultipleCar
 
 	s.NoError(err)
 	s.Equal(workflow.StepStatusCompleted, out.Status)
-	s.Contains(out.State.FinalMessage, "- Roxinho (Nubank) — vencimento dia 1")
-	s.Contains(out.State.FinalMessage, "- Inter — vencimento dia 10")
+	s.Contains(out.State.FinalMessage, "- Roxinho (Nubank): vencimento dia 1")
+	s.Contains(out.State.FinalMessage, "- Inter: vencimento dia 10")
 }
 
 func (s *OnboardingWorkflowSuite) TestBuildConclusionStep_SuggestAllocationFailureFailsStepWithoutPartialSummary() {
