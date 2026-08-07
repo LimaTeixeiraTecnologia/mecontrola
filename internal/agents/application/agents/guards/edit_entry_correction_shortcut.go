@@ -15,6 +15,7 @@ var (
 	editEntryTwoAmountsLancamentoRe = regexp.MustCompile(`(?i)lan[çc]amento\s+(?:d[ao]|de)\s+([a-zà-ú][a-zà-ú\s]{1,30}?)\s*,?\s+.*?valor\s*(?:certo)?\s*(?:é|eh)?\s*(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})+(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s+e\s+n[ãa]o\s+(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})+(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)`)
 	editEntryTwoAmountsGasteiRe     = regexp.MustCompile(`(?i)\bn[ao]\s+([a-zà-ú][a-zà-ú\s]{1,30}?)\s+(?:eu\s+)?gastei\s+(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})+(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)\s+e\s+n[ãa]o\s+(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})+(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)`)
 	editEntryNewValueOnlyRe         = regexp.MustCompile(`(?i)lan[çc]amento\s+(?:d[ao]|de)\s+([a-zà-ú][a-zà-ú\s]{1,30}?)\s*,?\s+.*?(?:mud[ae]r?|altera[re]?|atualiza[re]?)\s+(?:o\s+)?valor\s+(?:para|pra)\s+(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})+(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)`)
+	editEntryToolOnlyValueRe        = regexp.MustCompile(`(?i)(?:troca|muda|altera|atualiza|corrige)\s+o\s+valor\s+d[ao]\s+(?:receita|despesa|lan[çc]amento)\s+d[ao]\s+([a-zà-ú][a-zà-ú\s]{1,30}?)\s+(?:para|pra)\s+(?:r\$\s*)?([0-9]{1,3}(?:\.[0-9]{3})+(?:,[0-9]{1,2})?|[0-9]+(?:,[0-9]{1,2})?)`)
 
 	editEntryShortcutBlockers = []string{
 		"cartão", "cartao", "orçamento", "orcamento", "objetivo",
@@ -87,6 +88,9 @@ func parseEditEntryCorrectionShortcut(message string, handle tool.ToolHandle) (m
 		return buildEditEntryCorrectionArgs(match[1], match[2], match[3], handle)
 	}
 	if match := editEntryNewValueOnlyRe.FindStringSubmatch(message); len(match) == 3 {
+		return buildEditEntryCorrectionArgs(match[1], match[2], "", handle)
+	}
+	if match := editEntryToolOnlyValueRe.FindStringSubmatch(message); len(match) == 3 {
 		return buildEditEntryCorrectionArgs(match[1], match[2], "", handle)
 	}
 	return nil, false

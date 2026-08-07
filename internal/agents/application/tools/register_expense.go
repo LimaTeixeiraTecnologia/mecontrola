@@ -75,7 +75,7 @@ func BuildRegisterExpenseTool(registrar entryRegistrar, cards interfaces.CardMan
 			"additionalProperties": false,
 		},
 	}
-	return tool.NewVerbatimTool("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário; a categoria é resolvida automaticamente por busca textual do campo description (nunca parafraseie o termo do usuário). Se o usuário citar a categoria desejada, copie o trecho literal no campo categoryText. Para compra no cartão 💳 de crédito, use paymentMethod=credit_card com cardId (obtido via resolve_card) e installments (1 para à vista, 2..24 para parcelada).", in, out, buildRegisterExpenseExec(registrar, cards), extractRegisterExpenseVerbatim)
+	return tool.NewVerbatimTool("register_expense", "Registra um lançamento de despesa no ledger financeiro do usuário; a categoria é resolvida automaticamente por busca textual do campo description (nunca parafraseie o termo do usuário). Se o usuário citar a categoria desejada, copie o trecho literal no campo categoryText. Em follow-up de pendência de pagamento, quando o usuário responder só a forma de pagamento (ex.: 'confirma pagamento débito', 'foi no pix'), envie paymentMethod com o código exato correspondente. Para compra no cartão de crédito, use paymentMethod=credit_card com cardId (obtido via resolve_card) e installments (1 para à vista, 2..24 para parcelada).", in, out, buildRegisterExpenseExec(registrar, cards), extractRegisterExpenseVerbatim)
 }
 
 func extractRegisterExpenseVerbatim(o RegisterExpenseOutput) (string, bool) {

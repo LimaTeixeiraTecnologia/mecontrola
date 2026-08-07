@@ -65,6 +65,13 @@ func TestParseEditEntryCorrectionShortcut(t *testing.T) {
 			wantAmt:  610000,
 		},
 		{
+			name:     "producao troca valor da receita por termo",
+			input:    "troca o valor da receita do aluguel para 950 reais",
+			wantOK:   true,
+			wantDesc: "aluguel",
+			wantAmt:  95000,
+		},
+		{
 			name:       "producao corrige lancamento do mercado",
 			input:      "Corrige o lançamento do mercado, o valor certo é 550 e não 500",
 			wantOK:     true,
