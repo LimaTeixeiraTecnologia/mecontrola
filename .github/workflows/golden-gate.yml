@@ -1,0 +1,39 @@
+name: Golden Gate
+
+on:
+  schedule:
+    - cron: "17 11 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: golden-gate
+  cancel-in-progress: false
+
+jobs:
+  golden-gate:
+    name: Golden Gate (real-LLM agendado, RF-39/RF-40/RF-41)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go-task
+      - name: Verify OPENROUTER_API_KEY is configured
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "OPENROUTER_API_KEY nao configurado: o golden gate real-LLM (RF-39/RF-40/RF-41)"
+            echo "nao pode ser executado sem credencial."
+            exit 1
+          fi
+      - name: Run real-LLM golden gate
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: task test:golden:gate
