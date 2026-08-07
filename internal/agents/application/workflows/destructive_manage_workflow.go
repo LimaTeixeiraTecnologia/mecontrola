@@ -64,8 +64,13 @@ func buildDestructiveManageStep(cards interfaces.CardManager, recurrences interf
 	execMap := destructiveManageExecMap(cards, recurrences, ledger)
 	return func(ctx context.Context, state DestructiveManageState) (workflow.StepOutput[DestructiveManageState], error) {
 		if state.ResumeText == "" {
-			if state.Operation == DestructiveOpDeleteEntry && state.TargetRef == "" {
+			if state.Operation == DestructiveOpDeleteEntry && !isDestructiveManageUUIDRef(state.TargetRef) {
 				return handleDestructiveEntrySearch(ctx, state, ledger)
+			}
+			if state.Operation == DestructiveOpDeleteCard && !isDestructiveManageUUIDRef(state.TargetRef) {
+				state.Status = DestructiveManageCancelled
+				state.ResponseText = messages.NoDeleteCardIdentified()
+				return workflow.StepOutput[DestructiveManageState]{State: state, Status: workflow.StepStatusCompleted}, nil
 			}
 			state.ResponseText = destructiveManageConfirmQuestion(state)
 			return destructiveManageSuspend(state, state.ResponseText), nil
@@ -111,6 +116,11 @@ func buildDestructiveManageStep(cards interfaces.CardManager, recurrences interf
 			return destructiveManageSuspend(state, state.ResponseText), nil
 		}
 	}
+}
+
+func isDestructiveManageUUIDRef(ref string) bool {
+	_, err := uuid.Parse(ref)
+	return err == nil
 }
 
 func handleDestructiveEntrySearch(ctx context.Context, state DestructiveManageState, ledger interfaces.TransactionsLedger) (workflow.StepOutput[DestructiveManageState], error) {

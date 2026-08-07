@@ -133,6 +133,10 @@ func NoDeleteCandidateFound() string {
 	return "Não encontrei um lançamento compatível para excluir. Pode me dar mais detalhes (valor ou descrição)?"
 }
 
+func NoDeleteCardIdentified() string {
+	return "Não consegui identificar qual 💳 você quer excluir. Pode me dizer o nome ou apelido dele?"
+}
+
 func DeleteCandidatesPrompt(paths []string) string {
 	list := ""
 	for i, p := range paths {

@@ -1476,3 +1476,104 @@ groups:
                   operator: { type: and }
                   query: { params: [C] }
                   evaluator: { type: lt, params: [10737418240] }
+
+  - orgId: 1
+    name: openrouter
+    folder: MeControla Alerts
+    interval: 5m
+    rules:
+      - uid: mc-openrouter-credit-low
+        title: Crédito OpenRouter para menos de 5 dias
+        condition: C
+        for: 1h
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Saldo de creditos do OpenRouter cobre menos de 5 dias de uso no ritmo medio semanal."
+          description: "Projecao = openrouter_credits_remaining_usd / (openrouter_usage_weekly_usd / 7), com piso de USD 0,05/dia no denominador para nao disparar quando o gasto semanal e desprezivel. Ritmo calculado sobre a semana (usage_daily zera no inicio do dia e geraria projecao falsa). Avaliar recarga em https://openrouter.ai/credits. Runbook: docs/runbooks/openrouter-credits.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'openrouter_credits_remaining_usd / clamp_min(openrouter_usage_weekly_usd / 7, 0.05)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: lt, params: [5] }
+
+      - uid: mc-openrouter-credit-critical
+        title: Crédito OpenRouter abaixo de US$ 2,50
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Saldo de creditos do OpenRouter abaixo de USD 2,50 por 30 minutos."
+          description: "Piso absoluto independente do ritmo de gasto: sem recarga imediata as chamadas de LLM (chat e STT) comecam a falhar por falta de credito. Recarregar em https://openrouter.ai/credits. Runbook: docs/runbooks/openrouter-credits.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: 'openrouter_credits_remaining_usd'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: lt, params: [2.5] }
+
+      - uid: mc-openrouter-credits-stale
+        title: Métricas de crédito OpenRouter desatualizadas
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Sem consulta bem-sucedida a API de creditos do OpenRouter ha mais de 6 horas."
+          description: "O monitor do worker (poll a cada 15 minutos) nao obtem sucesso na API de creditos do OpenRouter ha mais de 6 horas, ou a serie nao existe. Os alertas de saldo podem estar cegos. Verifique openrouter_credits_scrape_errors_total, logs do worker e conectividade com openrouter.ai. Runbook: docs/runbooks/openrouter-credits.md."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              expr: '(time() - max(openrouter_credits_last_success_timestamp_seconds) > 6 * 3600) or absent(openrouter_credits_last_success_timestamp_seconds)'
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  reducer: { type: last }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  evaluator: { type: gt, params: [0] }

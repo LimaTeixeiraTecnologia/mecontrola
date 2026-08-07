@@ -111,6 +111,12 @@ func TestPaymentMethodMigrationBlocked_NotEmpty(t *testing.T) {
 	}
 }
 
+func TestNoDeleteCardIdentified_NotEmpty(t *testing.T) {
+	if NoDeleteCardIdentified() == "" {
+		t.Fatal("expected non-empty card not identified message")
+	}
+}
+
 func TestEditCandidatesPrompt_ListsAllOptions(t *testing.T) {
 	got := EditCandidatesPrompt([]string{"R$ 30,00 - Transporte", "R$ 30,00 - Lazer"})
 	want := "Encontrei mais de um lançamento compatível. Qual deles você quer editar?\n\n1. R$ 30,00 - Transporte\n2. R$ 30,00 - Lazer"

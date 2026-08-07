@@ -53,7 +53,7 @@ var (
 
 	exporterPrefixes = []string{
 		"node_",
-		"pg_stat_",
+		"pg_",
 		"pgbackrest_",
 		"otelcol_",
 		"probe_",

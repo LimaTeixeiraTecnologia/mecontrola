@@ -1,0 +1,11 @@
+apiVersion: 1
+
+deleteRules:
+  - orgId: 1
+    uid: mc-version-skew
+  - orgId: 1
+    uid: mc-agent-parse-unknown
+  - orgId: 1
+    uid: mc-agent-fallback-exhausted
+  - orgId: 1
+    uid: mc-agent-policy-block-rate

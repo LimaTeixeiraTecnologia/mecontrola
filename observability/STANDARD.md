@@ -343,6 +343,40 @@ nome Prometheus **renderizado**, não contra o nome de registro, e varrer dashbo
 O gate `task ci:audit-alert-metrics` (via `cmd/tools/audit-alert-metrics`) valida continuamente que
 nenhum alerta **nem painel** referencia série morta — ver seção 10 (evidência de execução).
 
+### 8.6 Créditos OpenRouter (custo de LLM — monitor do worker)
+
+Fonte: `startOpenRouterCreditsMonitor` (`cmd/worker/worker.go`) — ticker cancelável a cada 15 minutos
+que consulta `GET {OPENROUTER_BASE_URL}/api/v1/credits` e `GET /api/v1/auth/key` via
+`internal/platform/llm/credits.go` (HTTP outbound por `internal/platform/httpclient`, padrão
+obrigatório do repositório). Shapes dos endpoints confirmados empiricamente contra a API real
+(2026-08-07): `/credits` retorna `data.total_credits`/`data.total_usage`; `/auth/key` retorna
+`data.usage_daily`/`usage_weekly`/`usage_monthly`. `/api/v1/activity` exige management key (403) e
+foi descartado. Saldo (`remaining`) é calculado em código como `total_credits - total_usage` —
+a API não expõe campo pronto.
+
+| Métrica (registro) | Nome Prometheus renderizado | Unidade OTel | Tipo | Papel |
+| --- | --- | --- | --- | --- |
+| `openrouter_credits_total_usd` | idem | `{usd}` | gauge observável | Créditos comprados na conta |
+| `openrouter_credits_used_usd` | idem | `{usd}` | gauge observável | Uso acumulado monotônico — base de `increase(...[24h])` para gasto/dia real |
+| `openrouter_credits_remaining_usd` | idem | `{usd}` | gauge observável | Saldo (alertas `mc-openrouter-credit-*`) |
+| `openrouter_usage_daily_usd` | idem | `{usd}` | gauge observável | Gasto do dia corrente **até agora** (zera no início do dia — não usar como taxa diária) |
+| `openrouter_usage_weekly_usd` | idem | `{usd}` | gauge observável | Gasto da semana — base da projeção de dias restantes (`weekly/7`) |
+| `openrouter_usage_monthly_usd` | idem | `{usd}` | gauge observável | Gasto do mês corrente |
+| `openrouter_credits_last_success_timestamp_seconds` | idem | `{timestamp}` | gauge observável | Monitor-do-monitor (alerta `mc-openrouter-credits-stale`) |
+| `openrouter_credits_scrape_errors_total` | idem | `"1"` | counter | Falhas da consulta (já termina em `_total`, sem renomeação) |
+
+Notas operacionais:
+
+- Unidades `{usd}`/`{timestamp}` são **unidades de anotação** (mesma família de `{beat}`/`{job}` da
+  seção 8.3): não geram sufixo no nome renderizado. Usar `"1"` nesses gauges geraria sufixo `_ratio`
+  e séries mortas nos alertas — mesmo defeito já corrigido em `worker_heartbeat`.
+- Gauges retornam `NaN` até a primeira coleta bem-sucedida: comparações PromQL com `NaN` são falsas,
+  logo os alertas de saldo **não disparam** antes do primeiro dado real (anti-falso-positivo por
+  construção). Após o primeiro sucesso, o gauge mantém o último valor conhecido em caso de falha.
+- Projeção de dias restantes usa `usage_weekly/7` com `clamp_min(..., 0.05)` no denominador —
+  `usage_daily` zera no início do dia e geraria projeção infinita/falsa.
+- Dashboard: `deployment/dashboards/mecontrola-openrouter.json`. Runbook: `docs/runbooks/openrouter-credits.md`.
+
 ## 9. Alertas — roteamento por severidade (RF-09/RF-10)
 
 Provisionado em `deployment/telemetry/grafana/provisioning/alerting/contact-points.yaml`.
@@ -364,11 +398,18 @@ Roteamento (`policies[].routes[]` em `contact-points.yaml`):
 routes:
   - receiver: telegram-mecontrola
     matchers:
+      - alertname =~ "mc-openrouter-.*"
+  - receiver: telegram-mecontrola
+    matchers:
       - severity = "critical"
   - receiver: email-mecontrola
     matchers:
       - severity = "warning"
 ```
+
+A primeira rota envia **warning e critical do grupo `openrouter` ao Telegram** (decisão do usuário
+2026-08-07: alertas de recarga de crédito devem paginar mesmo em warning); as demais severidades
+seguem a política padrão (critical → Telegram, warning → e-mail).
 
 O contact-point `telegram-mecontrola` permanece como receiver padrão da política (fallback) — não
 foi removido, preservando RF-20.

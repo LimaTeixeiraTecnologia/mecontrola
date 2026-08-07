@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -35,6 +36,8 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding"
 	onboardingpostgres "github.com/LimaTeixeiraTecnologia/mecontrola/internal/onboarding/infrastructure/repositories/postgres"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/events"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/httpclient"
+	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/llm"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/observability/runtimemetrics"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/outbox"
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/platform/whatsapp/dedup"
@@ -44,7 +47,12 @@ import (
 	"github.com/LimaTeixeiraTecnologia/mecontrola/internal/transactions"
 )
 
-const workerHeartbeatInterval = 15 * time.Second
+const (
+	workerHeartbeatInterval       = 15 * time.Second
+	openrouterCreditsPollInterval = 15 * time.Minute
+	openrouterCreditsHTTPTimeout  = 15 * time.Second
+	openrouterCreditsHTTPTarget   = "openrouter"
+)
 
 func buildO11yConfig(cfg *configs.Config, hostname string) *otel.Config {
 	return &otel.Config{
@@ -119,6 +127,18 @@ func Run() error { //nolint:revive // bootstrap do worker agrega lifecycle de pr
 
 	runtime := workerRuntime{cfg: cfg, o11y: o11y, dbManager: dbManager, db: sqlx.NewDb(dbManager.DB(), "pgx"), heartbeatDone: heartbeat.done}
 	registerOutboxMetrics(o11y, runtime.db)
+
+	creditsHTTP, err := httpclient.NewClient(o11y,
+		httpclient.WithBaseURL(cfg.AgentConfig.OpenRouterBaseURL),
+		httpclient.WithTarget(openrouterCreditsHTTPTarget),
+		httpclient.WithTimeout(openrouterCreditsHTTPTimeout),
+	)
+	if err != nil {
+		return fmt.Errorf("worker: criar http client de creditos openrouter: %w", err)
+	}
+	if _, err := startOpenRouterCreditsMonitor(ctx, o11y, llm.NewCreditsClient(creditsHTTP, cfg.AgentConfig.OpenRouterAPIKey), openrouterCreditsPollInterval); err != nil {
+		return fmt.Errorf("worker: iniciar monitor de creditos openrouter: %w", err)
+	}
 
 	workerManager, err := runtime.newManager(ctx)
 	if err != nil {
@@ -224,6 +244,128 @@ func startWorkerHeartbeat(ctx context.Context, o11y observability.Observability,
 	}()
 
 	return hb, nil
+}
+
+type openrouterCreditsMonitor struct {
+	client      *llm.CreditsClient
+	o11y        observability.Observability
+	snapshot    atomic.Pointer[llm.CreditsSnapshot]
+	lastSuccess atomic.Int64
+	scrapeError observability.Counter
+}
+
+func startOpenRouterCreditsMonitor(ctx context.Context, o11y observability.Observability, client *llm.CreditsClient, interval time.Duration) (*openrouterCreditsMonitor, error) {
+	m := &openrouterCreditsMonitor{client: client, o11y: o11y}
+	m.scrapeError = o11y.Metrics().Counter(
+		"openrouter_credits_scrape_errors_total",
+		"Total de falhas ao consultar a API de creditos do OpenRouter",
+		"1",
+	)
+
+	if err := o11y.Metrics().Gauge(
+		"openrouter_credits_total_usd",
+		"Creditos totais comprados no OpenRouter em USD",
+		"{usd}",
+		func(context.Context) float64 {
+			return m.usdValue(func(s *llm.CreditsSnapshot) float64 { return s.TotalCreditsUSD })
+		},
+	); err != nil {
+		return nil, err
+	}
+	if err := o11y.Metrics().Gauge(
+		"openrouter_credits_used_usd",
+		"Uso acumulado de creditos no OpenRouter em USD, monotonico",
+		"{usd}",
+		func(context.Context) float64 {
+			return m.usdValue(func(s *llm.CreditsSnapshot) float64 { return s.TotalUsageUSD })
+		},
+	); err != nil {
+		return nil, err
+	}
+	if err := o11y.Metrics().Gauge(
+		"openrouter_credits_remaining_usd",
+		"Saldo restante de creditos no OpenRouter em USD",
+		"{usd}",
+		func(context.Context) float64 {
+			return m.usdValue(func(s *llm.CreditsSnapshot) float64 { return s.RemainingUSD })
+		},
+	); err != nil {
+		return nil, err
+	}
+	if err := o11y.Metrics().Gauge(
+		"openrouter_usage_daily_usd",
+		"Gasto no OpenRouter no dia corrente em USD",
+		"{usd}",
+		func(context.Context) float64 {
+			return m.usdValue(func(s *llm.CreditsSnapshot) float64 { return s.UsageDailyUSD })
+		},
+	); err != nil {
+		return nil, err
+	}
+	if err := o11y.Metrics().Gauge(
+		"openrouter_usage_weekly_usd",
+		"Gasto no OpenRouter na semana corrente em USD",
+		"{usd}",
+		func(context.Context) float64 {
+			return m.usdValue(func(s *llm.CreditsSnapshot) float64 { return s.UsageWeeklyUSD })
+		},
+	); err != nil {
+		return nil, err
+	}
+	if err := o11y.Metrics().Gauge(
+		"openrouter_usage_monthly_usd",
+		"Gasto no OpenRouter no mes corrente em USD",
+		"{usd}",
+		func(context.Context) float64 {
+			return m.usdValue(func(s *llm.CreditsSnapshot) float64 { return s.UsageMonthlyUSD })
+		},
+	); err != nil {
+		return nil, err
+	}
+
+	if err := o11y.Metrics().Gauge(
+		"openrouter_credits_last_success_timestamp_seconds",
+		"Timestamp unix da ultima consulta bem-sucedida a API de creditos do OpenRouter",
+		"{timestamp}",
+		func(context.Context) float64 { return float64(m.lastSuccess.Load()) },
+	); err != nil {
+		return nil, err
+	}
+
+	go func() {
+		m.poll(ctx)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				m.poll(ctx)
+			}
+		}
+	}()
+
+	return m, nil
+}
+
+func (m *openrouterCreditsMonitor) usdValue(value func(*llm.CreditsSnapshot) float64) float64 {
+	s := m.snapshot.Load()
+	if s == nil {
+		return math.NaN()
+	}
+	return value(s)
+}
+
+func (m *openrouterCreditsMonitor) poll(ctx context.Context) {
+	snap, err := m.client.Fetch(ctx)
+	if err != nil {
+		m.scrapeError.Add(ctx, 1)
+		m.o11y.Logger().Warn(ctx, "openrouter credits poll failed", observability.Error(err))
+		return
+	}
+	m.snapshot.Store(&snap)
+	m.lastSuccess.Store(time.Now().Unix())
 }
 
 type workerRuntime struct {

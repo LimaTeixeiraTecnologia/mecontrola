@@ -1,0 +1,189 @@
+{
+  "uid": "mecontrola-openrouter",
+  "title": "MeControla — OpenRouter Credits",
+  "tags": ["mecontrola", "otel", "llm", "custos"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "5m",
+  "time": { "from": "now-7d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "selected": false, "text": "Prometheus", "value": "prometheus" },
+        "hide": 0
+      },
+      {
+        "name": "job",
+        "label": "Service",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(openrouter_credits_remaining_usd, job)",
+        "current": { "text": "mecontrola-worker", "value": "mecontrola-worker" },
+        "includeAll": false,
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Saldo restante (US$)",
+      "description": "total_credits - total_usage da API /api/v1/credits do OpenRouter, coletado pelo worker a cada 15 minutos.",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD", "decimals": 2,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "yellow", "value": 2.5 }, { "color": "green", "value": 6 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "openrouter_credits_remaining_usd{job=\"$job\"}" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Dias restantes (ritmo 7d)",
+      "description": "Saldo / (gasto semanal / 7). Piso de US$ 0,05/dia no denominador para nao explodir quando o gasto semanal e desprezivel. Mesma formula do alerta mc-openrouter-credit-low (limiar 5 dias).",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "d", "decimals": 1,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "yellow", "value": 2 }, { "color": "green", "value": 5 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "openrouter_credits_remaining_usd{job=\"$job\"} / clamp_min(openrouter_usage_weekly_usd{job=\"$job\"} / 7, 0.05)" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Gasto hoje (US$)",
+      "description": "usage_daily da API /api/v1/auth/key: gasto do dia corrente ate agora (zera no inicio do dia UTC).",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 2 }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "openrouter_usage_daily_usd{job=\"$job\"}" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Gasto real últimas 24h (US$)",
+      "description": "Derivado da serie acumulada monotonica total_usage — nao depende da janela do dia corrente.",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 2 }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "increase(openrouter_credits_used_usd{job=\"$job\"}[24h])" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Créditos comprados (US$)",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 2 }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "openrouter_credits_total_usd{job=\"$job\"}" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Última coleta há (s)",
+      "description": "Segundos desde a ultima consulta bem-sucedida a API de creditos. Alerta mc-openrouter-credits-stale dispara acima de 21600s (6h).",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s", "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 3600 }, { "color": "red", "value": 21600 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "refId": "A", "expr": "time() - openrouter_credits_last_success_timestamp_seconds{job=\"$job\"}" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Saldo restante (US$)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 2.5 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "saldo restante", "expr": "openrouter_credits_remaining_usd{job=\"$job\"}" },
+        { "refId": "B", "legendFormat": "limiar critical (US$ 2,50)", "expr": "vector(2.5)" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Gasto por dia (US$)",
+      "description": "Ambas as series derivam da acumulada monotonica total_usage: gasto real das ultimas 24h e media diaria dos ultimos 7 dias (ritmo usado na projecao de dias restantes).",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "gasto ultimas 24h", "expr": "increase(openrouter_credits_used_usd{job=\"$job\"}[24h])" },
+        { "refId": "B", "legendFormat": "media diaria (7d)", "expr": "increase(openrouter_credits_used_usd{job=\"$job\"}[7d]) / 7" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Gasto acumulado da conta (US$)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "custom": { "drawStyle": "line", "fillOpacity": 0, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "total_usage (acumulado)", "expr": "openrouter_credits_used_usd{job=\"$job\"}" },
+        { "refId": "B", "legendFormat": "gasto no mes corrente", "expr": "openrouter_usage_monthly_usd{job=\"$job\"}" }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Falhas de scrape da API de créditos",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 60, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "legendFormat": "erros/h", "expr": "increase(openrouter_credits_scrape_errors_total{job=\"$job\"}[1h])" }
+      ]
+    }
+  ]
+}

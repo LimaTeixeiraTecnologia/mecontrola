@@ -111,7 +111,7 @@ func (s *ParserSuite) TestExtractFirstMessage_InvalidJSON() {
 }
 
 func (s *ParserSuite) TestExtractFirstMessage_NilTextBody() {
-	raw := []byte(`{"object":"whatsapp_business_account","entry":[{"id":"e1","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","messages":[{"from":"5511999999999","id":"wamid-002","timestamp":"1686000000","type":"image"}]}}]}]}`)
+	raw := []byte(`{"object":"whatsapp_business_account","entry":[{"id":"e1","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","messages":[{"from":"5511999999999","id":"wamid-002","timestamp":"1686000000","type":"text"}]}}]}]}`)
 
 	msg, ok, err := payload.ExtractFirstMessage(raw)
 
@@ -211,16 +211,49 @@ func (s *ParserSuite) TestExtractMessages_AudioWithoutSHA256_Rejected() {
 	s.Empty(msgs)
 }
 
-func (s *ParserSuite) TestExtractFirstMessage_UnknownMessageType_TreatedAsTextFallback() {
+func (s *ParserSuite) TestExtractFirstMessage_UnsupportedMessageType_Ignored() {
 	raw := []byte(`{"object":"whatsapp_business_account","entry":[{"id":"e1","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","messages":[{"from":"5511999999999","id":"wamid-005","timestamp":"1686000000","type":"sticker"}]}}]}]}`)
 
 	msg, ok, err := payload.ExtractFirstMessage(raw)
 
 	s.Require().NoError(err)
-	s.True(ok)
-	s.Equal(payload.MessageTypeText, msg.Type)
-	s.Empty(msg.Text)
-	s.Nil(msg.Audio)
+	s.False(ok)
+	s.Empty(msg.WAMID)
+}
+
+func (s *ParserSuite) TestExtractMessages_UnsupportedMessageTypes_Ignored() {
+	unsupportedTypes := []string{"image", "sticker", "reaction", "video", "document", "location", "contacts"}
+
+	for _, msgType := range unsupportedTypes {
+		s.Run(msgType, func() {
+			rawMsgs := []map[string]any{
+				{"from": "5511999999999", "id": "wamid-unsupported", "timestamp": "1686000000", "type": msgType},
+			}
+			raw := s.buildMultiMessagePayload(rawMsgs)
+
+			msgs, err := payload.ExtractMessages(raw)
+
+			s.Require().NoError(err)
+			s.Empty(msgs)
+		})
+	}
+}
+
+func (s *ParserSuite) TestExtractMessages_MixedSupportedAndUnsupported_KeepsOnlySupported() {
+	rawMsgs := []map[string]any{
+		{"from": "5511999999999", "id": "wamid-img", "timestamp": "1686000001", "type": "image"},
+		{"from": "5511999999999", "id": "wamid-text", "timestamp": "1686000002", "type": "text", "text": map[string]any{"body": "oi"}},
+		{"from": "5511999999999", "id": "wamid-reaction", "timestamp": "1686000003", "type": "reaction"},
+	}
+	raw := s.buildMultiMessagePayload(rawMsgs)
+
+	msgs, err := payload.ExtractMessages(raw)
+
+	s.Require().NoError(err)
+	s.Require().Len(msgs, 1)
+	s.Equal("wamid-text", msgs[0].WAMID)
+	s.Equal(payload.MessageTypeText, msgs[0].Type)
+	s.Equal("oi", msgs[0].Text)
 }
 
 func (s *ParserSuite) TestExtractMessages_MultipleMessages_ReturnsAll() {

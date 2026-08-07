@@ -302,3 +302,85 @@ func (s *DestructiveManageWorkflowSuite) TestDeleteEntrySearch_MultipleCandidate
 	s.Equal(workflow.StepStatusCompleted, deleteOut.Status)
 	s.Contains(deleteOut.State.ResponseText, "Lançamento removido")
 }
+
+func (s *DestructiveManageWorkflowSuite) TestFirstEntryDeleteEntry_InvalidUUIDTargetRef_RoutesToCandidateSearch() {
+	s.ledgerMock.EXPECT().
+		SearchEditCandidates(mock.Anything, s.userID, interfaces.EditCandidateQuery{Term: "mercado", Limit: defaultEditCandidateLimit}).
+		Return(nil, nil).Once()
+
+	def := BuildDestructiveManageWorkflow(s.cardsMock, s.recurrencesMock, s.ledgerMock)
+	state := DestructiveManageState{
+		UserID:     s.userID,
+		Operation:  DestructiveOpDeleteEntry,
+		TargetRef:  "mercado",
+		Version:    1,
+		SearchTerm: "mercado",
+	}
+
+	out, err := def.Root.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.NotEqual(workflow.StepStatusFailed, out.Status)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+	s.Equal(DestructiveManageCancelled, out.State.Status)
+	s.Contains(out.State.ResponseText, "Não encontrei")
+}
+
+func (s *DestructiveManageWorkflowSuite) TestFirstEntryDeleteEntry_InvalidUUIDTargetRef_WithCandidates_SuspendsForDisambiguation() {
+	entryID := uuid.New()
+	s.ledgerMock.EXPECT().
+		SearchEditCandidates(mock.Anything, s.userID, interfaces.EditCandidateQuery{Term: "mercado", Limit: defaultEditCandidateLimit}).
+		Return([]interfaces.Entry{
+			{ID: entryID.String(), CategoryID: uuid.New().String(), AmountCents: 22562, Description: "Mercado", Version: 5, OccurredAt: time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)},
+		}, nil).Once()
+
+	def := BuildDestructiveManageWorkflow(s.cardsMock, s.recurrencesMock, s.ledgerMock)
+	state := DestructiveManageState{
+		UserID:     s.userID,
+		Operation:  DestructiveOpDeleteEntry,
+		TargetRef:  "mercado",
+		Version:    1,
+		SearchTerm: "mercado",
+	}
+
+	out, err := def.Root.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.NotEqual(workflow.StepStatusFailed, out.Status)
+	s.Equal(workflow.StepStatusSuspended, out.Status)
+	s.Equal(entryID.String(), out.State.TargetRef)
+	s.Contains(out.Suspend.Prompt, "Você confirma esta operação?")
+}
+
+func (s *DestructiveManageWorkflowSuite) TestFirstEntryDeleteCard_InvalidUUIDTargetRef_CompletesCancelled() {
+	def := BuildDestructiveManageWorkflow(s.cardsMock, s.recurrencesMock, s.ledgerMock)
+	state := DestructiveManageState{
+		UserID:    s.userID,
+		Operation: DestructiveOpDeleteCard,
+		TargetRef: "nao-e-uuid",
+		Version:   1,
+	}
+
+	out, err := def.Root.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+	s.Equal(DestructiveManageCancelled, out.State.Status)
+	s.Contains(out.State.ResponseText, "Não consegui identificar")
+}
+
+func (s *DestructiveManageWorkflowSuite) TestFirstEntryDeleteCard_EmptyTargetRef_CompletesCancelled() {
+	def := BuildDestructiveManageWorkflow(s.cardsMock, s.recurrencesMock, s.ledgerMock)
+	state := DestructiveManageState{
+		UserID:    s.userID,
+		Operation: DestructiveOpDeleteCard,
+		Version:   1,
+	}
+
+	out, err := def.Root.Execute(s.ctx, state)
+
+	s.NoError(err)
+	s.Equal(workflow.StepStatusCompleted, out.Status)
+	s.Equal(DestructiveManageCancelled, out.State.Status)
+	s.Contains(out.State.ResponseText, "Não consegui identificar")
+}

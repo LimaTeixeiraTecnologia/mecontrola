@@ -7,8 +7,10 @@ Dashboards para o stack OpenTelemetry consolidado no `grafana/otel-lgtm`
 
 | Arquivo | Foco | Datasources |
 |---------|------|-------------|
-| `mecontrola-api.json` | RED da API (rate, errors, duration) + DB client | Prometheus |
+| `mecontrola-api.json` | RED da API (rate, errors, duration) + DB client + SLO/error budget | Prometheus |
 | `mecontrola-ops.json` | Saúde operacional: pool/tx do DB, outbox, onboarding, throughput de negócio, logs | Prometheus + Loki |
+| `mecontrola-infra.json` | Saturação do host (node-exporter), runtime Go, WAL/arquivamento e PostgreSQL (postgres-exporter) | Prometheus |
+| `mecontrola-openrouter.json` | Créditos OpenRouter: saldo, gasto/dia, dias restantes projetados, falhas de scrape | Prometheus |
 | `agent-runtime-overview.json` | AgentRuntime (`internal/platform/agent`): throughput/sucesso/erro de runs, latência p50/p95/p99 e tool invocations | Prometheus |
 | `agent-audio-whatsapp.json` | Agente de áudio WhatsApp/STT (`internal/agents/application/usecases/process_audio_inbound.go`): volume por outcome/reason, taxa de erro STT, taxa de incerteza, latência de transcrição e download p50/p95/p99, tamanho/duração por outcome, custo por modelo | Prometheus |
 
@@ -75,11 +77,12 @@ em segundos**, **client/DB em milissegundos**.
 
 ## Provisionamento automático (ativo)
 
-Dashboards **e alertas** sobem sozinhos a cada deploy — não precisa importar à mão.
+Dashboards, **datasources** e **alertas** sobem sozinhos a cada deploy — não precisa importar à mão.
 O `otel-lgtm` monta (ver `compose.*.yml`):
 
 - `../dashboards` → `/etc/dashboards` + provider `dashboards-provider.yaml` → dashboards aparecem na pasta **MeControla**.
-- `../telemetry/grafana/provisioning/alerting/rules.yaml` + `templates.yaml` → 6 regras de alerta e template de notificacao (pasta **MeControla Alerts**).
+- `../telemetry/grafana/provisioning/datasources.yaml` → datasources `prometheus`/`loki`/`tempo` idênticos aos built-ins da imagem, com correlação completa: exemplars Prometheus→Tempo, `tracesToLogsV2` Tempo→Loki e derived field `trace_id` Loki→Tempo (inclui matcher regex que captura `trace_id` na linha de log JSON crua, sem precisar de `| json` na query).
+- `../telemetry/grafana/provisioning/alerting/rules.yaml` + `templates.yaml` → regras de alerta e template de notificacao (pasta **MeControla Alerts**). `delete-stale-rules.yaml` remove regras obsoletas que ficaram na DB do Grafana (provisioning não poda regras removidas do arquivo no Grafana 11.2.1).
 
 ## Alertas proativos
 
@@ -93,6 +96,9 @@ Regras provisionadas via arquivo (`provisioning/alerting/rules.yaml`):
 | tecnico | Espera por conexão no pool do Postgres | >1 wait/s por 5min |
 | negocio | Tokens pagos sem consumo no onboarding | `onboarding_tokens_paid_unconsumed_overdue` >= 3 por 15min |
 | plataforma | Falha na exportação de métricas do collector | `otelcol_exporter_send_failed_metric_points` > 0 por 5min |
+| openrouter | Crédito OpenRouter para menos de 5 dias | `remaining / (usage_weekly/7)` < 5 por 1h → Telegram |
+| openrouter | Crédito OpenRouter abaixo de US$ 2,50 | `openrouter_credits_remaining_usd` < 2.5 por 30min → Telegram |
+| openrouter | Métricas de crédito desatualizadas | sem sucesso na API de créditos há >6h → Telegram |
 | audio | Taxa de erro STT alta | `stt_error_rate_15m` > 5% |
 | audio | Taxa de incerteza técnica alta | `transcription_uncertain_rate_15m` > 20% |
 | audio | Latência de transcrição alta | `transcription_p95_15m` > 8s |
@@ -101,7 +107,9 @@ Regras provisionadas via arquivo (`provisioning/alerting/rules.yaml`):
 
 > Alertas de **queda de volume** (ex.: "webhooks pararam") foram omitidos de propósito —
 > num produto novo de baixo tráfego eles geram falso-positivo. Reavaliar quando houver baseline.
-> **Disco** precisa de node-exporter (removido no MVP) — adicionar exporter antes de alertar disco.
+> Alertas do grupo `openrouter` vão **todos ao Telegram** (rota dedicada `alertname =~ "mc-openrouter-.*"`);
+> os demais seguem a política padrão: `critical` → Telegram, `warning` → e-mail.
+> **Disco/host** usam node-exporter (deployed no swarm; ausente no compose local — painéis de infra ficam sem dados localmente).
 
 ### Notificação no Telegram (contém segredo → via API, não em arquivo)
 

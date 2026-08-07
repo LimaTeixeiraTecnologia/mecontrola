@@ -35,6 +35,9 @@ policies:
     routes:
       - receiver: telegram-mecontrola
         matchers:
+          - alertname =~ "mc-openrouter-.*"
+      - receiver: telegram-mecontrola
+        matchers:
           - severity = "critical"
       - receiver: email-mecontrola
         matchers:

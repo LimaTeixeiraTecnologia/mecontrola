@@ -31,6 +31,9 @@ func parseMessage(msg message) (Message, bool) {
 	if msg.Type == "audio" {
 		return parseAudioMessage(msg)
 	}
+	if msg.Type != "text" {
+		return Message{}, false
+	}
 
 	text := ""
 	if msg.Text != nil {

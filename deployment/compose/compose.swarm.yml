@@ -539,6 +539,7 @@ services:
       - ../telemetry/grafana/provisioning/dashboards-provider.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/mecontrola.yaml:ro
       - ../telemetry/grafana/provisioning/alerting:/otel-lgtm/grafana/conf/provisioning/alerting:ro
       - ../telemetry/grafana/provisioning/alerting/contact-points.rendered.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/contact-points.yaml:ro
+      - ../telemetry/grafana/provisioning/datasources.yaml:/otel-lgtm/grafana/conf/provisioning/datasources/mecontrola-datasources.yaml:ro
       - otel-lgtm-grafana:/otel-lgtm/grafana/data
       - otel-lgtm-prometheus:/data/prometheus
       - otel-lgtm-loki:/loki
