@@ -43,6 +43,9 @@ internal/agents/application/workflows/budget_manage_state.go:ParseBudgetManageAw
 internal/agents/application/workflows/budget_manage_state.go:ParseBudgetManageStatus
 internal/agents/application/workflows/card_manage_state.go:ParseCardManageOperationKind
 internal/agents/application/workflows/card_manage_state.go:ParseCardManageStatus
+internal/agents/application/workflows/card_manage_state.go:ParseCardManageAwaiting
+internal/agents/application/workflows/card_manage_decisions.go:CardManageSlotAction.String
+internal/agents/application/workflows/card_manage_decisions.go:CardManageSlotAction.IsValid
 internal/agents/application/workflows/destructive_confirm_state.go:ParseDestructiveOperationKind
 internal/agents/application/workflows/destructive_confirm_state.go:ParseDestructiveManageStatus
 internal/agents/application/workflows/goal_edit_state.go:ParseGoalEditStatus
@@ -52,3 +55,5 @@ internal/agents/application/workflows/transaction_write_state.go:ParseTransactio
 internal/agents/application/workflows/transaction_write_state.go:ParseTransactionAwaitingSlot
 internal/agents/application/workflows/transaction_write_state.go:ParseTransactionOperationKind
 internal/agents/application/workflows/treatment_name_edit_state.go:ParseTreatmentNameEditStatus
+internal/agents/application/workflows/write_shared.go:ConfirmAnswer.String
+internal/agents/application/workflows/write_shared.go:ConfirmAnswer.IsValid
