@@ -72,8 +72,8 @@ tasks:
     desc: |
       Golden set do agente mecontrola com LLM real via OpenRouter (RF-39/RF-40/RF-41).
       Falha se qualquer categoria do golden ficar abaixo de 0.90.
-      Requer RUN_REAL_LLM=1 e OPENROUTER_API_KEY. Roda agendado 1x/dia e sob
-      demanda via workflow .github/workflows/golden-gate.yml; fora do caminho de deploy.
+      Requer RUN_REAL_LLM=1 e OPENROUTER_API_KEY. Roda apenas sob demanda via
+      workflow_dispatch em .github/workflows/golden-gate.yml; fora do caminho de deploy.
     cmds:
       - mkdir -p {{.COVERAGE_DIR}}
       - RUN_REAL_LLM=1 go test -tags=integration -timeout=14m -v ./internal/agents/application/golden/...
