@@ -22,6 +22,17 @@ type textPayload struct {
 	Body string `json:"body"`
 }
 
+type markAsReadRequest struct {
+	MessagingProduct string                  `json:"messaging_product"`
+	Status           string                  `json:"status"`
+	MessageID        string                  `json:"message_id"`
+	TypingIndicator  *typingIndicatorPayload `json:"typing_indicator,omitempty"`
+}
+
+type typingIndicatorPayload struct {
+	Type string `json:"type"`
+}
+
 type sendMessageResponse struct {
 	Messages []messageIDEntry `json:"messages"`
 }

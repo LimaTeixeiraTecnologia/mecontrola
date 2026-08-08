@@ -106,6 +106,46 @@ func (c *Client) SendText(ctx context.Context, toE164, text string) (string, err
 	return c.doSend(ctx, payload)
 }
 
+func (c *Client) SendTypingIndicator(ctx context.Context, wamid string) error {
+	payload := markAsReadRequest{
+		MessagingProduct: "whatsapp",
+		Status:           "read",
+		MessageID:        wamid,
+		TypingIndicator:  &typingIndicatorPayload{Type: "text"},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("onboarding/meta: serializar payload de typing indicator: %w", err)
+	}
+
+	path := fmt.Sprintf("/%s/messages", c.phoneNumberID)
+
+	resp, err := c.httpClient.Post(
+		ctx,
+		path,
+		bytes.NewReader(body),
+		httpclient.WithHeader("Authorization", "Bearer "+c.accessToken),
+		httpclient.WithHeader("Content-Type", "application/json"),
+		httpclient.WithoutRetry(),
+	)
+	if err != nil {
+		return fmt.Errorf("onboarding/meta: enviar typing indicator: %w", err)
+	}
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			slog.WarnContext(ctx, "onboarding/meta: close response body", "error", closeErr)
+		}
+	}()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("onboarding/meta: ler resposta de typing indicator: %w", err)
+	}
+
+	return c.checkStatus(resp.StatusCode, respBody)
+}
+
 func (c *Client) doSend(ctx context.Context, payload sendMessageRequest) (string, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {

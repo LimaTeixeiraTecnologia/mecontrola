@@ -44,6 +44,13 @@ func (g *WhatsAppGateway) SendTextMessage(ctx context.Context, toE164, text stri
 	return nil
 }
 
+func (g *WhatsAppGateway) SendTypingIndicator(ctx context.Context, wamid string) error {
+	if err := g.client.SendTypingIndicator(ctx, wamid); err != nil {
+		return g.classifyError(err, "enviar indicador de digitação")
+	}
+	return nil
+}
+
 func (g *WhatsAppGateway) classifyError(err error, op string) error {
 	switch {
 	case errors.Is(err, meta.ErrMetaBadRequest) || errors.Is(err, meta.ErrMetaAuth):

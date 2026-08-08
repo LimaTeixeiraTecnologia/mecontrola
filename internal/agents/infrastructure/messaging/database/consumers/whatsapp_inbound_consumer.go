@@ -43,6 +43,10 @@ type whatsAppTextSender interface {
 	SendTextMessage(ctx context.Context, toE164, text string) error
 }
 
+type whatsAppTypingIndicatorSender interface {
+	SendTypingIndicator(ctx context.Context, wamid string) error
+}
+
 type MessageDedupStore interface {
 	InsertIfAbsent(ctx context.Context, consumer, messageID string) (bool, error)
 	Delete(ctx context.Context, consumer, messageID string) error
@@ -118,6 +122,13 @@ func WithAudioProcessor(p audioInboundProcessor) ConsumerOption {
 	}
 }
 
+func WithTypingIndicator(sender whatsAppTypingIndicatorSender, enabled bool) ConsumerOption {
+	return func(c *WhatsAppInboundConsumer) {
+		c.typingSender = sender
+		c.typingEnabled = enabled
+	}
+}
+
 type WhatsAppInboundConsumer struct {
 	handleInbound     handleInboundUseCase
 	gateway           whatsAppTextSender
@@ -126,10 +137,13 @@ type WhatsAppInboundConsumer struct {
 	resumeDispatcher  resumeDispatcherResolver
 	dedup             MessageDedupStore
 	audioProcessor    audioInboundProcessor
+	typingSender      whatsAppTypingIndicatorSender
+	typingEnabled     bool
 	inboundTimeout    time.Duration
 	inboundTotal      observability.Counter
 	decodeFails       observability.Counter
 	timeoutTotal      observability.Counter
+	typingTotal       observability.Counter
 }
 
 func NewWhatsAppInboundConsumer(
@@ -153,6 +167,11 @@ func NewWhatsAppInboundConsumer(
 		"Total de timeouts de LLM/tool no consumer de WhatsApp inbound",
 		"1",
 	)
+	typingTotal := o11y.Metrics().Counter(
+		"agents_whatsapp_inbound_typing_total",
+		"Total de emissoes de indicador de digitacao no consumer de WhatsApp inbound",
+		"1",
+	)
 	c := &WhatsAppInboundConsumer{
 		handleInbound: handleInbound,
 		gateway:       gateway,
@@ -160,6 +179,7 @@ func NewWhatsAppInboundConsumer(
 		inboundTotal:  inboundTotal,
 		decodeFails:   decodeFails,
 		timeoutTotal:  timeoutTotal,
+		typingTotal:   typingTotal,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -213,6 +233,8 @@ func (c *WhatsAppInboundConsumer) Handle(ctx context.Context, event events.Event
 		}
 	}
 
+	c.emitTypingIndicator(ctx, p.MessageID)
+
 	if c.inboundTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, c.inboundTimeout)
@@ -228,6 +250,31 @@ func (c *WhatsAppInboundConsumer) Handle(ctx context.Context, event events.Event
 	}
 
 	return c.compensateDedup(ctx, p.MessageID, c.handleAgentInbound(ctx, span, p))
+}
+
+const typingIndicatorTimeout = 3 * time.Second
+
+func (c *WhatsAppInboundConsumer) emitTypingIndicator(ctx context.Context, messageID string) {
+	if !c.typingEnabled || c.typingSender == nil || messageID == "" {
+		return
+	}
+	emitCtx, cancel := context.WithTimeout(ctx, typingIndicatorTimeout)
+	defer cancel()
+	if err := c.typingSender.SendTypingIndicator(emitCtx, messageID); err != nil {
+		c.typingTotal.Add(ctx, 1,
+			observability.String("channel", "whatsapp"),
+			observability.String("outcome", "error"),
+		)
+		c.o11y.Logger().Warn(ctx, "agents.consumer.whatsapp_inbound: emissao de typing indicator falhou",
+			observability.String("message_id", messageID),
+			observability.Error(err),
+		)
+		return
+	}
+	c.typingTotal.Add(ctx, 1,
+		observability.String("channel", "whatsapp"),
+		observability.String("outcome", "success"),
+	)
 }
 
 func validateInboundPayload(p whatsAppInboundPayload, kind inboundMessageKind) error {

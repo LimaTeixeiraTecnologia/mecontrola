@@ -52,7 +52,7 @@ type EventHandlerRegistration struct {
 
 type OnboardingModule struct {
 	PublicRouter                 *onboardingserver.PublicRouter
-	WhatsAppGateway              appinterfaces.WhatsAppGateway
+	WhatsAppGateway              *gateway.WhatsAppGateway
 	WhatsAppMessageProcessor     *services.WhatsAppMessageProcessor
 	WhatsAppActivationRoute      func(ctx context.Context, msg wapayload.Message) wadispatcher.RouteOutcome
 	SubscriptionConsumer         events.Handler
@@ -80,7 +80,7 @@ type onboardingDependencies struct {
 	factory         appinterfaces.RepositoryFactory
 	publisher       outbox.Publisher
 	idGen           id.Generator
-	whatsAppGateway appinterfaces.WhatsAppGateway
+	whatsAppGateway *gateway.WhatsAppGateway
 	bindingService  *binding.SubscriptionBindingService
 }
 
@@ -339,7 +339,7 @@ func newManagerPublisher(
 	return &managerPublisher{db: db, outboxFactory: outboxFactory, cfg: cfg, o11y: o11y}
 }
 
-func newWhatsAppGateway(waCfg configs.WhatsAppConfig, o11y observability.Observability) (appinterfaces.WhatsAppGateway, error) {
+func newWhatsAppGateway(waCfg configs.WhatsAppConfig, o11y observability.Observability) (*gateway.WhatsAppGateway, error) {
 	metaClient, err := meta.NewClient(o11y, meta.Config{
 		PhoneNumberID: waCfg.PhoneNumberID,
 		AccessToken:   waCfg.AccessToken,

@@ -1479,6 +1479,62 @@ func (s *ConfigSuite) TestLoadConfigActivationDefaults() {
 	}
 }
 
+func (s *ConfigSuite) TestLoadConfigWhatsAppTypingIndicatorDefaults() {
+	type args struct {
+		path func() string
+	}
+
+	scenarios := []struct {
+		name   string
+		args   args
+		setup  func(path string)
+		expect func(cfg *configs.Config, err error)
+	}{
+		{
+			name: "deve aplicar default false quando AGENT_WHATSAPP_TYPING_INDICATOR_ENABLED esta ausente",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.writeEnvFile(path, s.minimalLocalEnv())
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.False(cfg.AgentConfig.WhatsAppTypingIndicatorEnabled)
+			},
+		},
+		{
+			name: "deve sobrescrever AGENT_WHATSAPP_TYPING_INDICATOR_ENABLED via env",
+			args: args{
+				path: func() string {
+					return s.T().TempDir()
+				},
+			},
+			setup: func(path string) {
+				s.T().Setenv("AGENT_WHATSAPP_TYPING_INDICATOR_ENABLED", "true")
+				s.writeEnvFile(path, s.minimalLocalEnv())
+			},
+			expect: func(cfg *configs.Config, err error) {
+				s.Require().NoError(err)
+				s.Require().NotNil(cfg)
+				s.True(cfg.AgentConfig.WhatsAppTypingIndicatorEnabled)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			path := scenario.args.path()
+			scenario.setup(path)
+			cfg, err := configs.LoadConfig(path)
+			scenario.expect(cfg, err)
+		})
+	}
+}
+
 func (s *ConfigSuite) TestNormalizedExporterEndpoint() {
 	scenarios := []struct {
 		name     string

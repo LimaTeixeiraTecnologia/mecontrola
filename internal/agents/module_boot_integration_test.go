@@ -30,6 +30,8 @@ type bootStubWhatsAppGateway struct{}
 
 func (g *bootStubWhatsAppGateway) SendTextMessage(_ context.Context, _, _ string) error { return nil }
 
+func (g *bootStubWhatsAppGateway) SendTypingIndicator(_ context.Context, _ string) error { return nil }
+
 type ModuleBootSuite struct {
 	suite.Suite
 	ctx context.Context

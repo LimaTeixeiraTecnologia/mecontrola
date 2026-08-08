@@ -48,6 +48,11 @@ func (m *mockWhatsAppSender) SendTextMessage(ctx context.Context, toE164, text s
 	return args.Error(0)
 }
 
+func (m *mockWhatsAppSender) SendTypingIndicator(ctx context.Context, wamid string) error {
+	args := m.Called(ctx, wamid)
+	return args.Error(0)
+}
+
 type mockOnboardingResolver struct {
 	mock.Mock
 }
@@ -1210,4 +1215,231 @@ func (s *WhatsAppInboundConsumerSuite) TestHandleAudio_PayloadIncompletoQuandoCa
 	err := consumer.Handle(s.ctx, event)
 	s.Error(err)
 	s.Contains(err.Error(), "payload de audio incompleto")
+}
+
+func typingOutcomeCount(obs observability.Observability, outcome string) int {
+	metrics, ok := obs.Metrics().(*fake.FakeMetrics)
+	if !ok {
+		return 0
+	}
+	counter := metrics.GetCounter("agents_whatsapp_inbound_typing_total")
+	if counter == nil {
+		return 0
+	}
+	total := 0
+	for _, v := range counter.GetValues() {
+		for _, f := range v.Fields {
+			if f.Key == "outcome" && f.StringValue() == outcome {
+				total++
+			}
+		}
+	}
+	return total
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestHandleTypingIndicator_FlagOffNeverEmits() {
+	inboundMock := &mockHandleInbound{}
+	inboundMock.On("Execute", mock.Anything, mock.Anything).
+		Return(agent.Outcome{Content: "✅ Registrado.", Status: agent.RunStatusSucceeded}, nil).Once()
+
+	senderMock := &mockWhatsAppSender{}
+	senderMock.On("SendTextMessage", mock.Anything, "+5511911110001", "✅ Registrado.").Return(nil).Once()
+
+	consumer := NewWhatsAppInboundConsumer(
+		inboundMock, senderMock, s.obs,
+		WithTypingIndicator(senderMock, false),
+	)
+
+	event := &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload: buildEnvelope(whatsAppInboundPayload{
+			UserID: "user-typing-off", Peer: "+5511911110001", Text: "gastei 10", MessageID: "wamid-typing-off",
+		}),
+	}
+
+	err := consumer.Handle(s.ctx, event)
+	s.NoError(err)
+	senderMock.AssertExpectations(s.T())
+	senderMock.AssertNotCalled(s.T(), "SendTypingIndicator", mock.Anything, mock.Anything)
+	s.Zero(typingOutcomeCount(s.obs, "success"))
+	s.Zero(typingOutcomeCount(s.obs, "error"))
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestHandleTypingIndicator_FlagOnTextEmitsOnceBeforeProcessing() {
+	senderMock := &mockWhatsAppSender{}
+	typingCall := senderMock.On("SendTypingIndicator", mock.Anything, "wamid-typing-on").
+		Return(nil).Once()
+
+	inboundMock := &mockHandleInbound{}
+	inboundCall := inboundMock.On("Execute", mock.Anything, input.InboundInput{
+		ResourceID: "user-typing-on",
+		ThreadID:   "+5511911110002",
+		AgentID:    mecontrolaAgentID,
+		Message:    "gastei 20 no cafe",
+		MessageID:  "wamid-typing-on",
+	}).Return(agent.Outcome{Content: "✅ Registrado.", Status: agent.RunStatusSucceeded}, nil).Once()
+	inboundCall.NotBefore(typingCall)
+
+	textCall := senderMock.On("SendTextMessage", mock.Anything, "+5511911110002", "✅ Registrado.").
+		Return(nil).Once()
+	textCall.NotBefore(typingCall)
+
+	consumer := NewWhatsAppInboundConsumer(
+		inboundMock, senderMock, s.obs,
+		WithTypingIndicator(senderMock, true),
+	)
+
+	event := &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload: buildEnvelope(whatsAppInboundPayload{
+			UserID: "user-typing-on", Peer: "+5511911110002", Text: "gastei 20 no cafe", MessageID: "wamid-typing-on",
+		}),
+	}
+
+	err := consumer.Handle(s.ctx, event)
+	s.NoError(err)
+	inboundMock.AssertExpectations(s.T())
+	senderMock.AssertExpectations(s.T())
+	s.Equal(1, typingOutcomeCount(s.obs, "success"))
+	s.Zero(typingOutcomeCount(s.obs, "error"))
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestHandleTypingIndicator_FailureIsBestEffort() {
+	inboundMock := &mockHandleInbound{}
+	inboundMock.On("Execute", mock.Anything, mock.Anything).
+		Return(agent.Outcome{Content: "✅ Registrado.", Status: agent.RunStatusSucceeded}, nil).Once()
+
+	senderMock := &mockWhatsAppSender{}
+	senderMock.On("SendTypingIndicator", mock.Anything, "wamid-typing-fail").
+		Return(errors.New("meta indisponivel")).Once()
+	senderMock.On("SendTextMessage", mock.Anything, "+5511911110003", "✅ Registrado.").Return(nil).Once()
+
+	consumer := NewWhatsAppInboundConsumer(
+		inboundMock, senderMock, s.obs,
+		WithTypingIndicator(senderMock, true),
+	)
+
+	event := &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload: buildEnvelope(whatsAppInboundPayload{
+			UserID: "user-typing-fail", Peer: "+5511911110003", Text: "gastei 30", MessageID: "wamid-typing-fail",
+		}),
+	}
+
+	err := consumer.Handle(s.ctx, event)
+	s.NoError(err)
+	inboundMock.AssertExpectations(s.T())
+	senderMock.AssertExpectations(s.T())
+	s.Equal(1, typingOutcomeCount(s.obs, "error"))
+	s.Zero(typingOutcomeCount(s.obs, "success"))
+
+	logger, ok := s.obs.Logger().(*fake.FakeLogger)
+	s.Require().True(ok)
+	warnFound := false
+	for _, entry := range logger.GetEntries() {
+		if entry.Level == observability.LogLevelWarn && strings.Contains(entry.Message, "typing indicator") {
+			warnFound = true
+		}
+	}
+	s.True(warnFound)
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestHandleTypingIndicator_DuplicatedMessageNeverEmits() {
+	inboundMock := &mockHandleInbound{}
+	senderMock := &mockWhatsAppSender{}
+
+	dedupMock := &mockMessageDedup{}
+	dedupMock.On("InsertIfAbsent", mock.Anything, whatsAppInboundConsumerName, "wamid-typing-dup").
+		Return(false, nil).Once()
+
+	consumer := NewWhatsAppInboundConsumer(
+		inboundMock, senderMock, s.obs,
+		WithMessageDedup(dedupMock),
+		WithTypingIndicator(senderMock, true),
+	)
+
+	event := &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload: buildEnvelope(whatsAppInboundPayload{
+			UserID: "user-typing-dup", Peer: "+5511911110004", Text: "gastei 40", MessageID: "wamid-typing-dup",
+		}),
+	}
+
+	err := consumer.Handle(s.ctx, event)
+	s.NoError(err)
+	dedupMock.AssertExpectations(s.T())
+	senderMock.AssertNotCalled(s.T(), "SendTypingIndicator", mock.Anything, mock.Anything)
+	s.Zero(typingOutcomeCount(s.obs, "success"))
+	s.Zero(typingOutcomeCount(s.obs, "error"))
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestHandleTypingIndicator_InvalidPayloadNeverEmits() {
+	inboundMock := &mockHandleInbound{}
+	senderMock := &mockWhatsAppSender{}
+
+	consumer := NewWhatsAppInboundConsumer(
+		inboundMock, senderMock, s.obs,
+		WithTypingIndicator(senderMock, true),
+	)
+
+	event := &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload: buildEnvelope(whatsAppInboundPayload{
+			UserID: "user-typing-invalid",
+		}),
+	}
+
+	err := consumer.Handle(s.ctx, event)
+	s.Error(err)
+	s.Contains(err.Error(), "payload incompleto")
+	senderMock.AssertNotCalled(s.T(), "SendTypingIndicator", mock.Anything, mock.Anything)
+	s.Zero(typingOutcomeCount(s.obs, "success"))
+	s.Zero(typingOutcomeCount(s.obs, "error"))
+}
+
+func (s *WhatsAppInboundConsumerSuite) TestHandleTypingIndicator_AudioEmitsOnceAndReplies() {
+	inboundMock := &mockHandleInbound{}
+	inboundMock.On("Execute", mock.Anything, input.InboundInput{
+		ResourceID: "user-typing-audio",
+		ThreadID:   "+5511911110005",
+		AgentID:    mecontrolaAgentID,
+		Message:    "gastei 50 reais no mercado",
+		MessageID:  "wamid-typing-audio",
+	}).Return(agent.Outcome{Content: "✅ Registrei sua despesa.", Status: agent.RunStatusSucceeded}, nil).Once()
+
+	senderMock := &mockWhatsAppSender{}
+	senderMock.On("SendTypingIndicator", mock.Anything, "wamid-typing-audio").Return(nil).Once()
+	senderMock.On("SendTextMessage", mock.Anything, "+5511911110005", "✅ Registrei sua despesa.").Return(nil).Once()
+
+	audioMock := &mockAudioProcessor{}
+	audioMock.On("Execute", mock.Anything, usecases.AudioInboundInput{
+		WAMID: "wamid-typing-audio", UserID: "user-typing-audio", Peer: "+5511911110005",
+		MediaID: "media-typing-1", MimeType: "audio/ogg", SHA256: "sha-typing-1", Voice: true,
+	}).Return(usecases.AudioInboundResult{
+		Outcome:       usecases.AudioOutcomeApproved,
+		CanonicalText: "gastei 50 reais no mercado",
+	}, nil).Once()
+	audioMock.On("MarkDispatched", mock.Anything, "wamid-typing-audio").Return(nil).Once()
+
+	consumer := NewWhatsAppInboundConsumer(
+		inboundMock, senderMock, s.obs,
+		WithAudioProcessor(audioMock),
+		WithTypingIndicator(senderMock, true),
+	)
+
+	event := &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload: buildAudioEnvelope(whatsAppInboundPayload{
+			UserID: "user-typing-audio", Peer: "+5511911110005", MessageID: "wamid-typing-audio",
+			AudioMediaID: "media-typing-1", AudioMimeType: "audio/ogg", AudioSHA256: "sha-typing-1", AudioVoice: true,
+		}),
+	}
+
+	err := consumer.Handle(s.ctx, event)
+	s.NoError(err)
+	inboundMock.AssertExpectations(s.T())
+	senderMock.AssertExpectations(s.T())
+	audioMock.AssertExpectations(s.T())
+	s.Equal(1, typingOutcomeCount(s.obs, "success"))
+	s.Zero(typingOutcomeCount(s.obs, "error"))
 }

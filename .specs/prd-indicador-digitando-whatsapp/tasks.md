@@ -12,12 +12,12 @@
 
 | # | Título | Status | Dependências | Paralelizável | Skills |
 |---|--------|--------|--------------|---------------|--------|
-| 1.0 | Feature flag AGENT_WHATSAPP_TYPING_INDICATOR_ENABLED na configuração | pending | — | Com 2.0 | — |
-| 2.0 | Método SendTypingIndicator no client Meta com payload oficial | pending | — | Com 1.0 | — |
-| 3.0 | Método SendTypingIndicator no gateway de onboarding | pending | 2.0 | Com 4.0 | — |
-| 4.0 | Emissão best-effort no WhatsAppInboundConsumer com métrica | pending | 2.0 | Com 3.0 | mastra |
-| 5.0 | Wiring do módulo agents e do worker com ajuste do stub de boot | pending | 1.0, 3.0, 4.0 | Não | mastra |
-| 6.0 | Gate de versão RF-07 e validação completa de zero regressão | pending | 5.0 | Não | — |
+| 1.0 | Feature flag AGENT_WHATSAPP_TYPING_INDICATOR_ENABLED na configuração | done | — | Com 2.0 | — |
+| 2.0 | Método SendTypingIndicator no client Meta com payload oficial | done | — | Com 1.0 | — |
+| 3.0 | Método SendTypingIndicator no gateway de onboarding | done | 2.0 | Com 4.0 | — |
+| 4.0 | Emissão best-effort no WhatsAppInboundConsumer com métrica | done | 2.0 | Com 3.0 | mastra |
+| 5.0 | Wiring do módulo agents e do worker com ajuste do stub de boot | done | 1.0, 3.0, 4.0 | Não | mastra |
+| 6.0 | Gate de versão RF-07 e validação completa de zero regressão | blocked | 5.0 | Não | — |
 
 ## Dependências Críticas
 - 3.0 depende de 2.0 porque o gateway delega ao método novo do client Meta.

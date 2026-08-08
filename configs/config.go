@@ -196,6 +196,8 @@ type AgentConfig struct {
 	AudioMinConfidence   float64       `mapstructure:"AGENT_AUDIO_MIN_CONFIDENCE"`
 	AudioUncertainReply  string        `mapstructure:"WA_MSG_AUDIO_UNCERTAIN_RETRY"`
 	AudioRejectedReply   string        `mapstructure:"WA_MSG_AUDIO_REJECTED_RETRY"`
+
+	WhatsAppTypingIndicatorEnabled bool `mapstructure:"AGENT_WHATSAPP_TYPING_INDICATOR_ENABLED"`
 }
 
 type KiwifyConfig struct {
@@ -565,6 +567,7 @@ func (l *configLoader) envKeys() []string {
 		"AGENT_AUDIO_MIN_CONFIDENCE",
 		"WA_MSG_AUDIO_UNCERTAIN_RETRY",
 		"WA_MSG_AUDIO_REJECTED_RETRY",
+		"AGENT_WHATSAPP_TYPING_INDICATOR_ENABLED",
 		"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_SCHEDULE",
 		"IDENTITY_AUTH_EVENTS_HOUSEKEEPING_BATCH",
 		"IDENTITY_AUTH_EVENTS_RETENTION_DAYS",
@@ -1442,6 +1445,7 @@ func (l *configLoader) setAgentDefaults() {
 	l.v.SetDefault("AGENT_AUDIO_MIN_CONFIDENCE", 0.80)
 	l.v.SetDefault("WA_MSG_AUDIO_UNCERTAIN_RETRY", "não consegui entender esse áudio direito, pode tentar de novo? 🎙️")
 	l.v.SetDefault("WA_MSG_AUDIO_REJECTED_RETRY", "não consegui processar esse áudio, pode reenviar?")
+	l.v.SetDefault("AGENT_WHATSAPP_TYPING_INDICATOR_ENABLED", false)
 }
 
 func (c *Config) validateWorkflowKernel() []string {

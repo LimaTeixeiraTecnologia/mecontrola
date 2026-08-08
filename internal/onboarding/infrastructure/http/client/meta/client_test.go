@@ -219,6 +219,111 @@ func (s *ClientSuite) TestClient_SendText_Scenarios() {
 	}
 }
 
+func (s *ClientSuite) TestClient_SendTypingIndicator_Scenarios() {
+	scenarios := []struct {
+		name          string
+		wamid         string
+		serverHandler http.HandlerFunc
+		expectErr     bool
+		expectErrType error
+	}{
+		{
+			name:  "Success sends mark-as-read with typing indicator",
+			wamid: "wamid.HBgNNTUxMTk5OTk5ODg4OBUCABIYFDNBRjE2QzNEM0UyRkZCRkE5AA==",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				s.Equal(http.MethodPost, r.Method)
+				s.Equal("/123456789/messages", r.URL.Path)
+				s.Equal("Bearer test-access-token", r.Header.Get("Authorization"))
+				s.Equal("application/json", r.Header.Get("Content-Type"))
+
+				var body map[string]any
+				s.NoError(json.NewDecoder(r.Body).Decode(&body))
+				s.Equal("whatsapp", body["messaging_product"])
+				s.Equal("read", body["status"])
+				s.Equal("wamid.HBgNNTUxMTk5OTk5ODg4OBUCABIYFDNBRjE2QzNEM0UyRkZCRkE5AA==", body["message_id"])
+				s.NotContains(body, "to")
+
+				typingIndicator, ok := body["typing_indicator"].(map[string]any)
+				s.True(ok)
+				s.Equal("text", typingIndicator["type"])
+
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+			},
+			expectErr: false,
+		},
+		{
+			name:  "Success response without messages array is accepted",
+			wamid: "wamid.abc",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+			},
+			expectErr: false,
+		},
+		{
+			name:  "401 returns auth error",
+			wamid: "wamid.abc",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"error": map[string]any{
+						"message": "Invalid OAuth access token",
+						"type":    "OAuthException",
+						"code":    190,
+					},
+				})
+			},
+			expectErr:     true,
+			expectErrType: meta.ErrMetaAuth,
+		},
+		{
+			name:  "400 returns bad request error",
+			wamid: "wamid.abc",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"error": map[string]any{
+						"message": "message_id is invalid",
+						"type":    "OAuthException",
+						"code":    131000,
+					},
+				})
+			},
+			expectErr:     true,
+			expectErrType: meta.ErrMetaBadRequest,
+		},
+		{
+			name:  "5xx returns server error",
+			wamid: "wamid.abc",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			},
+			expectErr:     true,
+			expectErrType: meta.ErrMetaServer,
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s.Run(scenario.name, func() {
+			srv := httptest.NewServer(scenario.serverHandler)
+			defer srv.Close()
+
+			client := s.newClientWithServer(srv.URL)
+			err := client.SendTypingIndicator(context.Background(), scenario.wamid)
+
+			if scenario.expectErr {
+				s.Error(err)
+				if scenario.expectErrType != nil {
+					s.ErrorIs(err, scenario.expectErrType)
+				}
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
 func (s *ClientSuite) TestNewClient_ValidationErrors() {
 	scenarios := []struct {
 		name   string

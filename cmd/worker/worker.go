@@ -462,6 +462,8 @@ func (r *workerRuntime) newManager(ctx context.Context) (*worker.Manager, error)
 		InboundDedup:       consumerDedupRepo,
 		InboundTimeout:     r.cfg.AgentConfig.InboundTimeout,
 		AgentMaxTokens:     r.cfg.AgentConfig.MecontrolaMaxTokens,
+
+		TypingIndicatorEnabled: r.cfg.AgentConfig.WhatsAppTypingIndicatorEnabled,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("worker: inicializar modulo agents: %w", err)

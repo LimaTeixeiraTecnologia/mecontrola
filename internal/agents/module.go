@@ -53,6 +53,7 @@ var errLLMAPIKeyRequired = errors.New("agents.module: llm api_key is required")
 
 type whatsAppGateway interface {
 	SendTextMessage(ctx context.Context, toE164, text string) error
+	SendTypingIndicator(ctx context.Context, wamid string) error
 }
 
 type EventHandlerRegistration struct {
@@ -111,6 +112,8 @@ type Deps struct {
 	InboundDedup       consumers.MessageDedupStore
 	InboundTimeout     time.Duration
 	AgentMaxTokens     int
+
+	TypingIndicatorEnabled bool
 }
 
 type whatsAppInboundPayload struct {
@@ -427,6 +430,7 @@ func NewModule(deps Deps) (Module, error) { //nolint:revive // composition root 
 		if audioProcessor != nil {
 			consumerOpts = append(consumerOpts, consumers.WithAudioProcessor(audioProcessor))
 		}
+		consumerOpts = append(consumerOpts, consumers.WithTypingIndicator(deps.WhatsAppGateway, deps.TypingIndicatorEnabled))
 		inboundConsumer := consumers.NewWhatsAppInboundConsumer(
 			handleInbound,
 			deps.WhatsAppGateway,

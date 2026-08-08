@@ -441,3 +441,43 @@ func (s *WhatsAppInboundConsumerIntegrationSuite) TestInteg_OnboardingFluxoDeCar
 
 	cardsMock.AssertNumberOfCalls(s.T(), "CreateCard", 1)
 }
+
+func (s *WhatsAppInboundConsumerIntegrationSuite) TestInteg_TypingIndicatorLigado_EmiteUmaUnicaVezComWamidCorreto() {
+	userID := s.newUser()
+	peer := "+55119" + uuid.NewString()[:8]
+	wamid := "wamid-typing-indicator-" + uuid.NewString()
+
+	onboardingResolver := s.buildOnboardingResolver()
+
+	gatewayMock := &mockWhatsAppSender{}
+	gatewayMock.On("SendTextMessage", mock.Anything, peer, mock.AnythingOfType("string")).
+		Return(nil).Once()
+
+	var typingWamid string
+	gatewayMock.On("SendTypingIndicator", mock.Anything, mock.AnythingOfType("string")).
+		Run(func(args mock.Arguments) {
+			typingWamid = args.Get(1).(string)
+		}).
+		Return(nil).Once()
+
+	inboundMock := &mockHandleInbound{}
+
+	consumer := NewWhatsAppInboundConsumer(
+		inboundMock,
+		gatewayMock,
+		fake.NewProvider(),
+		WithOnboardingResolver(onboardingResolver),
+		WithTypingIndicator(gatewayMock, true),
+	)
+
+	err := consumer.Handle(s.ctx, &mockEvent{
+		eventType: "agents.whatsapp.inbound.v1",
+		payload:   buildEnvelope(whatsAppInboundPayload{UserID: userID.String(), Peer: peer, Text: "Ativar o meu plano", MessageID: wamid}),
+	})
+	s.Require().NoError(err)
+
+	gatewayMock.AssertExpectations(s.T())
+	gatewayMock.AssertNumberOfCalls(s.T(), "SendTypingIndicator", 1)
+	s.Equal(wamid, typingWamid, "RF-01: typing indicator deve ser emitido com o WAMID da mensagem inbound")
+	inboundMock.AssertNotCalled(s.T(), "Execute")
+}
